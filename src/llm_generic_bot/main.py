@@ -43,6 +43,13 @@ async def main() -> None:
         k=cfg.get("dedupe", {}).get("recent_k", 20),
         threshold=cfg.get("dedupe", {}).get("sim_threshold", 0.93),
     )
+    tz = cfg.get("timezone","Asia/Tokyo")
+    # senders
+    discord = DiscordSender()
+    misskey = MisskeySender()
+    # choose active profile (Discordを既定)
+    active_sender = discord if (cfg.get("profiles",{}).get("discord",{}).get("enabled")) else misskey
+    sched = Scheduler(tz=tz, sender=active_sender)
 
     orchestrator = Orchestrator(
         sender=active_sender,
@@ -62,6 +69,13 @@ async def main() -> None:
 
     wcfg = cfg.get("weather", {})
     sched.every_day("weather", wcfg.get("schedule", "21:00"), job_weather)
+    async def job_weather() -> str | None:
+        text = await build_weather_post(cfg)
+        # dedupe
+        if not dedupe.permit(text):
+            return None
+        gate.note_post("discord","default","weather")
+        return text
 
     try:
         await sched.run_forever()

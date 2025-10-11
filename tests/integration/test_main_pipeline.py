@@ -31,8 +31,10 @@ class StubPermitGate:
         self.decisions = decisions
         self.calls: List[Dict[str, Optional[str]]] = []
 
-    def permit(self, platform: str, channel: Optional[str]) -> QuotaPermitDecision:
-        self.calls.append({"platform": platform, "channel": channel})
+    def permit(
+        self, platform: str, channel: Optional[str], job: Optional[str] = None
+    ) -> QuotaPermitDecision:
+        self.calls.append({"platform": platform, "channel": channel, "job": job})
         return self.decisions.popleft()
 
 

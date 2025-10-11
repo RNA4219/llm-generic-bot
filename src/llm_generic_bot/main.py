@@ -11,7 +11,7 @@ from .config.quotas import QuotaSettings, load_quota_settings
 from .core.arbiter import PermitGate
 from .core.cooldown import CooldownGate
 from .core.dedupe import NearDuplicateFilter
-from .core.orchestrator import Orchestrator, PermitDecision, Sender
+from .core.orchestrator import Orchestrator, PermitDecision, PermitDecisionLike, Sender
 from .core.queue import CoalesceQueue
 from .core.scheduler import Scheduler
 from .features.weather import build_weather_post
@@ -48,14 +48,25 @@ def setup_runtime(
     quota: QuotaSettings = load_quota_settings(cfg)
     gate = permit_gate or (PermitGate(per_channel=quota.per_channel) if quota.per_channel else None)
 
-    permit: Callable[[str, Optional[str], str], PermitDecision]
+    permit: Callable[[str, Optional[str], str], PermitDecisionLike]
     if gate is None:
-        def permit(_platform: str, _channel: Optional[str], job: str) -> PermitDecision:
+        def permit(
+            _platform: str, _channel: Optional[str], job: str
+        ) -> PermitDecisionLike:
             return PermitDecision.allowed(job)
     else:
-        def permit(platform: str, channel: Optional[str], job: str) -> PermitDecision:
-            decision = gate.permit(platform, channel)
-            return PermitDecision.allowed(job) if decision.allowed else PermitDecision(False, decision.reason, job)
+        def permit(
+            platform: str, channel: Optional[str], job: str
+        ) -> PermitDecisionLike:
+            decision = gate.permit(platform, channel, job)
+            if decision.allowed:
+                return PermitDecision.allowed(decision.job or job)
+            return PermitDecision(
+                allowed=False,
+                reason=decision.reason,
+                retryable=decision.retryable,
+                job=decision.job or job,
+            )
 
     profiles = _as_mapping(cfg.get("profiles"))
     discord_cfg = _as_mapping(profiles.get("discord"))

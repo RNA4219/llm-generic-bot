@@ -40,6 +40,10 @@ class _PermitDecision:
     def allowed(cls, job: Optional[str] = None) -> "PermitDecisionLike":
         return cls(True, None, True, job)
 
+    @classmethod
+    def allow(cls, job: Optional[str] = None) -> "PermitDecisionLike":
+        return cls.allowed(job)
+
 
 PermitDecision = _PermitDecision
 
@@ -207,6 +211,11 @@ class Orchestrator:
         start = time.perf_counter()
         try:
             await self._sender.send(request.text, request.channel, job=job_name)
+        except TypeError as exc:
+            message = str(exc)
+            if "unexpected keyword argument" not in message or "job" not in message:
+                raise
+            await self._sender.send(request.text, request.channel)
         except Exception as exc:  # noqa: BLE001 - 上位での再送制御対象
             self._metrics.increment("send.failure", tags)
             self._logger.error(

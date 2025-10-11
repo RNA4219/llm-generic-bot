@@ -85,8 +85,18 @@ def setup_runtime(
 
     orchestrator = Orchestrator(sender=active_sender, cooldown=cooldown, dedupe=dedupe, permit=permit)
 
-    async def send(text: str, channel: Optional[str] = None) -> None:
-        await orchestrator.enqueue(text, job="weather", platform=platform, channel=channel or default_channel)
+    async def send(
+        text: str,
+        channel: Optional[str] = None,
+        *,
+        job: str = "weather",
+    ) -> None:
+        await orchestrator.enqueue(
+            text,
+            job=job,
+            platform=platform,
+            channel=channel or default_channel,
+        )
 
     scheduler = Scheduler(tz=tz, sender=cast(Sender, SimpleNamespace(send=send)), queue=queue)
     weather_cfg = _as_mapping(cfg.get("weather"))

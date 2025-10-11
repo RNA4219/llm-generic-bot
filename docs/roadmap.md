@@ -27,10 +27,14 @@
 - [OPS-04] ランタイムメトリクス（`infra/metrics.py` 新設）: スケジューラ遅延や送信成功率を可視化。
 
 ## テストロードマップ
-- 既存: `tests/adapters/test_retry_policy.py` で Discord/Misskey の 429/Retry-After、指数バックオフ、非リトライ判定まで網羅済み。`tests/core/test_scheduler_jitter.py` はジッタ有無と `next_slot` 呼出の切替、`tests/test_cooldown.py` はクールダウン係数の境界値を抑えている。
-- Sprint 1: `tests/core/test_coalesce_queue.py`, `tests/core/test_quota_gate.py` を追加し、バッチ併合の優先順位・ダウンサンプリングと Permit 判定のエラー経路を補完する。Retry ログの JSON 構造スナップショットを `tests/adapters/test_retry_policy.py` に拡張し、監査項目を固定。
-- Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py` を追加し、コンテンツ生成のキャッシュ/クールダウン統合と、フォールバック文言のパターン網羅を進める。
-- Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、メトリクス発報と設定再読込ログのスナップショット検証をまとめて行う。Permit/クールダウンのダッシュボード連携を integration テストで追跡。
+- 現状認識:
+  - リトライ: `tests/adapters/test_retry_policy.py` で Discord/Misskey の 429/Retry-After、指数バックオフ、非リトライ判定までカバー済み。残課題は `_structured_log` が吐き出す JSON フィールド（`llm_generic_bot.adapters._retry`）をスナップショット化し、リトライ限界到達時の監査属性欠落を防ぐこと。
+  - 併合: `tests/core/test_coalesce_queue.py` で窓内併合、閾値即時フラッシュ、単発バッチを検証済み。残課題は `CoalesceQueue` の優先度逆転ガードや、`llm_generic_bot.core.queue` のマルチチャンネル分離・`pop_ready` ソート安定性をテーブル駆動で追加すること。
+  - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無と `next_slot` 呼び出しを制御できている。残課題は `llm_generic_bot.core.scheduler` におけるジッタ範囲最小/最大境界と、Permit 後バッチ遅延との連携をプロパティベースで検証すること。
+  - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否のログイベントとメトリクス更新を確認済み。残課題は `Orchestrator` の重複スキップ経路（`send_duplicate_skip`）や `send.duration` メトリクス単位（秒）を追加検証し、ログとメトリクスの整合性を固定すること。
+- Sprint 1: `tests/adapters/test_retry_policy.py` に JSON ログのスナップショットケースを追加し、`tests/core/test_coalesce_queue.py` へ優先度逆転ガードの境界ケースを拡張する。同時に `tests/core/test_quota_gate.py` では Permit 拒否理由の種類ごとに `llm_generic_bot.core.arbiter` のタグ付けを検証し、構造化ログ側と整合させる。
+- Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py` を追加し、`features/news.py` と `features/omikuji.py` のキャッシュ/クールダウン統合、フォールバック文言、Permit 連携を網羅する。あわせて `tests/core/test_scheduler_jitter.py` にジッタ境界ケースを盛り込み、News/おみくじのスケジュール遅延仕様を固定する。
+- Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`infra/metrics.py`（新設予定）と設定再読込監査のログパス（`config` パッケージ想定）をスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
 
 ### 参照タスク
 - Sprint 1 詳細: [`docs/tasks/sprint1.md`](tasks/sprint1.md)

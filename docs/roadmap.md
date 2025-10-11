@@ -1,12 +1,15 @@
 # ロードマップ
 
 ## 現在の完成度
-- `main.py` は設定読込後に日次天気ジョブのみをスケジュールし、近傍デデュープ・クールダウン記録を経由して Discord/Misskey 送信クラスへ委譲している。
+- `main.py` は設定読込後に日次天気ジョブをスケジュールし、近傍デデュープ・クールダウン・Permit 判定を経て Discord/Misskey 送信クラスへ委譲している。
 - 天気機能は OpenWeather から都市ごとの現在値を取得し、30℃/35℃閾値や前日比ΔTをもとに注意枠を生成しつつ today/yesterday キャッシュをローテーションしている。
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
-- `setup_runtime` と `Scheduler` では PermitGate・CoalesceQueue・ジッタ制御が既定値で稼働しており、Permit は `QuotaConfig` に従って発火しつつバッチ併合と遅延分散が組み合わさっている。一方でクォータ窓やジッタ幅のパラメータ調整、Permit 失敗時のバッチ再評価といった運用チューニングが残る。
+- PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
+  - PermitGate は `QuotaConfig` に従ったチャンネル単位の余裕判定を行い、許可時のみジョブ名を付け替えてオーケストレータへ渡す。
+  - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 通過済みのメッセージをまとめて送出する。
+  - ジッタは `Scheduler` で既定有効となり、送信時刻のランダム化で瞬間集中を緩和する。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
 - integration テストは `tests/integration/test_main_pipeline.py` と `tests/integration/test_permit_bridge.py` の 2 本で最新経路を検証し、Permit 拒否や併合結果の JSON 出力・メトリクス連携をスナップショット化している。追加機能に備えた News/おみくじ経路の結合テストは未着手。
-- スケジューラ、クールダウン、アービタ、デデュープなど基盤コンポーネントは最小限実装に留まっており、単発ジョブ直送以外のルーティングや Permit クォータの多段構成、バッチ再送のガードレールが未整備。
+- 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、新規コンテンツ（News/おみくじ等）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ
 - [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）: 429/5xx を指数バックオフ付きで再送し、上限回数で失敗をロギング。

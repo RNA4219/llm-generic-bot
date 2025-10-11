@@ -14,16 +14,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "types-requests"]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "ruff",
+  "mypy",
+  "types-requests",
+]
 
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.mypy]
+python_version = "3.11"
 mypy_path = ["src"]
 explicit_package_bases = true
 namespace_packages = true
+warn_unused_configs = true
+show_error_codes = true
 
 [[tool.mypy.overrides]]
 module = [
@@ -35,6 +44,8 @@ ignore_errors = true
 
 [tool.ruff]
 line-length = 120
+target-version = "py311"
+src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F"]

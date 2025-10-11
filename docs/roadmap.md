@@ -13,6 +13,7 @@
 - [SCH-01] CoalesceQueue（`core/scheduler.py`）: 近接メッセージを併合し、送信処理にバッチで渡す。
 - [SCH-02] ジッタ適用（`core/scheduler.py`）: 送信時刻にランダムオフセットを付与し突発集中を緩和。
 - [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator.py`）: 送信結果とコンテキストを JSON ログで記録。
+- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: GitHub Actions 上で `pytest`・`mypy`・`ruff` をキャッシュ付きジョブとして自動実行し、`main`/PR へのプッシュ時に品質ゲートを設ける。依存: `pyproject.toml` の型/リンタ設定確定および [SND-01]/[OPS-01] でのログ要件確定。
 
 ## Sprint 2: UX & コンテンツ
 - [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator.py`）: 反応履歴を参照し出力頻度を調整。

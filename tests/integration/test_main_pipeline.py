@@ -1,10 +1,14 @@
-import asyncio
+import datetime as dt
 from collections import deque
-from typing import Deque, List, Mapping, Optional
+from typing import Deque, Dict, List, Mapping, Optional
 
 import pytest
+import zoneinfo
 
-from llm_generic_bot.main import bootstrap_main
+from llm_generic_bot.core.arbiter import PermitDecision as QuotaPermitDecision
+from llm_generic_bot.core.queue import CoalesceQueue
+from llm_generic_bot import main as main_module
+
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -14,70 +18,84 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-class RecordingSender:
+class StubSender:
     def __init__(self) -> None:
-        self.calls: List[tuple[str, Optional[str], str]] = []
+        self.sent: List[str] = []
 
-    async def send(self, text: str, channel: str | None = None, *, job: str) -> None:
-        self.calls.append((job, channel, text))
-
-
-class Clock:
-    def __init__(self, start: float = 1000.0) -> None:
-        self.now_value = start
-
-    def now(self) -> float:
-        return self.now_value
-
-    def advance(self, seconds: float) -> None:
-        self.now_value += seconds
+    async def send(self, text: str, channel: Optional[str] = None) -> None:
+        self.sent.append(text if channel is None else f"{channel}:{text}")
 
 
-async def test_pipeline_respects_quota_and_applies_jitter(monkeypatch: pytest.MonkeyPatch) -> None:
-    sender = RecordingSender()
-    clock = Clock()
-    sleep_calls: Deque[float] = deque()
+class StubPermitGate:
+    def __init__(self, decisions: Deque[QuotaPermitDecision]) -> None:
+        self.decisions = decisions
+        self.calls: List[Dict[str, Optional[str]]] = []
 
-    async def fake_sleep(value: float) -> None:
-        sleep_calls.append(value)
+    def permit(
+        self, platform: str, channel: Optional[str], job: Optional[str] = None
+    ) -> QuotaPermitDecision:
+        self.calls.append({"platform": platform, "channel": channel, "job": job})
+        return self.decisions.popleft()
 
-    jitter_values = deque([0.0, 42.0])
 
-    def fake_next_slot(ts: float, clash: bool, jitter_range: tuple[int, int] = (60, 180)) -> float:
-        assert clash in (False, True)
-        delta = jitter_values.popleft()
-        return ts + delta
+class SequencedWeather:
+    def __init__(self, values: Deque[str]) -> None:
+        self.values = values
 
-    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", fake_next_slot)
+    async def __call__(self, _: Mapping[str, object]) -> str:
+        return self.values.popleft()
 
-    config: Mapping[str, object] = {
+
+async def test_daily_pipeline_uses_permit_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings: Dict[str, object] = {
         "timezone": "UTC",
-        "profiles": {"discord": {"enabled": True, "channel": "alerts"}},
-        "cooldown": {"window_sec": 60, "mult_min": 1.0, "mult_max": 2.0, "coeff": {"rate": 0.0, "time": 0.0, "eng": 0.0}},
-        "dedupe": {"recent_k": 5, "sim_threshold": 0.99},
-        "quota": {"per_channel": {"day": 5, "window_min": 60, "burst_limit": 1}},
+        "profiles": {"discord": {"enabled": True, "channel": "general"}},
+        "weather": {"schedule": "00:00"},
     }
 
-    scheduler, orchestrator = bootstrap_main(
-        config,
+    queue = CoalesceQueue(window_seconds=0.0, threshold=2)
+    sender = StubSender()
+    decisions = deque(
+        [
+            QuotaPermitDecision(allowed=True, reason=None, retryable=True),
+            QuotaPermitDecision(allowed=False, reason="quota", retryable=True),
+        ]
+    )
+    permit_gate = StubPermitGate(decisions)
+
+    weather_values = deque(["one", "two", "three", "four"])
+    monkeypatch.setattr(
+        main_module,
+        "build_weather_post",
+        SequencedWeather(weather_values),
+    )
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(
+        settings,
         sender=sender,
-        queue_window_seconds=60.0,
-        queue_threshold=1,
-        sleep=fake_sleep,
-        now=clock.now,
+        queue=queue,
+        permit_gate=permit_gate,
     )
+    scheduler.jitter_enabled = False
 
-    scheduler.queue.push(
-        "first", priority=5, created_at=clock.now(), channel="alerts", job="weather"
-    )
-    await scheduler.dispatch_ready_batches(clock.now())
-    await asyncio.wait_for(orchestrator.flush(), timeout=0.1)
+    assert "weather" in jobs
 
-    scheduler.queue.push(
-        "second", priority=5, created_at=clock.now(), channel="alerts", job="weather"
-    )
-    await scheduler.dispatch_ready_batches(clock.now())
-    await asyncio.wait_for(orchestrator.flush(), timeout=0.1)
+    now = dt.datetime(2024, 1, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo("UTC"))
+    now_ts = now.timestamp()
 
-    assert list(sleep_calls) == [0.0, 42.0]
-    assert sender.calls == [("weather", "alerts", "first")]
+    await scheduler._run_due_jobs(now)
+    await scheduler._run_due_jobs(now)
+    await scheduler.dispatch_ready_batches(now_ts)
+    await orchestrator.flush()
+
+    assert sender.sent == ["general:one\ntwo"]
+    assert len(permit_gate.calls) == 1
+
+    await scheduler._run_due_jobs(now)
+    await scheduler._run_due_jobs(now)
+    await scheduler.dispatch_ready_batches(now_ts)
+    await orchestrator.flush()
+
+    assert sender.sent == ["general:one\ntwo"]
+    assert len(permit_gate.calls) == 2
+    await orchestrator.close()

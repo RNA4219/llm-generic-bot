@@ -1,130 +1,106 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple, cast
+from types import SimpleNamespace
+from typing import Any, Awaitable, Callable, Mapping, Optional, cast
 
 from .adapters.discord import DiscordSender
 from .adapters.misskey import MisskeySender
 from .config.loader import Settings
-from .config.quotas import load_quota_settings
+from .config.quotas import QuotaSettings, load_quota_settings
 from .core.arbiter import PermitGate
 from .core.cooldown import CooldownGate
 from .core.dedupe import NearDuplicateFilter
-from .core.orchestrator import Orchestrator, PermitDecision, PermitEvaluator, Sender as OrchestratorSender
+from .core.orchestrator import Orchestrator, PermitDecision, PermitDecisionLike, Sender
 from .core.queue import CoalesceQueue
 from .core.scheduler import Scheduler
 from .features.weather import build_weather_post
 
-SleepFn = Callable[[float], Awaitable[None]]
-NowFn = Callable[[], float]
+def _as_mapping(value: object) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
-def _resolve_mapping(value: object) -> Mapping[str, Any]:
-    if isinstance(value, Mapping):
-        return value
-    return {}
-
-
-def _resolve_channel(profile: Mapping[str, Any]) -> str:
-    channel = profile.get("channel", "default")
-    return str(channel)
-
-
-def bootstrap_main(
+def setup_runtime(
     settings: Mapping[str, Any],
     *,
-    sender: OrchestratorSender | None = None,
-    queue_window_seconds: float | None = None,
-    queue_threshold: int | None = None,
-    sleep: SleepFn | None = None,
-    now: NowFn | None = None,
-) -> Tuple[Scheduler, Orchestrator]:
-    tz = str(settings.get("timezone", "Asia/Tokyo"))
+    sender: Optional[Sender] = None,
+    queue: Optional[CoalesceQueue] = None,
+    permit_gate: Optional[PermitGate] = None,
+) -> tuple[Scheduler, Orchestrator, dict[str, Callable[[], Awaitable[Optional[str]]]]]:
+    cfg = dict(settings)
+    tz = str(cfg.get("timezone", "Asia/Tokyo"))
+    cooldown_cfg = _as_mapping(cfg.get("cooldown"))
+    def _num(value: Any, default: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
 
-    cooldown_raw = _resolve_mapping(settings.get("cooldown", {}))
-    coeff_raw = _resolve_mapping(cooldown_raw.get("coeff", {}))
+    coeff_cfg = _as_mapping(cooldown_cfg.get("coeff"))
     cooldown = CooldownGate(
-        int(cooldown_raw.get("window_sec", 1800)),
-        float(cooldown_raw.get("mult_min", 1.0)),
-        float(cooldown_raw.get("mult_max", 6.0)),
-        float(coeff_raw.get("rate", 0.5)),
-        float(coeff_raw.get("time", 0.8)),
-        float(coeff_raw.get("eng", 0.6)),
+        int(_num(cooldown_cfg.get("window_sec"), 1800)),
+        _num(cooldown_cfg.get("mult_min"), 1.0),
+        _num(cooldown_cfg.get("mult_max"), 6.0),
+        _num(coeff_cfg.get("rate"), 0.5), _num(coeff_cfg.get("time"), 0.8), _num(coeff_cfg.get("eng"), 0.6),
     )
+    dedupe_cfg = _as_mapping(cfg.get("dedupe"))
+    dedupe = NearDuplicateFilter(k=int(_num(dedupe_cfg.get("recent_k"), 20)), threshold=_num(dedupe_cfg.get("sim_threshold"), 0.93))
+    quota: QuotaSettings = load_quota_settings(cfg)
+    gate = permit_gate or (PermitGate(per_channel=quota.per_channel) if quota.per_channel else None)
 
-    dedupe_raw = _resolve_mapping(settings.get("dedupe", {}))
-    dedupe = NearDuplicateFilter(
-        k=int(dedupe_raw.get("recent_k", 20)),
-        threshold=float(dedupe_raw.get("sim_threshold", 0.93)),
-    )
-
-    quota_settings = load_quota_settings(settings)
-    permit_gate: PermitGate | None = None
-    if quota_settings.per_channel is not None:
-        permit_gate = PermitGate(per_channel=quota_settings.per_channel, time_fn=now)
-
-    profiles_raw = _resolve_mapping(settings.get("profiles", {}))
-    discord_profile = _resolve_mapping(profiles_raw.get("discord", {}))
-    misskey_profile = _resolve_mapping(profiles_raw.get("misskey", {}))
-    use_discord = bool(discord_profile.get("enabled"))
-    platform = "discord" if use_discord else "misskey"
-    active_channel = _resolve_channel(discord_profile if use_discord else misskey_profile)
-
-    active_sender: OrchestratorSender
-    if sender is None:
-        discord_sender = DiscordSender()
-        misskey_sender = MisskeySender()
-        active_sender = discord_sender if use_discord else misskey_sender
+    permit: Callable[[str, Optional[str], str], PermitDecisionLike]
+    if gate is None:
+        def permit(
+            _platform: str, _channel: Optional[str], job: str
+        ) -> PermitDecisionLike:
+            return PermitDecision.allowed(job)
     else:
-        active_sender = sender
+        def permit(
+            platform: str, channel: Optional[str], job: str
+        ) -> PermitDecisionLike:
+            decision = gate.permit(platform, channel, job)
+            if decision.allowed:
+                return PermitDecision.allowed(decision.job or job)
+            return PermitDecision(
+                allowed=False,
+                reason=decision.reason,
+                retryable=decision.retryable,
+                job=decision.job or job,
+            )
 
-    def permit(platform_name: str, channel: Optional[str], job: str) -> PermitDecision:
-        if permit_gate is None:
-            return PermitDecision.allow(job)
-        raw = permit_gate.permit(platform_name, channel or "-")
-        if raw.allowed:
-            return PermitDecision.allow(job)
-        return PermitDecision(False, raw.reason, job)
+    profiles = _as_mapping(cfg.get("profiles"))
+    discord_cfg = _as_mapping(profiles.get("discord"))
+    misskey_cfg = _as_mapping(profiles.get("misskey"))
+    default_channel: Optional[str]
+    if discord_cfg.get("enabled"):
+        platform = "discord"
+        channel_value = discord_cfg.get("channel")
+        default_channel = channel_value if isinstance(channel_value, str) else "default"
+        active_sender: Sender = sender or DiscordSender()
+    else:
+        platform = "misskey"
+        channel_value = misskey_cfg.get("channel")
+        default_channel = channel_value if isinstance(channel_value, str) else None
+        active_sender = sender or MisskeySender()
 
-    permit_fn = cast(PermitEvaluator, permit)
+    orchestrator = Orchestrator(sender=active_sender, cooldown=cooldown, dedupe=dedupe, permit=permit)
 
-    orchestrator = Orchestrator(
-        sender=active_sender,
-        cooldown=cooldown,
-        dedupe=dedupe,
-        permit=permit_fn,
-        platform=platform,
-    )
+    async def send(text: str, channel: Optional[str] = None) -> None:
+        await orchestrator.enqueue(text, job="weather", platform=platform, channel=channel or default_channel)
 
-    queue = CoalesceQueue(
-        window_seconds=queue_window_seconds if queue_window_seconds is not None else 180.0,
-        threshold=queue_threshold if queue_threshold is not None else 3,
-    )
+    scheduler = Scheduler(tz=tz, sender=cast(Sender, SimpleNamespace(send=send)), queue=queue)
+    weather_cfg = _as_mapping(cfg.get("weather"))
+    schedule_value = weather_cfg.get("schedule")
+    schedule = schedule_value if isinstance(schedule_value, str) else "21:00"
+    async def job_weather() -> Optional[str]:
+        return await build_weather_post(cfg)
 
-    scheduler_kwargs: dict[str, Any] = {
-        "tz": tz,
-        "sender": orchestrator,
-        "queue": queue,
-    }
-    if sleep is not None:
-        scheduler_kwargs["sleep"] = sleep
-    scheduler = Scheduler(**scheduler_kwargs)
-
-    weather_raw = _resolve_mapping(settings.get("weather", {}))
-    schedule = str(weather_raw.get("schedule", "21:00"))
-
-    async def weather_job() -> str:
-        settings_payload = cast(Dict[str, Any], dict(settings))
-        return await build_weather_post(settings_payload)
-
-    scheduler.every_day("weather", schedule, weather_job, channel=active_channel)
-
-    return scheduler, orchestrator
+    scheduler.every_day("weather", schedule, job_weather, channel=default_channel)
+    return scheduler, orchestrator, {"weather": job_weather}
 
 
 async def main() -> None:
-    cfg = Settings("config/settings.json").data
-    scheduler, orchestrator = bootstrap_main(cfg)
+    scheduler, orchestrator, _ = setup_runtime(Settings("config/settings.json").data)
     try:
         await scheduler.run_forever()
     finally:

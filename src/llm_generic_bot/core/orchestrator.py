@@ -22,19 +22,32 @@ class Sender(Protocol):
         ...
 
 
+class PermitDecisionLike(Protocol):
+    allowed: bool
+    reason: Optional[str]
+    retryable: bool
+    job: Optional[str]
+
+
 @dataclass(frozen=True)
-class PermitDecision:
+class _PermitDecision:
     allowed: bool
     reason: Optional[str] = None
+    retryable: bool = True
     job: Optional[str] = None
 
     @classmethod
-    def allow(cls, job: Optional[str] = None) -> "PermitDecision":
-        return cls(True, None, job)
+    def allowed(cls, job: Optional[str] = None) -> "PermitDecisionLike":
+        return cls(True, None, True, job)
+
+
+PermitDecision = _PermitDecision
 
 
 class PermitEvaluator(Protocol):
-    def __call__(self, platform: str, channel: Optional[str], job: str) -> PermitDecision:
+    def __call__(
+        self, platform: str, channel: Optional[str], job: str
+    ) -> PermitDecisionLike:
         ...
 
 
@@ -160,7 +173,9 @@ class Orchestrator:
             "channel": request.channel or "-",
         }
         if not decision.allowed:
-            self._metrics.increment("send.denied", tags)
+            retryable_flag = "true" if decision.retryable else "false"
+            denied_tags = {**tags, "retryable": retryable_flag}
+            self._metrics.increment("send.denied", denied_tags)
             self._logger.info(
                 "permit_denied",
                 extra={
@@ -170,6 +185,7 @@ class Orchestrator:
                     "platform": request.platform,
                     "channel": request.channel,
                     "reason": decision.reason,
+                    "retryable": decision.retryable,
                 },
             )
             return

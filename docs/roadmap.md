@@ -3,9 +3,9 @@
 ## 現在の完成度
 - `main.py` は設定読込後に日次天気ジョブのみをスケジュールし、近傍デデュープ・クールダウン記録を経由して Discord/Misskey 送信クラスへ委譲している。
 - 天気機能は OpenWeather から都市ごとの現在値を取得し、30℃/35℃閾値や前日比ΔTをもとに注意枠を生成しつつ today/yesterday キャッシュをローテーションしている。
-- スケジューラ、クールダウン、アービタ、デデュープといった基盤コンポーネントは最小限実装で、時刻一致のみのスケジューリングなど拡張余地がある。
-- Discord/Misskey 送信は単発 POST のみでリトライや構造化ログが未整備。
-- News/おみくじはスタブのままでコンテンツ未着手、テストはクールダウン境界ケースのみをカバー。
+- スケジューラ、クールダウン、アービタ、デデュープといった基盤コンポーネントは最小限実装で、スケジューラ経路は単発ジョブを直送するのみでバッチ化やジッタ付与が未統合。
+- Discord/Misskey 送信は RetryPolicy と構造化ログを導入済みで、送信成否が JSON ログに収集される。
+- Permit ゲートのクォータ統合とスケジューラ経路の拡張が残課題で、News/おみくじもスタブ段階。テストはリトライ・クォータ・ジッタ・構造化ログの先行ケースまで追加済み。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ
 - [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）: 429/5xx を指数バックオフ付きで再送し、上限回数で失敗をロギング。
@@ -13,7 +13,7 @@
 - [SCH-01] CoalesceQueue（`core/scheduler.py`）: 近接メッセージを併合し、送信処理にバッチで渡す。
 - [SCH-02] ジッタ適用（`core/scheduler.py`）: 送信時刻にランダムオフセットを付与し突発集中を緩和。
 - [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator.py`）: 送信結果とコンテキストを JSON ログで記録。
-- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: GitHub Actions 上で `pytest`・`mypy`・`ruff` をキャッシュ付きジョブとして自動実行し、`main`/PR へのプッシュ時に品質ゲートを設ける。依存: `pyproject.toml` の型/リンタ設定確定および [SND-01]/[OPS-01] でのログ要件確定。
+- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: 既存の `pytest` ジョブを土台に lint/type チェックを段階導入し、`main`/PR へのプッシュ時に品質ゲートを設ける。依存: `pyproject.toml` の型/リンタ設定確定および [SND-01]/[OPS-01] でのログ要件確定。
 
 ## Sprint 2: UX & コンテンツ
 - [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator.py`）: 反応履歴を参照し出力頻度を調整。

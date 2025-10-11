@@ -33,6 +33,7 @@ class DiscordSender:
         channel: str | None = None,
         *,
         correlation_id: str | None = None,
+        job: str | None = None,
     ) -> None:
         channel_id = channel or self.channel_id
         if not (self.token and channel_id):

@@ -14,7 +14,7 @@ class StubSender:
     def __init__(self) -> None:
         self.sent: List[str] = []
 
-    async def send(self, text: str, channel: str | None = None) -> None:
+    async def send(self, text: str, channel: str | None = None, *, job: str) -> None:
         self.sent.append(text if channel is None else f"{channel}:{text}")
 
 
@@ -50,12 +50,12 @@ async def test_scheduler_applies_jitter(monkeypatch: pytest.MonkeyPatch) -> None
     )
 
     base = 1000.0
-    queue.push("first", priority=5, created_at=base)
+    queue.push("first", priority=5, job="daily", created_at=base)
     await scheduler.dispatch_ready_batches(base)
     assert list(delays) == [0.0]
     assert sender.sent == ["first"]
 
-    queue.push("second", priority=3, created_at=base)
+    queue.push("second", priority=3, job="daily", created_at=base)
     await scheduler.dispatch_ready_batches(base)
     assert list(delays) == [0.0, 30.0]
     assert sender.sent == ["first", "second"]
@@ -83,7 +83,7 @@ async def test_scheduler_immediate_when_jitter_disabled(monkeypatch: pytest.Monk
     )
 
     base = 5000.0
-    queue.push("only", priority=1, created_at=base)
+    queue.push("only", priority=1, job="daily", created_at=base)
     await scheduler.dispatch_ready_batches(base)
 
     assert list(delays) == [0.0]

@@ -31,6 +31,7 @@ class MisskeySender:
         channel: str | None = None,
         *,
         correlation_id: str | None = None,
+        job: str | None = None,
     ) -> None:
         if not (self.instance and self.token):
             return

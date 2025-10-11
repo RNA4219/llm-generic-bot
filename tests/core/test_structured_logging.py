@@ -44,13 +44,13 @@ class StubSender:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str | None]] = []
 
-    async def send(self, text: str, channel: str | None = None) -> None:
+    async def send(self, text: str, channel: str | None = None, *, job: str) -> None:
         await asyncio.sleep(0)
         self.sent.append((text, channel))
 
 
 class FailingSender(StubSender):
-    async def send(self, text: str, channel: str | None = None) -> None:
+    async def send(self, text: str, channel: str | None = None, *, job: str) -> None:
         await asyncio.sleep(0)
         raise RuntimeError("boom")
 
@@ -81,7 +81,7 @@ async def test_orchestrator_logs_success_with_correlation_id(caplog: pytest.LogC
     metrics = MetricsStub()
 
     def permit(_: str, __: str | None, ___: str) -> PermitDecision:
-        return PermitDecision.allowed()
+        return PermitDecision.allow()
 
     orchestrator = Orchestrator(
         sender=sender,
@@ -90,6 +90,7 @@ async def test_orchestrator_logs_success_with_correlation_id(caplog: pytest.LogC
         permit=permit,
         metrics=metrics,
         logger=logging.getLogger("test.orchestrator"),
+        platform="discord",
     )
 
     caplog.set_level(logging.INFO)
@@ -121,7 +122,7 @@ async def test_orchestrator_logs_failure_and_metrics(caplog: pytest.LogCaptureFi
     metrics = MetricsStub()
 
     def permit(_: str, __: str | None, ___: str) -> PermitDecision:
-        return PermitDecision.allowed()
+        return PermitDecision.allow()
 
     orchestrator = Orchestrator(
         sender=sender,
@@ -130,6 +131,7 @@ async def test_orchestrator_logs_failure_and_metrics(caplog: pytest.LogCaptureFi
         permit=permit,
         metrics=metrics,
         logger=logging.getLogger("test.orchestrator"),
+        platform="discord",
     )
 
     caplog.set_level(logging.ERROR)
@@ -168,6 +170,7 @@ async def test_orchestrator_logs_permit_denial(caplog: pytest.LogCaptureFixture)
         permit=permit,
         metrics=metrics,
         logger=logging.getLogger("test.orchestrator"),
+        platform="discord",
     )
 
     caplog.set_level(logging.INFO)

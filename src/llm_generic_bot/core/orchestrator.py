@@ -12,7 +12,13 @@ from .dedupe import NearDuplicateFilter
 
 
 class Sender(Protocol):
-    async def send(self, text: str, channel: Optional[str] = None) -> None:
+    async def send(
+        self,
+        text: str,
+        channel: Optional[str] = None,
+        *,
+        job: Optional[str] = None,
+    ) -> None:
         ...
 
 
@@ -23,7 +29,7 @@ class PermitDecision:
     job: Optional[str] = None
 
     @classmethod
-    def allowed(cls, job: Optional[str] = None) -> "PermitDecision":
+    def allow(cls, job: Optional[str] = None) -> "PermitDecision":
         return cls(True, None, job)
 
 
@@ -68,6 +74,7 @@ class Orchestrator:
         metrics: MetricsRecorder | None = None,
         logger: Optional[logging.Logger] = None,
         queue_size: int = 128,
+        platform: str = "-",
     ) -> None:
         self._sender = sender
         self._cooldown = cooldown
@@ -78,6 +85,7 @@ class Orchestrator:
         self._queue: asyncio.Queue[_SendRequest | None] = asyncio.Queue(maxsize=queue_size)
         self._worker: asyncio.Task[None] | None = None
         self._closed = False
+        self._default_platform = platform
         self._start_worker()
 
     async def enqueue(
@@ -116,6 +124,21 @@ class Orchestrator:
     def _start_worker(self) -> None:
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._run())
+
+    async def send(
+        self,
+        text: str,
+        channel: Optional[str] = None,
+        *,
+        job: str,
+    ) -> None:
+        await self.enqueue(
+            text,
+            job=job,
+            platform=self._default_platform,
+            channel=channel,
+        )
+        await self.flush()
 
     async def _run(self) -> None:
         while True:
@@ -167,7 +190,7 @@ class Orchestrator:
 
         start = time.perf_counter()
         try:
-            await self._sender.send(request.text, request.channel)
+            await self._sender.send(request.text, request.channel, job=job_name)
         except Exception as exc:  # noqa: BLE001 - 上位での再送制御対象
             self._metrics.increment("send.failure", tags)
             self._logger.error(

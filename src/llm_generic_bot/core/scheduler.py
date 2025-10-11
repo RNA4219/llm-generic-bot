@@ -75,6 +75,7 @@ class Scheduler:
                 self.queue.push(
                     result,
                     priority=job.priority,
+                    job=job.name,
                     created_at=ts,
                     channel=job.channel,
                 )
@@ -99,6 +100,6 @@ class Scheduler:
             target_ts = next_slot(reference_ts, clash, self.jitter_range)
         delay = max(0.0, target_ts - reference_ts)
         await self._sleep(delay)
-        await self.sender.send(batch.text, batch.channel)
+        await self.sender.send(batch.text, batch.channel, job=batch.job)
         self._last_dispatch_ts = target_ts if delay > 0 else reference_ts
         return target_ts

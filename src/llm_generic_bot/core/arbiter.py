@@ -1,10 +1,104 @@
-import random, time
-from typing import Tuple
+from __future__ import annotations
 
-def jitter_seconds(jitter_range: Tuple[int,int]) -> int:
+import logging
+import random
+import time
+from collections import deque
+from dataclasses import dataclass
+from typing import Callable, Deque, Dict, Optional, Tuple
+
+from llm_generic_bot.config.quotas import PerChannelQuotaConfig
+
+DAY_SECONDS = 86400
+
+
+@dataclass(frozen=True)
+class PermitDecision:
+    allowed: bool
+    reason: Optional[str]
+    retryable: bool
+
+
+class PermitGate:
+    def __init__(
+        self,
+        *,
+        per_channel: PerChannelQuotaConfig,
+        metrics: Optional[Callable[[str, Dict[str, str]], None]] = None,
+        logger: Optional[logging.Logger] = None,
+        time_fn: Optional[Callable[[], float]] = None,
+    ) -> None:
+        self.per_channel = per_channel
+        self._metrics = metrics
+        self._logger = logger or logging.getLogger(__name__)
+        self._time = time_fn or time.time
+        self._history: Dict[Tuple[str, str], Deque[float]] = {}
+
+    def permit(self, platform: str, channel: str) -> PermitDecision:
+        key = (platform or "-", channel or "-")
+        history = self._history.setdefault(key, deque())
+        now = self._time()
+        self._evict(history, now)
+
+        if self._exceeds_burst(history, now):
+            return self._deny(
+                platform,
+                channel,
+                code="burst_limit",
+                message="burst limit reached",
+                retryable=True,
+            )
+
+        if self._exceeds_daily(history):
+            return self._deny(
+                platform,
+                channel,
+                code="daily_limit",
+                message="daily limit reached",
+                retryable=False,
+            )
+
+        history.append(now)
+        return PermitDecision(allowed=True, reason=None, retryable=True)
+
+    def _exceeds_burst(self, history: Deque[float], now: float) -> bool:
+        window_start = now - self.per_channel.window_seconds
+        count = sum(1 for ts in history if ts >= window_start)
+        return count >= self.per_channel.burst_limit
+
+    def _exceeds_daily(self, history: Deque[float]) -> bool:
+        count = len(history)
+        return count >= self.per_channel.day
+
+    def _evict(self, history: Deque[float], now: float) -> None:
+        cutoff = now - DAY_SECONDS
+        while history and history[0] < cutoff:
+            history.popleft()
+
+    def _deny(
+        self,
+        platform: str,
+        channel: str,
+        *,
+        code: str,
+        message: str,
+        retryable: bool,
+    ) -> PermitDecision:
+        tags = {"platform": platform, "channel": channel, "code": code}
+        if self._metrics is not None:
+            self._metrics("quota_denied", tags)
+        self._logger.warning(
+            "Quota denied for %s/%s: %s", platform or "-", channel or "-", message
+        )
+        return PermitDecision(allowed=False, reason=message, retryable=retryable)
+
+
+def jitter_seconds(jitter_range: Tuple[int, int]) -> int:
     lo, hi = jitter_range
     return random.randint(lo, hi)
 
-def next_slot(ts: float, clash: bool, jitter_range=(60,180)) -> float:
-    if not clash: return ts
+
+def next_slot(ts: float, clash: bool, jitter_range: Tuple[int, int] = (60, 180)) -> float:
+    if not clash:
+        return ts
     return ts + jitter_seconds(jitter_range)

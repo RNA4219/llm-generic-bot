@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+config/settings.json
+weather_cache.json
+.dist/

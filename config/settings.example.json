@@ -1,0 +1,42 @@
+{
+  "timezone": "Asia/Tokyo",
+  "cooldown": {
+    "window_sec": 1800,
+    "mult_min": 1.0,
+    "mult_max": 6.0,
+    "coeff": { "rate": 0.5, "time": 0.8, "eng": 0.6 },
+    "time_bands": [
+      { "range": ["05:00","09:00"], "factor": 1.5 },
+      { "range": ["23:00","05:00"], "factor": 1.2 }
+    ],
+    "jobs": {
+      "greeting":  { "base_gap_sec": 3600, "priority": 40 },
+      "news":      { "base_gap_sec": 1800, "priority": 50, "coalesce_window_sec": 900 },
+      "monologue": { "base_gap_sec": 2700, "priority": 20, "coalesce_window_sec": 1200 },
+      "omikuji":   { "base_gap_sec": 10800,"priority": 10 },
+      "weather":   { "base_gap_sec": 86400,"priority": 80 }
+    }
+  },
+  "quota": { "per_channel": { "day": 20, "window_min": 30, "burst_limit": 5 } },
+  "arbiter": { "jitter_sec": [60, 180] },
+  "dedupe": { "enable": true, "recent_k": 20, "sim_threshold": 0.93 },
+  "limits": { "max_lines_night": 4, "max_emojis_night": 1 },
+  "weather": {
+    "schedule": "21:00",
+    "thresholds": { "hot_30": 30.0, "hot_35": 35.0, "delta_warn": 7.0, "delta_strong": 10.0 },
+    "icons": { "hot_30": "🌡️", "hot_35": "🔥", "delta_up": "🔺", "delta_down": "🔻", "warn": "⚠️" },
+    "cities": {
+      "関東": ["Tokyo", "Yokohama"],
+      "関西": ["Osaka", "Kyoto"]
+    },
+    "template": {
+      "header": "🗓️ 今夜の各地の天気",
+      "line": "{city}: {temp:.1f}℃ {desc} {hot_icon}{delta_tag}",
+      "footer_warn": "— 注意喚起 —\n{bullets}"
+    }
+  },
+  "profiles": {
+    "discord": { "enabled": true },
+    "misskey": { "enabled": false }
+  }
+}

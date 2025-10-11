@@ -10,12 +10,14 @@ class QueueBatch:
     priority: int
     text: str
     channel: Optional[str]
+    job: str
     created_at: float
 
 
 @dataclass(slots=True)
 class _PendingBatch:
     start: float
+    job: str
     messages: List[str] = field(default_factory=list)
     priority: int = 0
     channel: Optional[str] = None
@@ -43,13 +45,20 @@ class CoalesceQueue:
         text: str,
         *,
         priority: int,
+        job: str,
         created_at: Optional[float] = None,
         channel: Optional[str] = None,
     ) -> None:
         ts = created_at if created_at is not None else time.time()
-        batch = self._find_batch(ts, channel)
+        batch = self._find_batch(ts, channel, job)
         if batch is None:
-            batch = _PendingBatch(start=ts, priority=priority, channel=channel, ready_at=ts + self._window)
+            batch = _PendingBatch(
+                start=ts,
+                job=job,
+                priority=priority,
+                channel=channel,
+                ready_at=ts + self._window,
+            )
             self._pending.append(batch)
         else:
             batch.priority = min(batch.priority, priority)
@@ -68,6 +77,7 @@ class CoalesceQueue:
                         priority=batch.priority,
                         text="\n".join(batch.messages),
                         channel=batch.channel,
+                        job=batch.job,
                         created_at=batch.start,
                     )
                 )
@@ -77,9 +87,9 @@ class CoalesceQueue:
         ready.sort(key=lambda item: (item.priority, item.created_at))
         return ready
 
-    def _find_batch(self, ts: float, channel: Optional[str]) -> Optional[_PendingBatch]:
+    def _find_batch(self, ts: float, channel: Optional[str], job: str) -> Optional[_PendingBatch]:
         for batch in self._pending:
-            if batch.channel != channel:
+            if batch.channel != channel or batch.job != job:
                 continue
             if ts - batch.start <= self._window:
                 return batch

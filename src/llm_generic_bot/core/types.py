@@ -1,7 +1,7 @@
-from typing import Protocol, Iterable, Optional, Dict, Any
+from typing import Any, Dict, Optional, Protocol
 
 class Sender(Protocol):
-    async def send(self, text: str, channel: Optional[str] = None) -> None: ...
+    async def send(self, text: str, channel: Optional[str] = None, *, job: str) -> None: ...
 
 class Job(Protocol):
     name: str

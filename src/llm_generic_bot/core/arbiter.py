@@ -17,6 +17,7 @@ class PermitDecision:
     allowed: bool
     reason: Optional[str]
     retryable: bool
+    job: Optional[str] = None
 
 
 class PermitGate:
@@ -34,7 +35,12 @@ class PermitGate:
         self._time = time_fn or time.time
         self._history: Dict[Tuple[str, str], Deque[float]] = {}
 
-    def permit(self, platform: str, channel: str) -> PermitDecision:
+    def permit(
+        self,
+        platform: str,
+        channel: Optional[str],
+        job: Optional[str] = None,
+    ) -> PermitDecision:
         key = (platform or "-", channel or "-")
         history = self._history.setdefault(key, deque())
         now = self._time()
@@ -47,6 +53,7 @@ class PermitGate:
                 code="burst_limit",
                 message="burst limit reached",
                 retryable=True,
+                job=job,
             )
 
         if self._exceeds_daily(history):
@@ -56,10 +63,11 @@ class PermitGate:
                 code="daily_limit",
                 message="daily limit reached",
                 retryable=False,
+                job=job,
             )
 
         history.append(now)
-        return PermitDecision(allowed=True, reason=None, retryable=True)
+        return PermitDecision(allowed=True, reason=None, retryable=True, job=job)
 
     def _exceeds_burst(self, history: Deque[float], now: float) -> bool:
         window_start = now - self.per_channel.window_seconds
@@ -78,19 +86,29 @@ class PermitGate:
     def _deny(
         self,
         platform: str,
-        channel: str,
+        channel: Optional[str],
         *,
         code: str,
         message: str,
         retryable: bool,
+        job: Optional[str],
     ) -> PermitDecision:
-        tags = {"platform": platform, "channel": channel, "code": code}
+        tags = {
+            "platform": platform or "-",
+            "channel": channel or "-",
+            "code": code,
+        }
         if self._metrics is not None:
             self._metrics("quota_denied", tags)
         self._logger.warning(
             "Quota denied for %s/%s: %s", platform or "-", channel or "-", message
         )
-        return PermitDecision(allowed=False, reason=message, retryable=retryable)
+        return PermitDecision(
+            allowed=False,
+            reason=message,
+            retryable=retryable,
+            job=job,
+        )
 
 
 def jitter_seconds(jitter_range: Tuple[int, int]) -> int:

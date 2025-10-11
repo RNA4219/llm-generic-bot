@@ -4,8 +4,10 @@
 - `main.py` は設定読込後に日次天気ジョブのみをスケジュールし、近傍デデュープ・クールダウン記録を経由して Discord/Misskey 送信クラスへ委譲している。
 - 天気機能は OpenWeather から都市ごとの現在値を取得し、30℃/35℃閾値や前日比ΔTをもとに注意枠を生成しつつ today/yesterday キャッシュをローテーションしている。
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
+- `setup_runtime` で PermitGate と CoalesceQueue を有効化済みで、Permit が `QuotaConfig` に従って発火しつつバッチ併合が稼働している。
+- integration テストでは Permit/Coalesce 経路を含む end-to-end の送信処理を検証し、Permit 拒否や併合結果の JSON 出力をスナップショット化している。
 - スケジューラ、クールダウン、アービタ、デデュープといった基盤コンポーネントは最小限実装のままで、単発ジョブ直送の経路のみが稼働している。Permit ゲートのクォータ統合やスケジューラ経路のバッチ化・ジッタ付与、News/おみくじ機能の本実装が残課題。
-- テストはリトライ・クォータ・ジッタ・構造化ログの先行ケースまで追加済み。
+- テストはリトライ・クォータ・ジッタ・構造化ログ、Permit/Coalesce の integration ケースまで追加済み。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ
 - [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）: 429/5xx を指数バックオフ付きで再送し、上限回数で失敗をロギング。
@@ -13,7 +15,8 @@
 - [SCH-01] CoalesceQueue（`core/scheduler.py`）: 近接メッセージを併合し、送信処理にバッチで渡す。
 - [SCH-02] ジッタ適用（`core/scheduler.py`）: 送信時刻にランダムオフセットを付与し突発集中を緩和。
 - [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator.py`）: 送信結果とコンテキストを JSON ログで記録。
-- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: 既存の `pytest` ジョブを軸に、`ruff`/`black` 連携の lint ジョブ、`mypy --strict` の type ジョブ、`pytest -m "not slow"` を分離した test ジョブを順に導入する。lint→type→test の依存を明示し、共通セットアップは再利用可能な composite action 化で集約する。依存: `pyproject.toml` の型/リンタ設定確定および [SND-01]/[OPS-01] でのログ要件確定。
+- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: `ruff check`、`mypy src`、`pytest -q` を独立ジョブとして並列運用している現行構成を維持しつつ、Lint/Type/Test の成否を Slack 通知するガードレールを追加する。依存: 共通セットアップの composite action 化。
+- [OPS-06] セキュリティスキャン拡充（`.github/workflows/ci.yml`）: CodeQL 解析と `pip-audit` を週次ジョブで追加し、依存ライブラリの脆弱性検出を自動化する。依存: [OPS-05] の共通セットアップ整備。
 
 ## Sprint 2: UX & コンテンツ
 - [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator.py`）: 反応履歴を参照し出力頻度を調整。

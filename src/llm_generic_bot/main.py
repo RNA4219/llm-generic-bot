@@ -1,42 +1,73 @@
 from __future__ import annotations
-import os, asyncio, datetime as dt
-from .config.loader import Settings
-from .core.scheduler import Scheduler
-from .core.cooldown import CooldownGate
-from .core.arbiter import next_slot
-from .core.dedupe import NearDuplicateFilter
+
+import asyncio
+
 from .adapters.discord import DiscordSender
 from .adapters.misskey import MisskeySender
+from .config.loader import Settings
+from .core.cooldown import CooldownGate
+from .core.dedupe import NearDuplicateFilter
+from .core.orchestrator import Orchestrator, PermitDecision
+from .core.scheduler import Scheduler
 from .features.weather import build_weather_post
 
-async def main():
+
+class _AllowAllPermit:
+    def __call__(self, platform: str, channel: str | None, job: str) -> PermitDecision:
+        return PermitDecision.allowed(job)
+
+
+async def main() -> None:
     cfg = Settings("config/settings.json").data
-    tz = cfg.get("timezone","Asia/Tokyo")
+    tz = cfg.get("timezone", "Asia/Tokyo")
     sched = Scheduler(tz=tz)
-    # senders
+
     discord = DiscordSender()
     misskey = MisskeySender()
-    # choose active profile (Discordを既定)
-    active_sender = discord if (cfg.get("profiles",{}).get("discord",{}).get("enabled")) else misskey
+    profiles = cfg.get("profiles", {})
+    discord_enabled = profiles.get("discord", {}).get("enabled")
+    active_sender = discord if discord_enabled else misskey
+    active_platform = "discord" if discord_enabled else "misskey"
+    active_channel = profiles.get(active_platform, {}).get("channel", "default")
 
-    # cooldown
-    cd_cfg = cfg.get("cooldown",{})
-    gate = CooldownGate(cd_cfg.get("window_sec",1800), cd_cfg.get("mult_min",1.0), cd_cfg.get("mult_max",6.0),
-                        cd_cfg.get("coeff",{}).get("rate",0.5), cd_cfg.get("coeff",{}).get("time",0.8), cd_cfg.get("coeff",{}).get("eng",0.6))
-    dedupe = NearDuplicateFilter(k=cfg.get("dedupe",{}).get("recent_k",20), threshold=cfg.get("dedupe",{}).get("sim_threshold",0.93))
+    cd_cfg = cfg.get("cooldown", {})
+    gate = CooldownGate(
+        cd_cfg.get("window_sec", 1800),
+        cd_cfg.get("mult_min", 1.0),
+        cd_cfg.get("mult_max", 6.0),
+        cd_cfg.get("coeff", {}).get("rate", 0.5),
+        cd_cfg.get("coeff", {}).get("time", 0.8),
+        cd_cfg.get("coeff", {}).get("eng", 0.6),
+    )
+    dedupe = NearDuplicateFilter(
+        k=cfg.get("dedupe", {}).get("recent_k", 20),
+        threshold=cfg.get("dedupe", {}).get("sim_threshold", 0.93),
+    )
 
-    async def job_weather():
+    orchestrator = Orchestrator(
+        sender=active_sender,
+        cooldown=gate,
+        dedupe=dedupe,
+        permit=_AllowAllPermit(),
+    )
+
+    async def job_weather() -> None:
         text = await build_weather_post(cfg)
-        # dedupe
-        if not dedupe.permit(text): return
-        await active_sender.send(text)
-        gate.note_post("discord","default","weather")
+        await orchestrator.enqueue(
+            text,
+            job="weather",
+            platform=active_platform,
+            channel=active_channel,
+        )
 
-    # schedule weather
-    wcfg = cfg.get("weather",{})
-    sched.every_day("weather", wcfg.get("schedule","21:00"), job_weather)
+    wcfg = cfg.get("weather", {})
+    sched.every_day("weather", wcfg.get("schedule", "21:00"), job_weather)
 
-    await sched.run_forever()
+    try:
+        await sched.run_forever()
+    finally:
+        await orchestrator.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

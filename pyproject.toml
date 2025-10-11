@@ -19,3 +19,23 @@ dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "types-requests"]
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.mypy]
+mypy_path = ["src"]
+explicit_package_bases = true
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = [
+    "llm_generic_bot.core.orchestrator",
+    "llm_generic_bot.features.weather",
+    "llm_generic_bot.main",
+]
+ignore_errors = true
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F"]
+extend-ignore = ["E401", "E501", "E701", "F401", "F841"]

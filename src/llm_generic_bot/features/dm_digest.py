@@ -112,6 +112,16 @@ async def build_dm_digest(
                 extra={"event": "dm_digest_retry", "job": job_name, "recipient": recipient_id, "attempt": attempt},
             )
     assert last_error is not None
+    logger.error(
+        "dm_digest_failed",
+        extra={
+            "event": "dm_digest_failed",
+            "job": job_name,
+            "recipient": recipient_id,
+            "attempt": attempt,
+            "error": f"{last_error.__class__.__name__}: {last_error}",
+        },
+    )
     raise last_error
 
 

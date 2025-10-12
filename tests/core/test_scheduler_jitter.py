@@ -1,5 +1,5 @@
 from collections import deque
-from typing import Deque, List
+from typing import List
 
 import pytest
 
@@ -26,7 +26,7 @@ def anyio_backend() -> str:
 async def test_scheduler_applies_jitter(monkeypatch: pytest.MonkeyPatch) -> None:
     sender = StubSender()
     queue = CoalesceQueue(window_seconds=0.0, threshold=5)
-    delays: Deque[float] = deque()
+    delays: deque[float] = deque()
 
     async def fake_sleep(duration: float) -> None:
         delays.append(duration)
@@ -64,7 +64,7 @@ async def test_scheduler_applies_jitter(monkeypatch: pytest.MonkeyPatch) -> None
 async def test_scheduler_immediate_when_jitter_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     sender = StubSender()
     queue = CoalesceQueue(window_seconds=0.0, threshold=5)
-    delays: Deque[float] = deque()
+    delays: deque[float] = deque()
 
     async def fake_sleep(duration: float) -> None:
         delays.append(duration)

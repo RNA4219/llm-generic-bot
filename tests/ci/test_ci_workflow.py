@@ -75,12 +75,14 @@ def test_ci_workflow_notifies_slack_on_failure() -> None:
         assert (
             slack_step.get("if") == "failure()"
         ), f"job '{job_name}' Slack step must run only on failures"
-        with_section = slack_step.get("with")
-        assert isinstance(with_section, dict), "Slack step must define inputs"
-        webhook = with_section.get("webhook-url")
+        env_section = slack_step.get("env")
+        assert isinstance(env_section, dict), "Slack step must define environment"
+        webhook = env_section.get("SLACK_WEBHOOK_URL")
         assert (
             isinstance(webhook, str) and "secrets.SLACK_CI_WEBHOOK_URL" in webhook
         ), "Slack step must reference the Slack webhook secret"
+        with_section = slack_step.get("with")
+        assert isinstance(with_section, dict), "Slack step must define inputs"
         payload = with_section.get("payload")
         assert (
             isinstance(payload, str) and job_name in payload

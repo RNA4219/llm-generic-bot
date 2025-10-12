@@ -82,7 +82,13 @@ async def test_build_news_post_success(caplog: pytest.LogCaptureFixture) -> None
     assert cooldown_calls == [
         {"job": "morning-news", "platform": None, "channel": None}
     ]
-    assert any(record.message == "news_summary_ready" for record in caplog.records)
+    ready_logs = [
+        record
+        for record in caplog.records
+        if record.message == "news_summary_ready"
+    ]
+    assert ready_logs
+    assert all(getattr(record, "event", None) == "news_summary_ready" for record in ready_logs)
 
 
 async def test_build_news_post_summary_retry_and_fallback(
@@ -123,9 +129,21 @@ async def test_build_news_post_summary_retry_and_fallback(
         {"title": "記事C", "language": "ja"},
     ]
     assert permit_calls == [{"job": "evening-news", "suppress_cooldown": False}]
-    assert any(record.message == "news_summary_fallback" for record in caplog.records)
-    retry_logs = [record for record in caplog.records if record.message == "news_summary_retry"]
+    fallback_logs = [
+        record
+        for record in caplog.records
+        if record.message == "news_summary_fallback"
+    ]
+    assert fallback_logs
+    assert all(
+        getattr(record, "event", None) == "news_summary_fallback"
+        for record in fallback_logs
+    )
+    retry_logs = [
+        record for record in caplog.records if record.message == "news_summary_retry"
+    ]
     assert len(retry_logs) == 1
+    assert getattr(retry_logs[0], "event", None) == "news_summary_retry"
 
 
 async def test_build_news_post_suppressed_by_cooldown(
@@ -171,4 +189,13 @@ async def test_build_news_post_suppressed_by_cooldown(
     assert cooldown_calls == [
         {"job": "breaking-news", "platform": None, "channel": None}
     ]
-    assert any(record.message == "news_summary_skip_cooldown" for record in caplog.records)
+    skip_logs = [
+        record
+        for record in caplog.records
+        if record.message == "news_summary_skip_cooldown"
+    ]
+    assert skip_logs
+    assert all(
+        getattr(record, "event", None) == "news_summary_skip_cooldown"
+        for record in skip_logs
+    )

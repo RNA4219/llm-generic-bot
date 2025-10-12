@@ -14,10 +14,50 @@ from .core.dedupe import NearDuplicateFilter
 from .core.orchestrator import Orchestrator, PermitDecision, PermitDecisionLike, Sender
 from .core.queue import CoalesceQueue
 from .core.scheduler import Scheduler
+from .features.dm_digest import build_dm_digest
+from .features.news import build_news_post
+from .features.omikuji import build_omikuji_post
 from .features.weather import build_weather_post
 
 def _as_mapping(value: object) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _is_enabled(config: Mapping[str, Any], *, default: bool = True) -> bool:
+    flag = config.get("enabled")
+    if flag is None:
+        return default
+    if isinstance(flag, bool):
+        return flag
+    if isinstance(flag, (int, float)):
+        return bool(flag)
+    if isinstance(flag, str):
+        lowered = flag.strip().lower()
+        if lowered in {"", "0", "false", "off"}:
+            return False
+        if lowered in {"1", "true", "on"}:
+            return True
+    return default
+
+
+def _schedule_values(raw: object) -> list[str]:
+    if isinstance(raw, str):
+        return [raw] if raw else []
+    if isinstance(raw, (list, tuple, set)):
+        return [str(value) for value in raw if isinstance(value, str) and value]
+    return []
+
+
+def _collect_schedules(config: Mapping[str, Any], *, default: str) -> list[str]:
+    schedules = _schedule_values(config.get("schedule"))
+    schedules.extend(_schedule_values(config.get("schedules")))
+    return schedules or [default]
+
+
+def _optional_str(value: object) -> Optional[str]:
+    if isinstance(value, str) and value:
+        return value
+    return None
 
 
 def setup_runtime(
@@ -85,17 +125,22 @@ def setup_runtime(
 
     orchestrator = Orchestrator(sender=active_sender, cooldown=cooldown, dedupe=dedupe, permit=permit)
 
+    _CHANNEL_UNSET = object()
+
     async def send(
         text: str,
-        channel: Optional[str] = None,
+        channel: object = _CHANNEL_UNSET,
         *,
         job: str = "weather",
     ) -> None:
+        resolved_channel = (
+            default_channel if channel is _CHANNEL_UNSET else cast(Optional[str], channel)
+        )
         await orchestrator.enqueue(
             text,
             job=job,
             platform=platform,
-            channel=channel or default_channel,
+            channel=resolved_channel,
         )
 
     scheduler = Scheduler(tz=tz, sender=cast(Sender, SimpleNamespace(send=send)), queue=queue)
@@ -105,8 +150,95 @@ def setup_runtime(
     async def job_weather() -> Optional[str]:
         return await build_weather_post(cfg)
 
-    scheduler.every_day("weather", schedule, job_weather, channel=default_channel)
-    return scheduler, orchestrator, {"weather": job_weather}
+    weather_priority_raw = weather_cfg.get("priority")
+    weather_priority = int(_num(weather_priority_raw, 5.0)) if weather_priority_raw is not None else 5
+    scheduler.every_day(
+        "weather",
+        schedule,
+        job_weather,
+        channel=default_channel,
+        priority=max(weather_priority, 0),
+    )
+
+    jobs: dict[str, Callable[[], Awaitable[Optional[str]]]] = {"weather": job_weather}
+
+    news_cfg = _as_mapping(cfg.get("news"))
+    if news_cfg and _is_enabled(news_cfg):
+        feed_provider = news_cfg.get("feed_provider")
+        summary_provider = news_cfg.get("summary_provider")
+        if feed_provider and summary_provider:
+            job_name = str(news_cfg.get("job", "news"))
+            news_priority = max(int(_num(news_cfg.get("priority"), 5.0)), 0)
+            news_channel = _optional_str(news_cfg.get("channel")) or default_channel
+
+            async def job_news() -> Optional[str]:
+                return await build_news_post(
+                    news_cfg,
+                    feed_provider=feed_provider,
+                    summary_provider=summary_provider,
+                )
+
+            jobs[job_name] = job_news
+            for hhmm in _collect_schedules(news_cfg, default="21:00"):
+                scheduler.every_day(
+                    job_name,
+                    hhmm,
+                    job_news,
+                    channel=news_channel,
+                    priority=news_priority,
+                )
+
+    omikuji_cfg = _as_mapping(cfg.get("omikuji"))
+    if omikuji_cfg and _is_enabled(omikuji_cfg):
+        user_id = _optional_str(omikuji_cfg.get("user_id"))
+        if user_id:
+            job_name = str(omikuji_cfg.get("job", "omikuji"))
+            omikuji_priority = max(int(_num(omikuji_cfg.get("priority"), 5.0)), 0)
+            omikuji_channel = _optional_str(omikuji_cfg.get("channel")) or default_channel
+
+            async def job_omikuji() -> Optional[str]:
+                return await build_omikuji_post(cfg, user_id=user_id)
+
+            jobs[job_name] = job_omikuji
+            for hhmm in _collect_schedules(omikuji_cfg, default="09:00"):
+                scheduler.every_day(
+                    job_name,
+                    hhmm,
+                    job_omikuji,
+                    channel=omikuji_channel,
+                    priority=omikuji_priority,
+                )
+
+    dm_cfg = _as_mapping(cfg.get("dm_digest"))
+    if dm_cfg and _is_enabled(dm_cfg):
+        log_provider = dm_cfg.get("log_provider")
+        summary_provider = dm_cfg.get("summary_provider") or dm_cfg.get("summarizer")
+        dm_sender = dm_cfg.get("sender")
+        if log_provider and summary_provider and dm_sender:
+            job_name = str(dm_cfg.get("job", "dm_digest"))
+            dm_priority = max(int(_num(dm_cfg.get("priority"), 5.0)), 0)
+            dm_channel = _optional_str(dm_cfg.get("channel"))
+
+            async def job_dm_digest() -> Optional[str]:
+                return await build_dm_digest(
+                    dm_cfg,
+                    log_provider=log_provider,
+                    summarizer=summary_provider,
+                    sender=dm_sender,
+                    permit=permit,
+                )
+
+            jobs[job_name] = job_dm_digest
+            for hhmm in _collect_schedules(dm_cfg, default="22:00"):
+                scheduler.every_day(
+                    job_name,
+                    hhmm,
+                    job_dm_digest,
+                    channel=dm_channel,
+                    priority=dm_priority,
+                )
+
+    return scheduler, orchestrator, jobs
 
 
 async def main() -> None:

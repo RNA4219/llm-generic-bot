@@ -90,12 +90,32 @@ def test_ci_workflow_has_weekly_pip_audit_job() -> None:
         isinstance(command, str) and "pip install pip-audit" in command
         for command in run_commands
     ), "pip-audit job must install pip-audit"
-    assert any(
-        isinstance(command, str)
-        and any(pattern in command for pattern in ("pip install .", "pip install -e ."))
-        for command in run_commands
-    ), "pip-audit job must install project dependencies"
-    assert any(
-        isinstance(command, str) and command.strip().startswith("pip-audit")
-        for command in run_commands
-    ), "pip-audit job must execute pip-audit"
+    install_index = next(
+        (
+            index
+            for index, command in enumerate(run_commands)
+            if isinstance(command, str)
+            and any(
+                pattern in command
+                for pattern in (
+                    "pip install .",
+                    "pip install -e .",
+                    "pip install -e .[dev]",
+                )
+            )
+        ),
+        None,
+    )
+    assert install_index is not None, "pip-audit job must install project dependencies"
+    audit_index = next(
+        (
+            index
+            for index, command in enumerate(run_commands)
+            if isinstance(command, str) and command.strip().startswith("pip-audit")
+        ),
+        None,
+    )
+    assert audit_index is not None, "pip-audit job must execute pip-audit"
+    assert (
+        install_index < audit_index
+    ), "pip-audit job must install dependencies before running pip-audit"

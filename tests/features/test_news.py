@@ -136,7 +136,10 @@ async def test_build_news_post_suppressed_by_cooldown(
         NewsFeedItem(title="記事D", link="https://example.com/d", summary="長文要約"),
     ]
 
+    feed_calls: list[tuple[str, int | None]] = []
+
     async def fetch(url: str, *, limit: int | None = None) -> Iterable[NewsFeedItem]:
+        feed_calls.append((url, limit))
         return items
 
     summary = SummaryStub.from_iterable(["unused"])
@@ -161,9 +164,10 @@ async def test_build_news_post_suppressed_by_cooldown(
         cooldown=cooldown,
     )
 
-    assert result == "速報\n* 記事D: 長文要約"
+    assert result is None
+    assert feed_calls == []
     assert summary.calls == []
-    assert permit_calls == [{"job": "breaking-news", "suppress_cooldown": True}]
+    assert permit_calls == []
     assert cooldown_calls == [
         {"job": "breaking-news", "platform": None, "channel": None}
     ]

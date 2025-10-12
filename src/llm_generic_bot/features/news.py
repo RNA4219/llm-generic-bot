@@ -52,7 +52,7 @@ async def build_news_post(
     permit: PermitHook | None = None,
     cooldown: CooldownChecker | None = None,
     logger: logging.Logger | None = None,
-) -> str:
+) -> str | None:
     logger = logger or logging.getLogger(__name__)
     job = str(cfg.get("job", "news"))
     feed_url_obj = cfg.get("feed_url")
@@ -87,7 +87,16 @@ async def build_news_post(
             await cooldown(job=job, platform=platform, channel=channel)
         )
         if cooldown_active:
-            suppress_cooldown = True
+            logger.info(
+                "news_summary_skip_cooldown",
+                extra={
+                    "items": 0,
+                    "job": job,
+                    "platform": platform,
+                    "channel": channel,
+                },
+            )
+            return None
 
     raw_items = await feed_provider.fetch(feed_url, limit=limit)
     items: Sequence[NewsFeedItem] = list(raw_items)[:limit]
@@ -143,9 +152,9 @@ async def build_news_post(
     if footer:
         lines.append(footer)
 
-    (permit or (lambda *, job, suppress_cooldown: None))(
-        job=job, suppress_cooldown=suppress_cooldown
-    )
+    if permit is not None:
+        permit(job=job, suppress_cooldown=suppress_cooldown)
+
     if suppress_cooldown:
         logger.info(
             "news_summary_skip_cooldown",

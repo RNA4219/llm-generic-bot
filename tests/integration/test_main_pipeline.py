@@ -2,8 +2,9 @@ import datetime as dt
 from collections import deque
 from typing import Deque, Dict, List, Mapping, Optional
 
-import pytest
 import zoneinfo
+
+import pytest
 
 from llm_generic_bot.core.arbiter import PermitDecision as QuotaPermitDecision
 from llm_generic_bot.core.queue import CoalesceQueue

@@ -90,6 +90,7 @@ async def build_news_post(
             logger.info(
                 "news_summary_skip_cooldown",
                 extra={
+                    "event": "news_summary_skip_cooldown",
                     "items": 0,
                     "job": job,
                     "platform": platform,
@@ -130,13 +131,21 @@ async def build_news_post(
                 if should_retry:
                     logger.warning(
                         "news_summary_retry",
-                        extra={"title": item.title, "attempt": attempt},
+                        extra={
+                            "event": "news_summary_retry",
+                            "title": item.title,
+                            "attempt": attempt,
+                        },
                     )
                     continue
                 fallback = _fallback(item)
                 logger.warning(
                     "news_summary_fallback",
-                    extra={"title": item.title, "reason": str(exc)},
+                    extra={
+                        "event": "news_summary_fallback",
+                        "title": item.title,
+                        "reason": str(exc),
+                    },
                 )
                 summaries.append(fallback)
                 break
@@ -159,6 +168,7 @@ async def build_news_post(
         logger.info(
             "news_summary_skip_cooldown",
             extra={
+                "event": "news_summary_skip_cooldown",
                 "items": len(items),
                 "job": job,
                 "platform": platform,
@@ -169,6 +179,7 @@ async def build_news_post(
         logger.info(
             "news_summary_ready",
             extra={
+                "event": "news_summary_ready",
                 "items": len(items),
                 "suppress_cooldown": suppress_cooldown,
                 "job": job,

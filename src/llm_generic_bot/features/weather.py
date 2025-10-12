@@ -1,8 +1,10 @@
 from __future__ import annotations
-from typing import Dict, Any, List
-import time, json, os
+from typing import Dict, Any, List, Optional, Callable, Awaitable, Mapping
+import time, json, os, inspect
+from dataclasses import dataclass
 from pathlib import Path
 from ..adapters.openweather import fetch_current_city
+from ..core.cooldown import CooldownGate
 
 CACHE = Path("weather_cache.json")
 
@@ -16,7 +18,60 @@ def _read_cache() -> Dict[str, Any]:
 def _write_cache(data: Dict[str, Any]) -> None:
     CACHE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-async def build_weather_post(cfg: Dict[str, Any]) -> str:
+EngagementProvider = Callable[[str, Optional[str], str], Awaitable[float] | float]
+
+
+@dataclass(frozen=True)
+class WeatherPostResult:
+    text: str
+    engagement_score: float
+
+
+def _as_mapping(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, Mapping):
+        return dict(value)
+    return {}
+
+
+async def _resolve_engagement(
+    cfg: Dict[str, Any],
+    provider: Optional[EngagementProvider],
+    platform: str,
+    channel: Optional[str],
+    job: str,
+) -> float:
+    value: Any
+    if provider is not None:
+        result = provider(platform, channel, job)
+        value = await result if inspect.isawaitable(result) else result
+    else:
+        weather_cfg = _as_mapping(cfg.get("weather"))
+        engagement_cfg = weather_cfg.get("engagement_recent")
+        if engagement_cfg is None:
+            engagement_cfg = _as_mapping(cfg.get("engagement")).get("recent")
+        value = engagement_cfg
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        score = 1.0
+    if score < 0.0:
+        return 0.0
+    if score > 1.0:
+        return 1.0
+    return score
+
+
+async def build_weather_post(
+    cfg: Dict[str, Any],
+    *,
+    cooldown: Optional[CooldownGate] = None,
+    platform: str = "-",
+    channel: Optional[str] = None,
+    job: str = "weather",
+    engagement_provider: Optional[EngagementProvider] = None,
+) -> WeatherPostResult | str | None:
     ow = cfg.get("openweather", {})
     wc = cfg.get("weather", {})
     thresholds = wc.get("thresholds", {})
@@ -100,4 +155,43 @@ async def build_weather_post(cfg: Dict[str, Any]) -> str:
     # rotate cache
     new_cache = {"today": now_snap, "yesterday": previous_today}
     _write_cache(new_cache)
-    return "\n".join(out_lines).strip()
+    text = "\n".join(out_lines).strip()
+
+    engagement_score = await _resolve_engagement(
+        cfg, engagement_provider, platform, channel, job
+    )
+
+    cooldown_cfg = wc.get("cooldown", {})
+    suppress_threshold_raw = cooldown_cfg.get("suppress_threshold")
+    time_band_factor_raw = cooldown_cfg.get("time_band_factor")
+    try:
+        suppress_threshold = float(suppress_threshold_raw)
+    except (TypeError, ValueError):
+        suppress_threshold = 1.5
+    try:
+        time_band_factor = float(time_band_factor_raw)
+    except (TypeError, ValueError):
+        time_band_factor = 1.0
+
+    if cooldown is not None:
+        multiplier = cooldown.multiplier(
+            platform,
+            (channel or "-"),
+            job,
+            time_band_factor=time_band_factor,
+            engagement_recent=engagement_score,
+        )
+        if multiplier >= suppress_threshold:
+            return None
+
+    weather_cfg = _as_mapping(cfg.get("weather"))
+    engagement_cfg = _as_mapping(cfg.get("engagement"))
+    if (
+        cooldown is None
+        and engagement_provider is None
+        and weather_cfg.get("engagement_recent") is None
+        and engagement_cfg.get("recent") is None
+    ):
+        return text
+
+    return WeatherPostResult(text=text, engagement_score=engagement_score)

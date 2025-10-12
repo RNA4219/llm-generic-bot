@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from types import SimpleNamespace
-from typing import Any, Awaitable, Callable, Mapping, Optional, cast
+from typing import Any, Awaitable, Callable, Deque, Mapping, Optional, cast
 
 from .adapters.discord import DiscordSender
 from .adapters.misskey import MisskeySender
@@ -14,7 +15,7 @@ from .core.dedupe import NearDuplicateFilter
 from .core.orchestrator import Orchestrator, PermitDecision, PermitDecisionLike, Sender
 from .core.queue import CoalesceQueue
 from .core.scheduler import Scheduler
-from .features.weather import build_weather_post
+from .features.weather import WeatherPostResult, build_weather_post
 
 def _as_mapping(value: object) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
@@ -84,6 +85,7 @@ def setup_runtime(
         active_sender = sender or MisskeySender()
 
     orchestrator = Orchestrator(sender=active_sender, cooldown=cooldown, dedupe=dedupe, permit=permit)
+    job_metadata: dict[str, Deque[Mapping[str, Any]]] = {}
 
     async def send(
         text: str,
@@ -91,11 +93,16 @@ def setup_runtime(
         *,
         job: str = "weather",
     ) -> None:
+        metadata_queue = job_metadata.get(job)
+        metadata = metadata_queue.popleft() if metadata_queue else None
+        if metadata_queue is not None and not metadata_queue:
+            job_metadata.pop(job, None)
         await orchestrator.enqueue(
             text,
             job=job,
             platform=platform,
             channel=channel or default_channel,
+            metadata=metadata,
         )
 
     scheduler = Scheduler(tz=tz, sender=cast(Sender, SimpleNamespace(send=send)), queue=queue)
@@ -103,7 +110,20 @@ def setup_runtime(
     schedule_value = weather_cfg.get("schedule")
     schedule = schedule_value if isinstance(schedule_value, str) else "21:00"
     async def job_weather() -> Optional[str]:
-        return await build_weather_post(cfg)
+        result = await build_weather_post(
+            cfg,
+            cooldown=cooldown,
+            platform=platform,
+            channel=default_channel,
+            job="weather",
+        )
+        if result is None:
+            return None
+        if isinstance(result, WeatherPostResult):
+            queue = job_metadata.setdefault("weather", deque())
+            queue.append({"engagement_score": result.engagement_score})
+            return result.text
+        return result
 
     scheduler.every_day("weather", schedule, job_weather, channel=default_channel)
     return scheduler, orchestrator, {"weather": job_weather}

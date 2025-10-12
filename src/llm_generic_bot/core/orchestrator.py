@@ -5,7 +5,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Mapping, Optional, Protocol
+from typing import Any, Mapping, Optional, Protocol
 
 from .cooldown import CooldownGate
 from .dedupe import NearDuplicateFilter
@@ -78,6 +78,12 @@ class _SendRequest:
     platform: str
     channel: Optional[str]
     correlation_id: str
+    metadata: Mapping[str, Any] | None
+
+
+def _format_metric_value(value: float) -> str:
+    formatted = f"{value:.6f}".rstrip("0").rstrip(".")
+    return formatted or "0"
 
 
 class Orchestrator:
@@ -113,6 +119,7 @@ class Orchestrator:
         platform: str,
         channel: Optional[str] = None,
         correlation_id: Optional[str] = None,
+        metadata: Mapping[str, Any] | None = None,
     ) -> str:
         if self._closed:
             raise RuntimeError("orchestrator is closed")
@@ -123,6 +130,7 @@ class Orchestrator:
             platform=platform,
             channel=channel,
             correlation_id=corr,
+            metadata=metadata,
         )
         await self._queue.put(request)
         return corr
@@ -171,11 +179,21 @@ class Orchestrator:
     async def _process(self, request: _SendRequest) -> None:
         decision = self._permit(request.platform, request.channel, request.job)
         job_name = decision.job or request.job
-        tags = {
+        base_tags = {
             "job": job_name,
             "platform": request.platform,
             "channel": request.channel or "-",
         }
+        metadata = request.metadata or {}
+        engagement_score_value: float | None = None
+        if "engagement_score" in metadata:
+            try:
+                engagement_score_value = float(metadata["engagement_score"])
+            except (TypeError, ValueError):
+                engagement_score_value = None
+        tags = dict(base_tags)
+        if engagement_score_value is not None:
+            tags["engagement_score"] = _format_metric_value(engagement_score_value)
         if not decision.allowed:
             retryable_flag = "true" if decision.retryable else "false"
             denied_tags = {**tags, "retryable": retryable_flag}
@@ -196,16 +214,16 @@ class Orchestrator:
 
         if not self._dedupe.permit(request.text):
             self._metrics.increment("send.duplicate", tags)
-            self._logger.info(
-                "duplicate_skipped",
-                extra={
-                    "event": "send_duplicate_skip",
-                    "correlation_id": request.correlation_id,
-                    "job": job_name,
-                    "platform": request.platform,
-                    "channel": request.channel,
-                },
-            )
+            extra = {
+                "event": "send_duplicate_skip",
+                "correlation_id": request.correlation_id,
+                "job": job_name,
+                "platform": request.platform,
+                "channel": request.channel,
+            }
+            if engagement_score_value is not None:
+                extra["engagement_score"] = engagement_score_value
+            self._logger.info("duplicate_skipped", extra=extra)
             return
 
         start = time.perf_counter()
@@ -236,14 +254,14 @@ class Orchestrator:
         self._metrics.increment("send.success", tags)
         self._metrics.observe("send.duration", duration, tags)
         self._cooldown.note_post(request.platform, request.channel or "-", job_name)
-        self._logger.info(
-            "send_success",
-            extra={
-                "event": "send_success",
-                "correlation_id": request.correlation_id,
-                "job": job_name,
-                "platform": request.platform,
-                "channel": request.channel,
-                "duration_sec": duration,
-            },
-        )
+        extra = {
+            "event": "send_success",
+            "correlation_id": request.correlation_id,
+            "job": job_name,
+            "platform": request.platform,
+            "channel": request.channel,
+            "duration_sec": duration,
+        }
+        if engagement_score_value is not None:
+            extra["engagement_score"] = engagement_score_value
+        self._logger.info("send_success", extra=extra)

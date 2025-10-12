@@ -1,7 +1,7 @@
 ---
 sprint: 1
 status: draft
-updated: 2025-10-12
+updated: 2025-10-13
 ---
 
 # Sprint 1 タスクリスト
@@ -13,9 +13,9 @@ updated: 2025-10-12
 | [x] | SCH-01 | CoalesceQueue で近接メッセージ併合 | `src/llm_generic_bot/core/scheduler.py`<br>`src/llm_generic_bot/core/queue.py` | スケジューラが `CoalesceQueue` からバッチを取得し送信層へ受け渡す。 | 残課題: 優先度逆転対策とマルチチャンネル分離の検証を次スプリントへ引継ぎ。 | `tests/core/test_coalesce_queue.py`: 時間窓・閾値・単発ケース |
 | [x] | SCH-02 | スケジューラにジッタを導入 | `src/llm_generic_bot/core/scheduler.py`<br>`src/llm_generic_bot/core/arbiter.py` | `Scheduler` が `next_slot` でジッタを適用し、無効化フラグ時は即時送信へフォールバックする。 | 残課題: ジッタ範囲の境界テストと運用パラメータ調整。 | `tests/core/test_scheduler_jitter.py`: オフセット計算と無効化切替 |
 | [x] | OPS-01 | 送信処理の構造化ログ出力 | `src/llm_generic_bot/adapters/*.py`<br>`src/llm_generic_bot/core/orchestrator.py` | 成功/失敗イベントを JSON 形式で出力し、Correlation ID を常に付与する。 | 追加要望: 可観測性チームとフォーマット拡張を検討中。 | `tests/core/test_structured_logging.py`: ログフォーマット・エラー経路 |
-| [x] | OPS-02 | CI パイプライン整備 | `.github/workflows/ci.yml`<br>`pyproject.toml` | `push`／`pull_request` イベントで `ruff check .`・`mypy src`・`pytest -q`・CodeQL を個別 GitHub ジョブとして起動し、PermitGate 連携環境で 3 ジョブが稼働する。CodeQL は同イベントのみで起動し、`schedule` トリガーは未設定。 | 残課題: Slack 通知連携は未実装、キャッシュヒット率最適化と CodeQL 週次スキャン設定（SRE 要協議）が必要。 | `act -W .github/workflows/ci.yml -j lint`<br>`act -W .github/workflows/ci.yml -j type`<br>`act -W .github/workflows/ci.yml -j test` |
+| [x] | OPS-02 | CI パイプライン整備 | `.github/workflows/ci.yml`<br>`pyproject.toml` | `push`／`pull_request` イベントで `ruff check .`・`mypy src`・`pytest -q`・CodeQL を個別 GitHub ジョブとして起動し、PermitGate 連携環境で 3 ジョブが稼働する。週次（月曜 03:00 UTC）の `schedule` トリガーで `pip-audit` と CodeQL を実行し、全ジョブの失敗時に Slack Webhook へ通知する。 | 残課題: キャッシュヒット率最適化と CodeQL クエリ調整の運用改善。 | `act -W .github/workflows/ci.yml -j lint`<br>`act -W .github/workflows/ci.yml -j type`<br>`act -W .github/workflows/ci.yml -j test` |
 
-現状の CI パイプラインでは Slack 通知連携と CodeQL の週次スケジュールが未設定のため、OPS-02 の残課題として管理する。
+現状の CI パイプラインは Slack 通知と週次 `schedule` を導入済みのため、OPS-02 の残課題はキャッシュ/CodeQL 調整に集約されている。
 
 ## 進行手順
 1. `tests/` 配下に先行テストを作成し、期待挙動を固定。

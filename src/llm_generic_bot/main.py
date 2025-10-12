@@ -253,13 +253,20 @@ def setup_runtime(
             dm_channel = _optional_str(dm_cfg.get("channel"))
 
             async def job_dm_digest() -> Optional[str]:
-                await build_dm_digest(
+                result = await build_dm_digest(
                     dm_cfg,
                     log_provider=log_provider,
                     summarizer=summary_provider,
                     sender=dm_sender,
                     permit=permit,
                 )
+                if result and getattr(scheduler, "_active_job", None) is not None:
+                    scheduler.queue.push(
+                        result,
+                        priority=dm_priority,
+                        job=job_name,
+                        channel=dm_channel,
+                    )
                 return None
 
             jobs[job_name] = job_dm_digest

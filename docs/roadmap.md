@@ -4,8 +4,11 @@
 - `main.py` は設定読込後に日次天気ジョブをスケジュールし、近傍デデュープ・クールダウン・Permit 判定を経て Discord/Misskey 送信クラスへ委譲している。
 - 天気機能は OpenWeather から都市ごとの現在値を取得し、30℃/35℃閾値や前日比ΔTをもとに注意枠を生成しつつ today/yesterday キャッシュをローテーションしている。
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
-- PermitGate・CoalesceQueue・ジッタは `src/llm_generic_bot/main.py` の `setup_runtime` が `PermitGate.permit` を包んで `Orchestrator` へ渡し、許可済みジョブのみを `Scheduler` へ積む構成で稼働している。`core/scheduler.py` の `dispatch_ready_batches` は `CoalesceQueue` のバッチを取り出してから `next_slot` を呼び出し、ジッタ有効時に Permit 通過済みのメッセージを分散送信する。統合テストでは `scheduler.jitter_enabled = False` にして決定性を確保しつつ、実運用ではジッタ有効が既定となっている。
-- integration テストは `tests/integration/test_main_pipeline.py` が `setup_runtime` の Permit ラップ処理と `CoalesceQueue` のバッチ送出を検証し、`tests/integration/test_permit_bridge.py` が `PermitGate` のクォータ判定と再試行可否タグを確認する。追加機能に備えた News/おみくじ経路の結合テストは未着手。
+- PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
+  - `src/llm_generic_bot/main.py` の `setup_runtime` は `PermitGate.permit` の結果を `PermitDecision` に包み直し、許可時はジョブ名を差し替えつつ `Orchestrator.enqueue` へ渡す。
+  - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 通過済みのメッセージをまとめて送出する。
+  - ジッタは `core/scheduler.py` の `Scheduler` で既定有効となり、Permit 済みバッチを `next_slot` でランダム化しつつ送信する。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
+- integration テストは `tests/integration/test_main_pipeline.py` と `tests/integration/test_permit_bridge.py` の 2 本で最新経路を検証し、前者が Permit 経由でのバッチ併合とキュー flush を、後者が `PermitGate` のクォータ更新および再試行可否タグをチェックする。追加機能に備えた News/おみくじ経路の結合テストは未着手。
 - 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、新規コンテンツ（News/おみくじ等）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ

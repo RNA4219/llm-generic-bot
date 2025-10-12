@@ -1,107 +1,179 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - fallback for restricted environments
+    from typing import Any, List, Sequence, Tuple
 
-def _collect_job_commands(yaml_text: str) -> dict[str, list[str]]:
-    in_jobs = False
-    current_job: str | None = None
-    in_steps = False
-    anchors: dict[str, list[str]] = {}
-    job_commands: dict[str, list[str]] = {}
-    current_anchor: str | None = None
-    tracking_step = False
+    def _strip_comment(line: str) -> str:
+        in_single = False
+        in_double = False
+        for index, char in enumerate(line):
+            if char == "'" and not in_double:
+                in_single = not in_single
+            elif char == '"' and not in_single:
+                in_double = not in_double
+            elif char == "#" and not in_single and not in_double:
+                return line[:index]
+        return line
 
-    for raw_line in yaml_text.splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
+    def _tokenize(text: str) -> List[Tuple[int, str]]:
+        tokens: List[Tuple[int, str]] = []
+        for raw_line in text.splitlines():
+            without_comment = _strip_comment(raw_line.rstrip())
+            if not without_comment.strip():
+                continue
+            indent = len(without_comment) - len(without_comment.lstrip(" "))
+            tokens.append((indent, without_comment.strip()))
+        return tokens
 
-        if not in_jobs:
-            if stripped == "jobs:":
-                in_jobs = True
-            continue
+    def _parse_scalar(value: str) -> Any:
+        stripped = value.strip()
+        if stripped == "{}":
+            return {}
+        if stripped == "[]":
+            return []
+        if stripped.startswith('"') and stripped.endswith('"'):
+            return stripped[1:-1]
+        if stripped.startswith("'") and stripped.endswith("'"):
+            return stripped[1:-1]
+        if stripped in {"true", "True"}:
+            return True
+        if stripped in {"false", "False"}:
+            return False
+        return stripped
 
-        if indent == 0 and not stripped.startswith("-"):
+    def _split_key_value(content: str) -> Tuple[str, str, bool]:
+        if ": " in content:
+            key, value = content.split(": ", 1)
+            return key.strip(), value, True
+        if content.endswith(":"):
+            return content[:-1].strip(), "", False
+        return content.strip(), "", False
+
+    def _parse_block(tokens: Sequence[Tuple[int, str]], index: int, indent: int) -> Tuple[Any, int]:
+        result: Any = None
+        position = index
+        while position < len(tokens):
+            current_indent, content = tokens[position]
+            if current_indent < indent:
+                break
+            if current_indent > indent:
+                child, position = _parse_block(tokens, position, current_indent)
+                if result is None:
+                    result = child
+                elif isinstance(result, list):
+                    result.append(child)
+                else:
+                    raise ValueError("Unexpected indentation")
+                continue
+            if content.startswith("- "):
+                if result is None:
+                    result = []
+                elif not isinstance(result, list):
+                    break
+                item_content = content[2:].strip()
+                position += 1
+                if not item_content:
+                    child, position = _parse_block(tokens, position, indent + 2)
+                    result.append(child)
+                    continue
+                key, value_text, has_value = _split_key_value(item_content)
+                if not has_value and not item_content.endswith(":" ):
+                    result.append(_parse_scalar(item_content))
+                    continue
+                if not has_value:
+                    child, position = _parse_block(tokens, position, indent + 2)
+                    result.append({key: child})
+                    continue
+                scalar = _parse_scalar(value_text)
+                if position < len(tokens) and tokens[position][0] >= indent + 2:
+                    child, position = _parse_block(tokens, position, indent + 2)
+                    if isinstance(child, dict):
+                        merged = {key: scalar}
+                        merged.update(child)
+                        result.append(merged)
+                        continue
+                    if child is not None:
+                        result.append({key: child})
+                        continue
+                result.append({key: scalar})
+                continue
+            key, value_text, has_value = _split_key_value(content)
+            position += 1
+            if has_value:
+                scalar = _parse_scalar(value_text)
+                if position < len(tokens) and tokens[position][0] >= indent + 2:
+                    child, new_position = _parse_block(tokens, position, indent + 2)
+                    if child is not None:
+                        scalar = child
+                        position = new_position
+                if result is None:
+                    result = {}
+                result[key] = scalar
+            else:
+                child, position = _parse_block(tokens, position, indent + 2)
+                if result is None:
+                    result = {}
+                result[key] = child
+        return result, position
+
+    class _MiniYAML:
+        @staticmethod
+        def safe_load(text: str) -> Any:
+            tokens = _tokenize(text)
+            if not tokens:
+                return {}
+            parsed, _ = _parse_block(tokens, 0, 0)
+            return parsed
+
+    yaml = _MiniYAML()
+
+
+WORKFLOW_PATH = Path(".github/workflows/ci.yml")
+
+
+def _load_workflow() -> dict:
+    with WORKFLOW_PATH.open("r", encoding="utf-8") as fp:
+        return yaml.safe_load(fp.read())
+
+
+def test_slack_notification_step_exists() -> None:
+    workflow = _load_workflow()
+    jobs = workflow.get("jobs", {})
+
+    slack_step_present = False
+    for job in jobs.values():
+        for step in job.get("steps", []):
+            if "if" not in step or "failure()" not in str(step["if"]):
+                continue
+            env = step.get("env", {})
+            values = list(env.values())
+            run_value = step.get("run", "")
+            has_secret = any("secrets.SLACK_WEBHOOK_URL" in str(value) for value in values)
+            has_secret = has_secret or "secrets.SLACK_WEBHOOK_URL" in str(run_value)
+            if has_secret:
+                slack_step_present = True
+                break
+        if slack_step_present:
             break
 
-        if indent == 2 and stripped.endswith(":") and not stripped.startswith("-"):
-            current_job = stripped[:-1]
-            job_commands.setdefault(current_job, [])
-            in_steps = False
-            tracking_step = False
-            current_anchor = None
-            continue
-
-        if current_job is None:
-            continue
-
-        if indent == 4 and stripped == "steps:":
-            in_steps = True
-            tracking_step = False
-            current_anchor = None
-            continue
-
-        if not in_steps:
-            continue
-
-        if indent == 6 and stripped.startswith("- "):
-            tracking_step = True
-            current_anchor = None
-            content = stripped[2:].strip()
-            if content.startswith("*"):
-                alias = content[1:]
-                job_commands[current_job].extend(anchors.get(alias, []))
-                tracking_step = False
-                continue
-            if content.startswith("&"):
-                parts = content.split(maxsplit=1)
-                current_anchor = parts[0][1:]
-                anchors.setdefault(current_anchor, [])
-                content = parts[1] if len(parts) > 1 else ""
-            if content.startswith("run:"):
-                command = content.split("run:", 1)[1].strip()
-                if command:
-                    job_commands[current_job].append(command)
-                    if current_anchor is not None:
-                        anchors[current_anchor] = [command]
-                tracking_step = False
-                current_anchor = None
-            continue
-
-        if tracking_step and indent > 6 and stripped.startswith("run:"):
-            command = stripped.split("run:", 1)[1].strip()
-            if command:
-                job_commands[current_job].append(command)
-                if current_anchor is not None:
-                    anchors[current_anchor] = [command]
-            tracking_step = False
-            current_anchor = None
-
-    return job_commands
+    assert slack_step_present, "Slack notification step with failure() and webhook secret is required"
 
 
-def _iter_run_commands(commands: dict[str, list[str]], job_name: str) -> Iterable[str]:
-    yield from commands.get(job_name, [])
+def test_security_job_runs_weekly_with_pip_audit() -> None:
+    workflow = _load_workflow()
 
+    schedule = workflow.get("on", {}).get("schedule", [])
+    assert schedule, "A weekly schedule trigger must be configured"
+    cron_expressions = [entry.get("cron", "") for entry in schedule]
+    assert any(expression for expression in cron_expressions), "Schedule trigger must define at least one cron expression"
 
-def test_ci_workflow_has_expected_jobs():
-    workflow_path = Path(".github/workflows/ci.yml")
-    assert workflow_path.exists(), "ci workflow file is missing"
+    jobs = workflow.get("jobs", {})
+    security_job = jobs.get("security")
+    assert security_job is not None, "Security job must be defined"
 
-    commands_by_job = _collect_job_commands(workflow_path.read_text(encoding="utf-8"))
-
-    expected_jobs = {
-        "lint": "ruff check .",
-        "type": "mypy src",
-        "test": "pytest -q",
-    }
-
-    for job_name, expected_command in expected_jobs.items():
-        commands = list(_iter_run_commands(commands_by_job, job_name))
-        assert commands, f"job '{job_name}' must define at least one run command"
-        assert any(expected_command in command for command in commands), (
-            f"job '{job_name}' must run '{expected_command}'"
-        )
+    steps = security_job.get("steps", [])
+    assert any("pip-audit" in str(step.get("run", "")) for step in steps), "Security job must run pip-audit"

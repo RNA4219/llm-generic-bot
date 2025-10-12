@@ -147,3 +147,79 @@ async def test_build_dm_digest_flow(scenario: Scenario, caplog: pytest.LogCaptur
         assert not permit_calls
         assert not send_calls
         assert any("dm_digest_skip_empty" in record.message for record in caplog.records)
+
+
+async def test_build_dm_digest_logs_failure(caplog: pytest.LogCaptureFixture) -> None:
+    cfg: dict[str, Any] = {
+        "source_channel": "failure-channel",
+        "recipient_id": "user-99",
+        "job": "digest",
+        "header": "Daily Digest",
+        "max_events": 5,
+        "max_attempts": 2,
+    }
+
+    entries = [
+        DigestLogEntry(datetime(2024, 4, 1, 12, 0, tzinfo=timezone.utc), "INFO", "entry-1"),
+        DigestLogEntry(datetime(2024, 4, 1, 12, 5, tzinfo=timezone.utc), "ERROR", "entry-2"),
+    ]
+
+    async def collect(channel: str, *, limit: int) -> list[DigestLogEntry]:
+        assert channel == cfg["source_channel"]
+        assert limit == cfg["max_events"]
+        return entries
+
+    async def summarize(text: str, *, max_events: int | None = None) -> str:
+        assert max_events == cfg["max_events"]
+        for entry in entries:
+            assert entry.message in text
+        return "まとめ"
+
+    attempts = 0
+    raised: list[RuntimeError] = []
+
+    async def send(
+        text: str,
+        channel: str | None = None,
+        *,
+        correlation_id: str | None = None,
+        job: str | None = None,
+        recipient_id: str | None = None,
+    ) -> None:
+        nonlocal attempts
+        attempts += 1
+        assert text.startswith(cfg["header"])
+        assert channel is None
+        assert job == cfg["job"]
+        assert recipient_id == cfg["recipient_id"]
+        err = RuntimeError(f"fail-{attempts}")
+        raised.append(err)
+        raise err
+
+    caplog.set_level(logging.INFO)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await build_dm_digest(
+            cfg,
+            log_provider=SimpleNamespace(collect=collect),
+            summarizer=SimpleNamespace(summarize=summarize),
+            sender=SimpleNamespace(send=send),
+            permit=lambda *_: PermitDecision.allowed(cfg["job"]),
+            logger=logging.getLogger("test.dm_digest.failure"),
+        )
+
+    assert attempts == cfg["max_attempts"]
+    assert exc_info.value is raised[-1]
+
+    retry_records = [record for record in caplog.records if record.message == "dm_digest_retry"]
+    assert len(retry_records) == 1
+    assert retry_records[0].attempt == 1
+
+    failure_records = [record for record in caplog.records if record.message == "dm_digest_failed"]
+    assert len(failure_records) == 1
+    failure_record = failure_records[0]
+    assert failure_record.event == "dm_digest_failed"
+    assert failure_record.job == cfg["job"]
+    assert failure_record.recipient == cfg["recipient_id"]
+    assert failure_record.attempt == cfg["max_attempts"]
+    assert failure_record.error == "RuntimeError: fail-2"

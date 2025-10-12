@@ -44,6 +44,7 @@ class Scheduler:
         self._sleep = sleep
         self._jobs: List[_ScheduledJob] = []
         self._last_dispatch_ts: Optional[float] = None
+        self._active_job: Optional[_ScheduledJob] = None
 
     def every_day(
         self,
@@ -70,7 +71,11 @@ class Scheduler:
         for job in self._jobs:
             if job.hhmm != hhmm:
                 continue
-            result = await job.handler()
+            self._active_job = job
+            try:
+                result = await job.handler()
+            finally:
+                self._active_job = None
             if result:
                 self.queue.push(
                     result,

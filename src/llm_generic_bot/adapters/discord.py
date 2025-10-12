@@ -20,8 +20,17 @@ class DiscordSender:
         logger: logging.Logger | None = None,
         timeout: float = 20.0,
     ) -> None:
-        self.token = token or os.getenv("DISCORD_BOT_TOKEN", "")
-        self.channel_id = channel_id or os.getenv("DISCORD_CHANNEL_ID", "")
+        if token:
+            self.token = token
+        else:
+            env_token = os.getenv("DISCORD_BOT_TOKEN")
+            self.token = env_token or ""
+
+        if channel_id:
+            self.channel_id = channel_id
+        else:
+            env_channel = os.getenv("DISCORD_CHANNEL_ID")
+            self.channel_id = env_channel or ""
         self.base: Final[str] = "https://discord.com/api/v10"
         self.retry_config = retry_config or RetryConfig()
         self._logger = logger or logging.getLogger(__name__)

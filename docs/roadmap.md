@@ -8,7 +8,7 @@
   - `src/llm_generic_bot/main.py` の `setup_runtime` は `PermitGate.permit` の結果を `PermitDecision` に包み直し、許可時はジョブ名を差し替えつつ `Orchestrator.enqueue` へ渡す。
   - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 通過済みのメッセージをまとめて送出する。
   - ジッタは `core/scheduler.py` の `Scheduler` で既定有効となり、Permit 済みバッチを `next_slot` でランダム化しつつ送信する。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
-- integration テストは `tests/integration/test_main_pipeline.py` と `tests/integration/test_permit_bridge.py` の 2 本で最新経路を検証し、前者が Permit 経由でのバッチ併合とキュー flush を、後者が `PermitGate` のクォータ更新および再試行可否タグをチェックする。追加機能に備えた News/おみくじ経路の結合テストは未着手。
+- integration テストは `tests/integration/test_main_pipeline.py` と `tests/integration/test_permit_bridge.py` の 2 本で最新経路を検証し、前者が Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡し、後者が `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証している。追加機能に備えた News/おみくじ経路の結合テストは未着手。
 - 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、新規コンテンツ（News/おみくじ等）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ

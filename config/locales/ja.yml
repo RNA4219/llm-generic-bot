@@ -1,0 +1,10 @@
+{
+  "ja": {
+    "omikuji": {
+      "templates": {
+        "fallback": "{user_id}の今日の運勢は{fortune}です",
+        "exhausted": "{user_id}さん、今日はこれ以上のおみくじはありません"
+      }
+    }
+  }
+}

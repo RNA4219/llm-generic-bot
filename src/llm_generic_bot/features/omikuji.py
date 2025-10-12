@@ -23,7 +23,7 @@ async def build_omikuji_post(
     *,
     user_id: str,
     today: date | None = None,
-) -> str:
+) -> str | None:
     omikuji_cfg = cfg.get("omikuji")
     if not isinstance(omikuji_cfg, Mapping):  # pragma: no cover - config misuse
         raise ValueError("missing omikuji configuration")
@@ -31,7 +31,30 @@ async def build_omikuji_post(
     templates = _collect_templates(omikuji_cfg)
     fortunes = _collect_fortunes(omikuji_cfg.get("fortunes"))
     active_day = today or date.today()
-    template_id, text = templates[_select_template_index(omikuji_cfg, active_day, len(templates))]
+    state_path = _resolve_state_path(omikuji_cfg)
+    state = _read_state(state_path)
+    rotation_key = active_day.isoformat()
+    if state.get("day") != rotation_key:
+        used_templates: list[str] = []
+    else:
+        used_templates = [str(entry) for entry in state.get("used_templates", [])]
+    start_index = _select_template_index(omikuji_cfg, active_day, len(templates))
+    ordered_indices = [
+        (start_index + offset) % len(templates)
+        for offset in range(len(templates))
+    ]
+    template_choice: Template | None = None
+    for index in ordered_indices:
+        candidate = templates[index]
+        if candidate[0] not in used_templates:
+            template_choice = candidate
+            break
+    if template_choice is None:
+        _write_state(state_path, {"day": rotation_key, "used_templates": used_templates})
+        return None
+    template_id, text = template_choice
+    used_templates.append(template_id)
+    _write_state(state_path, {"day": rotation_key, "used_templates": used_templates})
     fortune = _select_fortune(fortunes, user_id=user_id, today=active_day)
     return text.format(fortune=fortune, user_id=user_id, template_id=template_id)
 
@@ -56,8 +79,6 @@ def _collect_fortunes(raw: Any) -> Sequence[str]:
     if not fortunes:
         raise ValueError("omikuji fortunes are required")
     return fortunes
-
-
 def _select_template_index(config: Mapping[str, Any], active_day: date, template_count: int) -> int:
     anchor_raw = config.get("rotation_anchor")
     if isinstance(anchor_raw, date):
@@ -121,6 +142,42 @@ def _flatten_locale(data: Mapping[str, Any]) -> Mapping[str, str]:
         else:
             flattened[prefix] = str(value)
     return flattened
+
+
+def _resolve_state_path(config: Mapping[str, Any]) -> Path:
+    raw = config.get("state_path")
+    if isinstance(raw, Path):
+        return raw
+    if isinstance(raw, str):
+        return Path(raw)
+    return Path("omikuji_cache.json")
+
+
+def _read_state(path: Path) -> Mapping[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        loaded = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(loaded, Mapping):
+        return loaded
+    return {}
+
+
+def _write_state(path: Path, data: Mapping[str, Any]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        return
 
 
 __all__ = ["build_omikuji_post"]

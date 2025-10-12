@@ -1,107 +1,96 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 
+import pytest
 
-def _collect_job_commands(yaml_text: str) -> dict[str, list[str]]:
-    in_jobs = False
-    current_job: str | None = None
-    in_steps = False
-    anchors: dict[str, list[str]] = {}
-    job_commands: dict[str, list[str]] = {}
-    current_anchor: str | None = None
-    tracking_step = False
-
-    for raw_line in yaml_text.splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-
-        if not in_jobs:
-            if stripped == "jobs:":
-                in_jobs = True
-            continue
-
-        if indent == 0 and not stripped.startswith("-"):
-            break
-
-        if indent == 2 and stripped.endswith(":") and not stripped.startswith("-"):
-            current_job = stripped[:-1]
-            job_commands.setdefault(current_job, [])
-            in_steps = False
-            tracking_step = False
-            current_anchor = None
-            continue
-
-        if current_job is None:
-            continue
-
-        if indent == 4 and stripped == "steps:":
-            in_steps = True
-            tracking_step = False
-            current_anchor = None
-            continue
-
-        if not in_steps:
-            continue
-
-        if indent == 6 and stripped.startswith("- "):
-            tracking_step = True
-            current_anchor = None
-            content = stripped[2:].strip()
-            if content.startswith("*"):
-                alias = content[1:]
-                job_commands[current_job].extend(anchors.get(alias, []))
-                tracking_step = False
-                continue
-            if content.startswith("&"):
-                parts = content.split(maxsplit=1)
-                current_anchor = parts[0][1:]
-                anchors.setdefault(current_anchor, [])
-                content = parts[1] if len(parts) > 1 else ""
-            if content.startswith("run:"):
-                command = content.split("run:", 1)[1].strip()
-                if command:
-                    job_commands[current_job].append(command)
-                    if current_anchor is not None:
-                        anchors[current_anchor] = [command]
-                tracking_step = False
-                current_anchor = None
-            continue
-
-        if tracking_step and indent > 6 and stripped.startswith("run:"):
-            command = stripped.split("run:", 1)[1].strip()
-            if command:
-                job_commands[current_job].append(command)
-                if current_anchor is not None:
-                    anchors[current_anchor] = [command]
-            tracking_step = False
-            current_anchor = None
-
-    return job_commands
+yaml = pytest.importorskip("yaml")
 
 
-def _iter_run_commands(commands: dict[str, list[str]], job_name: str) -> Iterable[str]:
-    yield from commands.get(job_name, [])
+WORKFLOW_PATH = Path(".github/workflows/ci.yml")
 
 
-def test_ci_workflow_has_expected_jobs():
-    workflow_path = Path(".github/workflows/ci.yml")
-    assert workflow_path.exists(), "ci workflow file is missing"
+def _load_workflow() -> dict[str, object]:
+    assert WORKFLOW_PATH.exists(), "ci workflow file is missing"
+    raw_text = WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(raw_text)
+    assert isinstance(workflow, dict)
+    return workflow
 
-    commands_by_job = _collect_job_commands(workflow_path.read_text(encoding="utf-8"))
 
-    expected_jobs = {
+def _iter_job_steps(workflow: dict[str, object], job_name: str) -> list[dict[str, object]]:
+    jobs = workflow.get("jobs")
+    assert isinstance(jobs, dict), "workflow must define jobs"
+    job = jobs.get(job_name)
+    assert isinstance(job, dict), f"workflow must define job '{job_name}'"
+    steps = job.get("steps")
+    assert isinstance(steps, list), f"job '{job_name}' must define steps"
+    return [step for step in steps if isinstance(step, dict)]
+
+
+def test_ci_workflow_runs_expected_commands() -> None:
+    workflow = _load_workflow()
+
+    expected_commands = {
         "lint": "ruff check .",
         "type": "mypy src",
         "test": "pytest -q",
     }
 
-    for job_name, expected_command in expected_jobs.items():
-        commands = list(_iter_run_commands(commands_by_job, job_name))
-        assert commands, f"job '{job_name}' must define at least one run command"
-        assert any(expected_command in command for command in commands), (
-            f"job '{job_name}' must run '{expected_command}'"
-        )
+    for job_name, expected_command in expected_commands.items():
+        steps = _iter_job_steps(workflow, job_name)
+        run_commands = [step.get("run", "") for step in steps]
+        assert any(
+            isinstance(command, str) and expected_command in command
+            for command in run_commands
+        ), f"job '{job_name}' must run '{expected_command}'"
+
+
+def test_ci_workflow_notifies_slack_on_failure() -> None:
+    workflow = _load_workflow()
+    slack_jobs = ["lint", "type", "test", "codeql"]
+
+    for job_name in slack_jobs:
+        steps = _iter_job_steps(workflow, job_name)
+        slack_steps = [
+            step
+            for step in steps
+            if step.get("uses") == "slackapi/slack-github-action@v1.26.0"
+        ]
+        assert slack_steps, f"job '{job_name}' must notify Slack on failure"
+        slack_step = slack_steps[-1]
+        assert (
+            slack_step.get("if") == "failure()"
+        ), f"job '{job_name}' Slack step must run only on failures"
+        with_section = slack_step.get("with")
+        assert isinstance(with_section, dict), "Slack step must define inputs"
+        webhook = with_section.get("webhook-url")
+        assert (
+            isinstance(webhook, str) and "secrets.SLACK_CI_WEBHOOK_URL" in webhook
+        ), "Slack step must reference the Slack webhook secret"
+        payload = with_section.get("payload")
+        assert (
+            isinstance(payload, str) and job_name in payload
+        ), "Slack payload must mention the job name"
+
+
+def test_ci_workflow_has_weekly_pip_audit_job() -> None:
+    workflow = _load_workflow()
+    on_section = workflow.get("on")
+    assert isinstance(on_section, dict), "workflow must define triggers"
+    schedule = on_section.get("schedule")
+    assert isinstance(schedule, list) and schedule, "workflow must define schedule"
+    assert any(
+        isinstance(entry, dict) and "cron" in entry for entry in schedule
+    ), "workflow schedule must include cron expression"
+
+    steps = _iter_job_steps(workflow, "pip-audit")
+    run_commands = [step.get("run", "") for step in steps]
+    assert any(
+        isinstance(command, str) and "pip install pip-audit" in command
+        for command in run_commands
+    ), "pip-audit job must install pip-audit"
+    assert any(
+        isinstance(command, str) and command.strip().startswith("pip-audit")
+        for command in run_commands
+    ), "pip-audit job must execute pip-audit"

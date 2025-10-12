@@ -2,6 +2,9 @@ name: ci
 on:
   push: { branches: ["**"] }
   pull_request:
+  schedule:
+    # Weekly security audit (Monday 03:00 UTC)
+    - cron: "0 3 * * 1"
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -25,6 +28,13 @@ jobs:
       - &install-deps
         run: pip install -e .[dev]
       - run: ruff check .
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
+          payload: >-
+            {"text": ":rotating_light: lint job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}
 
   type:
     runs-on: ubuntu-latest
@@ -35,6 +45,13 @@ jobs:
       - *upgrade-pip
       - *install-deps
       - run: mypy src
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
+          payload: >-
+            {"text": ":rotating_light: type job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}
 
   test:
     runs-on: ubuntu-latest
@@ -45,6 +62,13 @@ jobs:
       - *upgrade-pip
       - *install-deps
       - run: pytest -q
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
+          payload: >-
+            {"text": ":rotating_light: test job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}
 
   codeql:
     name: CodeQL
@@ -63,3 +87,21 @@ jobs:
           languages: ${{ matrix.language }}
       - uses: github/codeql-action/autobuild@v3
       - uses: github/codeql-action/analyze@v3
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
+          payload: >-
+            {"text": ":rotating_light: codeql job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - *checkout
+      - *setup-python
+      - *cache
+      - *upgrade-pip
+      - run: pip install pip-audit
+      - run: pip-audit

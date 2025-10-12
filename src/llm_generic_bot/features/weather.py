@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, List
 import time, json, os
 from pathlib import Path
 from ..adapters.openweather import fetch_current_city
@@ -36,8 +36,27 @@ async def build_weather_post(cfg: Dict[str, Any]) -> str:
 
     cities_by_region: Dict[str, List[str]] = wc.get("cities", {})
     cache = _read_cache()
-    now_snap: Dict[str, Dict[str, Any]] = cache.get("today", {})
-    yesterday: Dict[str, Dict[str, Any]] = cache.get("yesterday", {})
+    previous_today_source = cache.get("today", {}) or {}
+    if isinstance(previous_today_source, dict):
+        previous_today: Dict[str, Dict[str, Any]] = {
+            city: dict(snapshot)
+            for city, snapshot in previous_today_source.items()
+            if isinstance(snapshot, dict)
+        }
+    else:
+        previous_today = {}
+    yesterday_source = cache.get("yesterday", {}) or {}
+    if previous_today:
+        yesterday: Dict[str, Dict[str, Any]] = previous_today
+    elif isinstance(yesterday_source, dict):
+        yesterday = {
+            city: dict(snapshot)
+            for city, snapshot in yesterday_source.items()
+            if isinstance(snapshot, dict)
+        }
+    else:
+        yesterday = {}
+    now_snap: Dict[str, Dict[str, Any]] = {}
 
     out_lines = [header]
     warns: List[str] = []
@@ -79,6 +98,6 @@ async def build_weather_post(cfg: Dict[str, Any]) -> str:
         out_lines.append(footer_warn.replace("{bullets}", "\n".join(warns)))
 
     # rotate cache
-    new_cache = {"today": now_snap, "yesterday": cache.get("today", {})}
+    new_cache = {"today": now_snap, "yesterday": previous_today}
     _write_cache(new_cache)
     return "\n".join(out_lines).strip()

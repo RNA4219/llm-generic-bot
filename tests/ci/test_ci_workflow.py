@@ -4,7 +4,20 @@ from pathlib import Path
 
 import pytest
 
-yaml = pytest.importorskip("yaml")
+try:
+    import yaml  # type: ignore[import]
+except ModuleNotFoundError:  # pragma: no cover - fallback for environments without PyYAML
+    import importlib.util
+
+    _stub_path = Path(__file__).with_name("_yaml_stub.py")
+    _spec = importlib.util.spec_from_file_location("_yaml_stub", _stub_path)
+    assert _spec and _spec.loader, "failed to load YAML stub"
+    _module = importlib.util.module_from_spec(_spec)
+    import sys
+
+    sys.modules[_spec.name] = _module
+    _spec.loader.exec_module(_module)
+    yaml = _module.yaml  # type: ignore[attr-defined]
 
 
 WORKFLOW_PATH = Path(".github/workflows/ci.yml")
@@ -48,7 +61,7 @@ def test_ci_workflow_runs_expected_commands() -> None:
 
 def test_ci_workflow_notifies_slack_on_failure() -> None:
     workflow = _load_workflow()
-    slack_jobs = ["lint", "type", "test", "codeql"]
+    slack_jobs = ["lint", "type", "test", "codeql", "pip-audit"]
 
     for job_name in slack_jobs:
         steps = _iter_job_steps(workflow, job_name)

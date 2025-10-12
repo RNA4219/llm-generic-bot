@@ -140,3 +140,10 @@ jobs:
         run: pip install pip-audit
       - name: Run pip-audit
         run: pip-audit
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
+          payload: >-
+            {"text": ":rotating_light: pip-audit job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}

@@ -27,6 +27,17 @@ class PermitHook(Protocol):
         ...
 
 
+class CooldownChecker(Protocol):
+    async def __call__(
+        self,
+        *,
+        job: str,
+        platform: str | None,
+        channel: str | None,
+    ) -> bool:
+        ...
+
+
 class SummaryError(RuntimeError):
     def __init__(self, message: str, *, retryable: bool = True) -> None:
         super().__init__(message)
@@ -39,6 +50,7 @@ async def build_news_post(
     feed_provider: FeedProvider,
     summary_provider: SummaryProvider,
     permit: PermitHook | None = None,
+    cooldown: CooldownChecker | None = None,
     logger: logging.Logger | None = None,
 ) -> str:
     logger = logger or logging.getLogger(__name__)
@@ -65,11 +77,38 @@ async def build_news_post(
     suppress_cooldown = bool(cfg.get("suppress_cooldown", False))
     language_obj = cfg.get("language", "ja")
     language = str(language_obj) if isinstance(language_obj, str) else "ja"
+    platform_obj = cfg.get("platform")
+    platform = str(platform_obj) if isinstance(platform_obj, str) else None
+    channel_obj = cfg.get("channel")
+    channel = str(channel_obj) if isinstance(channel_obj, str) else None
+
+    if cooldown is not None:
+        cooldown_active = bool(
+            await cooldown(job=job, platform=platform, channel=channel)
+        )
+        if cooldown_active:
+            suppress_cooldown = True
 
     raw_items = await feed_provider.fetch(feed_url, limit=limit)
     items: Sequence[NewsFeedItem] = list(raw_items)[:limit]
     summaries: list[str] = []
+
+    summary_retry_obj = cfg.get("summary_retry", 2)
+    if isinstance(summary_retry_obj, (int, float)):
+        max_attempts = max(int(summary_retry_obj), 1)
+    else:
+        max_attempts = 2
+
+    def _fallback(item: NewsFeedItem) -> str:
+        if item.summary:
+            return item.summary
+        return item.title
+
     for item in items:
+        if suppress_cooldown:
+            summaries.append(_fallback(item))
+            continue
+
         attempt = 0
         while True:
             attempt += 1
@@ -78,10 +117,20 @@ async def build_news_post(
                 summaries.append(summary_text)
                 break
             except SummaryError as exc:
-                if exc.retryable and attempt < 2:
-                    logger.warning("news_summary_retry", extra={"title": item.title, "attempt": attempt})
+                should_retry = exc.retryable and attempt < max_attempts
+                if should_retry:
+                    logger.warning(
+                        "news_summary_retry",
+                        extra={"title": item.title, "attempt": attempt},
+                    )
                     continue
-                raise
+                fallback = _fallback(item)
+                logger.warning(
+                    "news_summary_fallback",
+                    extra={"title": item.title, "reason": str(exc)},
+                )
+                summaries.append(fallback)
+                break
     lines = [header]
     for item, summary_text in zip(items, summaries, strict=False):
         lines.append(
@@ -94,6 +143,28 @@ async def build_news_post(
     if footer:
         lines.append(footer)
 
-    (permit or (lambda *, job, suppress_cooldown: None))(job=job, suppress_cooldown=suppress_cooldown)
-    logger.info("news_summary_ready", extra={"items": len(items), "suppress_cooldown": suppress_cooldown, "job": job})
+    (permit or (lambda *, job, suppress_cooldown: None))(
+        job=job, suppress_cooldown=suppress_cooldown
+    )
+    if suppress_cooldown:
+        logger.info(
+            "news_summary_skip_cooldown",
+            extra={
+                "items": len(items),
+                "job": job,
+                "platform": platform,
+                "channel": channel,
+            },
+        )
+    else:
+        logger.info(
+            "news_summary_ready",
+            extra={
+                "items": len(items),
+                "suppress_cooldown": suppress_cooldown,
+                "job": job,
+                "platform": platform,
+                "channel": channel,
+            },
+        )
     return "\n".join(lines)

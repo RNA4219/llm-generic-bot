@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable
 
 import pytest
 
@@ -12,65 +13,158 @@ from llm_generic_bot.features.news import NewsFeedItem, SummaryError, build_news
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+@dataclass
+class SummaryStub:
+    outputs: deque[str | Exception]
+    calls: list[dict[str, Any]]
+
+    @classmethod
+    def from_iterable(cls, values: Iterable[str | Exception]) -> "SummaryStub":
+        return cls(outputs=deque(values), calls=[])
+
+    async def summarize(self, item: NewsFeedItem, *, language: str = "ja") -> str:
+        self.calls.append({"title": item.title, "language": language})
+        if not self.outputs:
+            raise AssertionError("unexpected summarize call")
+        result = self.outputs.popleft()
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
 
 
-@dataclass(frozen=True)
-class Case:
-    name: str
-    cfg: dict[str, Any]
-    items: list[NewsFeedItem]
-    outputs: list[str | Exception]
-    expected: str
-    suppress: bool
-    summary_calls: list[str]
-    retry_log: bool
-
-
-CASES = (
-    Case("feed_success", {"feed_url": "https://example.com/rss", "max_items": 2, "template": {"header": "最新ニュース", "item": "・{title}: {summary} ({link})"}}, [NewsFeedItem("記事A", "https://example.com/a", "long a"), NewsFeedItem("記事B", "https://example.com/b", "long b")], ["要約A", "要約B"], "最新ニュース\n・記事A: 要約A (https://example.com/a)\n・記事B: 要約B (https://example.com/b)", False, ["記事A", "記事B"], False),
-    Case("summary_retry", {"feed_url": "https://example.com/rss", "max_items": 1, "template": {"header": "ニュース", "item": "- {title}: {summary}"}}, [NewsFeedItem("記事C", "https://example.com/c", "long c")], [SummaryError("temporary", retryable=True), "短い要約"], "ニュース\n- 記事C: 短い要約", False, ["記事C", "記事C"], True),
-    Case("suppress_cooldown", {"feed_url": "https://example.com/rss", "max_items": 1, "template": {"header": "速報", "item": "{title} - {summary}"}, "suppress_cooldown": True}, [NewsFeedItem("記事D", "https://example.com/d", "long d")], ["要約D"], "速報\n記事D - 要約D", True, ["記事D"], False),
-)
-
-
-@pytest.mark.parametrize("case", CASES, ids=lambda c: c.name)
-async def test_build_news_post_table_driven(case: Case, caplog: pytest.LogCaptureFixture) -> None:
+async def test_build_news_post_success(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
+    items = [
+        NewsFeedItem(title="記事A", link="https://example.com/a", summary="A要約"),
+        NewsFeedItem(title="記事B", link="https://example.com/b", summary="B要約"),
+    ]
     feed_calls: list[tuple[str, int | None]] = []
 
     async def fetch(url: str, *, limit: int | None = None) -> Iterable[NewsFeedItem]:
         feed_calls.append((url, limit))
-        return list(case.items[: limit or len(case.items)])
+        return items[: limit or len(items)]
 
-    outputs: Iterator[str | Exception] = iter(case.outputs)
-    summary_calls: list[str] = []
-
-    async def summarize(item: NewsFeedItem, *, language: str = "ja") -> str:
-        summary_calls.append(item.title)
-        try:
-            result = next(outputs)
-        except StopIteration as exc:  # pragma: no cover
-            raise AssertionError("unexpected summarize call") from exc
-        if isinstance(result, Exception):
-            raise result
-        return result
-
+    summary = SummaryStub.from_iterable(["短いA", "短いB"])
     permit_calls: list[dict[str, Any]] = []
+    cooldown_calls: list[dict[str, Any]] = []
 
-    caplog.set_level(logging.INFO)
-    logger = logging.getLogger(f"test.news.{case.name}")
+    async def cooldown(**kwargs: Any) -> bool:
+        cooldown_calls.append(kwargs)
+        return False
+
     result = await build_news_post(
-        case.cfg,
+        {
+            "feed_url": "https://example.com/rss",
+            "job": "morning-news",
+            "max_items": 2,
+            "template": {"header": "ヘッドライン", "item": "・{title}: {summary}"},
+        },
         feed_provider=SimpleNamespace(fetch=fetch),
-        summary_provider=SimpleNamespace(summarize=summarize),
-        permit=lambda *, job, suppress_cooldown: permit_calls.append({"job": job, "suppress_cooldown": suppress_cooldown}),
-        logger=logger,
+        summary_provider=summary,
+        permit=lambda *, job, suppress_cooldown: permit_calls.append(
+            {"job": job, "suppress_cooldown": suppress_cooldown}
+        ),
+        cooldown=cooldown,
     )
 
-    assert result == case.expected
-    assert feed_calls == [(case.cfg["feed_url"], case.cfg.get("max_items"))]
-    assert summary_calls == case.summary_calls
-    assert permit_calls == [{"job": case.cfg.get("job", "news"), "suppress_cooldown": case.suppress}]
-    assert any(record.message == "news_summary_retry" for record in caplog.records) is case.retry_log
+    assert result == "ヘッドライン\n・記事A: 短いA\n・記事B: 短いB"
+    assert feed_calls == [("https://example.com/rss", 2)]
+    assert summary.calls == [
+        {"title": "記事A", "language": "ja"},
+        {"title": "記事B", "language": "ja"},
+    ]
+    assert permit_calls == [{"job": "morning-news", "suppress_cooldown": False}]
+    assert cooldown_calls == [
+        {"job": "morning-news", "platform": None, "channel": None}
+    ]
+    assert any(record.message == "news_summary_ready" for record in caplog.records)
+
+
+async def test_build_news_post_summary_retry_and_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
+    items = [
+        NewsFeedItem(title="記事C", link="https://example.com/c", summary="既存要約"),
+    ]
+
+    async def fetch(url: str, *, limit: int | None = None) -> Iterable[NewsFeedItem]:
+        return items
+
+    summary = SummaryStub.from_iterable(
+        [
+            SummaryError("temporary", retryable=True),
+            SummaryError("fatal", retryable=False),
+        ]
+    )
+    permit_calls: list[dict[str, Any]] = []
+
+    result = await build_news_post(
+        {
+            "feed_url": "https://example.com/rss",
+            "job": "evening-news",
+            "template": {"header": "ニュース", "item": "- {title}: {summary}"},
+        },
+        feed_provider=SimpleNamespace(fetch=fetch),
+        summary_provider=summary,
+        permit=lambda *, job, suppress_cooldown: permit_calls.append(
+            {"job": job, "suppress_cooldown": suppress_cooldown}
+        ),
+    )
+
+    assert result == "ニュース\n- 記事C: 既存要約"
+    assert summary.calls == [
+        {"title": "記事C", "language": "ja"},
+        {"title": "記事C", "language": "ja"},
+    ]
+    assert permit_calls == [{"job": "evening-news", "suppress_cooldown": False}]
+    assert any(record.message == "news_summary_fallback" for record in caplog.records)
+    retry_logs = [record for record in caplog.records if record.message == "news_summary_retry"]
+    assert len(retry_logs) == 1
+
+
+async def test_build_news_post_suppressed_by_cooldown(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
+    items = [
+        NewsFeedItem(title="記事D", link="https://example.com/d", summary="長文要約"),
+    ]
+
+    async def fetch(url: str, *, limit: int | None = None) -> Iterable[NewsFeedItem]:
+        return items
+
+    summary = SummaryStub.from_iterable(["unused"])
+    permit_calls: list[dict[str, Any]] = []
+    cooldown_calls: list[dict[str, Any]] = []
+
+    async def cooldown(**kwargs: Any) -> bool:
+        cooldown_calls.append(kwargs)
+        return True
+
+    result = await build_news_post(
+        {
+            "feed_url": "https://example.com/rss",
+            "job": "breaking-news",
+            "template": {"header": "速報", "item": "* {title}: {summary}"},
+        },
+        feed_provider=SimpleNamespace(fetch=fetch),
+        summary_provider=summary,
+        permit=lambda *, job, suppress_cooldown: permit_calls.append(
+            {"job": job, "suppress_cooldown": suppress_cooldown}
+        ),
+        cooldown=cooldown,
+    )
+
+    assert result == "速報\n* 記事D: 長文要約"
+    assert summary.calls == []
+    assert permit_calls == [{"job": "breaking-news", "suppress_cooldown": True}]
+    assert cooldown_calls == [
+        {"job": "breaking-news", "platform": None, "channel": None}
+    ]
+    assert any(record.message == "news_summary_skip_cooldown" for record in caplog.records)

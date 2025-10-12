@@ -8,7 +8,7 @@
   - PermitGate は `QuotaConfig` に従ったチャンネル単位の余裕判定を行い、許可時のみジョブ名を付け替えてオーケストレータへ渡す。
   - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 通過済みのメッセージをまとめて送出する。
   - ジッタは `Scheduler` で既定有効となり、送信時刻のランダム化で瞬間集中を緩和する。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
-- integration テストは `tests/integration/test_main_pipeline.py` と `tests/integration/test_permit_bridge.py` の 2 本で最新経路を検証し、Permit 拒否や併合結果の JSON 出力・メトリクス連携をスナップショット化している。追加機能に備えた News/おみくじ経路の結合テストは未着手。
+- integration テストは `tests/integration/test_main_pipeline.py` と `tests/integration/test_permit_bridge.py` の 2 本で最新経路を検証し、バッチ送信された実メッセージと Permit 判定の可否、メトリクスに付与される `retryable` タグを直接確認している。追加機能に備えた News/おみくじ経路の結合テストは未着手。
 - 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、新規コンテンツ（News/おみくじ等）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ

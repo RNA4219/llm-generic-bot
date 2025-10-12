@@ -1,5 +1,5 @@
 name: ci
-on:
+'on':
   push: { branches: ["**"] }
   pull_request:
   schedule:

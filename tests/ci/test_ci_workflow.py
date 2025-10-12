@@ -91,6 +91,11 @@ def test_ci_workflow_has_weekly_pip_audit_job() -> None:
         for command in run_commands
     ), "pip-audit job must install pip-audit"
     assert any(
+        isinstance(command, str)
+        and any(pattern in command for pattern in ("pip install .", "pip install -e ."))
+        for command in run_commands
+    ), "pip-audit job must install project dependencies"
+    assert any(
         isinstance(command, str) and command.strip().startswith("pip-audit")
         for command in run_commands
     ), "pip-audit job must execute pip-audit"

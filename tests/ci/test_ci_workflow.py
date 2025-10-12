@@ -48,7 +48,7 @@ def test_ci_workflow_runs_expected_commands() -> None:
 
 def test_ci_workflow_notifies_slack_on_failure() -> None:
     workflow = _load_workflow()
-    slack_jobs = ["lint", "type", "test", "codeql"]
+    slack_jobs = ["lint", "type", "test", "codeql", "pip-audit"]
 
     for job_name in slack_jobs:
         steps = _iter_job_steps(workflow, job_name)

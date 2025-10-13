@@ -73,3 +73,25 @@ def test_weekly_report_handles_missing_metrics(totals: Mapping[str, int]) -> Non
     assert payload.channel == "#ops"
     assert payload.tags["severity"] in {"degraded", "high"}
     assert payload.tags["locale"] == "ja"
+
+
+def test_weekly_report_uses_top_channel_when_preference_missing() -> None:
+    snapshot = FakeWeeklyMetricsSnapshot(
+        period_start=date(2024, 4, 15),
+        period_end=date(2024, 4, 21),
+        totals={
+            "jobs_processed": 90,
+            "jobs_succeeded": 84,
+            "jobs_failed": 6,
+        },
+        breakdowns={
+            "channels": {"#alerts": 50, "#ops": 40},
+            "failure_tags": {"timeout": 3},
+        },
+        metadata={"failure_rate_alert": 0.3},
+    )
+
+    payload = generate_weekly_summary(snapshot, locale="ja", fallback="fallback")
+
+    assert payload.channel == "#alerts"
+    assert payload.tags["top_channel"] == "#alerts"

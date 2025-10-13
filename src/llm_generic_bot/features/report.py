@@ -46,13 +46,18 @@ def generate_weekly_summary(
     processed, succeeded, failed = (
         _as_int(totals.get(name)) for name in ("jobs_processed", "jobs_succeeded", "jobs_failed")
     )
+    breakdowns = _as_mapping(getattr(metrics, "breakdowns", {}))
+    channel_counts = _as_mapping(breakdowns.get("channels", {}))
     metadata = _as_mapping(getattr(metrics, "metadata", {}))
-    channel = _resolve_channel(metadata)
+    channel = _resolve_channel(metadata, channel_counts)
     tags: dict[str, str] = {"locale": locale}
     start = _format_date(getattr(metrics, "period_start", None))
     end = _format_date(getattr(metrics, "period_end", None))
     if start and end:
         tags["period"] = f"{start}/{end}"
+    top_channel = _top_ranked_item(channel_counts)
+    if top_channel:
+        tags["top_channel"] = top_channel[0]
     if processed is None or succeeded is None or failed is None or processed <= 0:
         tags["severity"] = "degraded"
         return ReportPayload(fallback, channel, tags)
@@ -74,11 +79,9 @@ def generate_weekly_summary(
         success_rate=(succeeded / processed * 100.0) if processed else 0.0,
     )
     lines = [header, summary]
-    breakdowns = _as_mapping(getattr(metrics, "breakdowns", {}))
-    channels_line = _format_top_items(_as_mapping(breakdowns.get("channels", {})))
+    channels_line = _format_top_items(channel_counts)
     if channels_line:
         lines.append(template["channels"].format(channels=channels_line))
-        tags["top_channel"] = channels_line.split(",", 1)[0].split()[0]
     failure_line = _format_top_items(_as_mapping(breakdowns.get("failure_tags", {})))
     if failure_line:
         lines.append(template["failures"].format(failures=failure_line))
@@ -87,27 +90,57 @@ def generate_weekly_summary(
     return ReportPayload("\n".join(lines), channel, tags)
 
 
-def _as_mapping(value: object) -> Mapping[str, Any]: return value if isinstance(value, Mapping) else {}
+def _as_mapping(value: object) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
-def _as_int(value: object) -> int | None: return int(value) if isinstance(value, (int, float, bool)) else None
+def _as_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    return None
 
 
-def _as_float(value: object) -> float | None: return float(value) if isinstance(value, (int, float, bool)) else None
+def _as_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
 
 
-def _format_date(value: object) -> str | None: return value.isoformat() if isinstance(value, date) else None
+def _format_date(value: object) -> str | None:
+    return value.isoformat() if isinstance(value, date) else None
 
 
-def _resolve_channel(metadata: Mapping[str, Any]) -> str:
+def _resolve_channel(metadata: Mapping[str, Any], channels: Mapping[str, Any]) -> str:
     channel = metadata.get("preferred_channel")
-    return channel if isinstance(channel, str) and channel else "-"
+    if isinstance(channel, str) and channel:
+        return channel
+    top_channel = _top_ranked_item(channels)
+    if top_channel:
+        return top_channel[0]
+    return "-"
 
 
 def _format_top_items(items: Mapping[str, Any], limit: int = 3) -> str:
-    pairs: Iterable[tuple[str, int]] = ((k, _as_int(v) or 0) for k, v in items.items() if isinstance(k, str))
-    ordered = sorted(pairs, key=lambda item: (-item[1], item[0]))[:limit]
-    return ", ".join(f"{name} ({count})" for name, count in ordered if count > 0)
+    ordered = _top_ranked_items(items, limit)
+    return ", ".join(f"{name} ({count})" for name, count in ordered)
+
+
+def _top_ranked_items(items: Mapping[str, Any], limit: int) -> list[tuple[str, int]]:
+    pairs: Iterable[tuple[str, int]] = (
+        (name, count)
+        for name, count in ((k, _as_int(v) or 0) for k, v in items.items() if isinstance(k, str))
+        if count > 0
+    )
+    return sorted(pairs, key=lambda item: (-item[1], item[0]))[:limit]
+
+
+def _top_ranked_item(items: Mapping[str, Any]) -> tuple[str, int] | None:
+    ordered = _top_ranked_items(items, 1)
+    return ordered[0] if ordered else None
 
 
 __all__ = ["ReportPayload", "generate_weekly_summary"]

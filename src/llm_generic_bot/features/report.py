@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Mapping
 
-from ..infra.metrics import CounterSnapshot, WeeklyMetricsSnapshot
+from ..infra.metrics import CounterSnapshot, ObservationSnapshot, WeeklyMetricsSnapshot
 
 
 @dataclass(frozen=True)
@@ -20,28 +20,30 @@ class ReportPayload:
 class WeeklyReportTemplate:
     """各ロケールのメッセージテンプレート."""
 
-    header: str
-    summary: str
-    channels: str
-    failures: str
+    title: str
+    line: str
+    footer: str | None = None
+
+
+@dataclass(frozen=True)
+class WeeklyReportSettings:
+    templates: Mapping[str, WeeklyReportTemplate]
+    fallback: str
+    failure_threshold: float
 
 
 def generate_weekly_summary(
     snapshot: WeeklyMetricsSnapshot,
     *,
     locale: str,
-    fallback: str,
-    failure_threshold: float,
-    templates: Mapping[str, WeeklyReportTemplate],
+    settings: WeeklyReportSettings,
 ) -> ReportPayload:
     """週次メトリクスをテンプレートへ整形し通知ペイロードを生成する.
 
     Args:
         snapshot: 7日間のメトリクススナップショット。
         locale: 使用するテンプレートのロケール識別子。
-        fallback: 集計不能時に返す本文。
-        failure_threshold: 失敗率しきい値 (0.0-1.0)。
-        templates: ロケールごとの本文テンプレート集合。
+        settings: テンプレートやフォールバック、閾値を含む設定。
     """
 
     tags: dict[str, str] = {"locale": locale}
@@ -49,42 +51,65 @@ def generate_weekly_summary(
     end = _format_date(snapshot.end)
     if start and end:
         tags["period"] = f"{start}/{end}"
-    succeeded, failed = _totals(snapshot)
+    try:
+        succeeded, failed = _totals(snapshot)
+        channel_counts = _aggregate_channel_counts(snapshot)
+        failure_tags = _aggregate_failure_tags(snapshot)
+        for bucket in snapshot.observations.values():
+            for observation in bucket.values():
+                if not isinstance(observation, ObservationSnapshot):
+                    raise TypeError
+                float(observation.average)
+    except (TypeError, ValueError, AttributeError):
+        tags["severity"] = "degraded"
+        return ReportPayload(settings.fallback, "-", tags)
     processed = succeeded + failed
-    channel_counts = _aggregate_channel_counts(snapshot)
-    failure_tags = _aggregate_failure_tags(snapshot)
     top_channel = _top_ranked_item(channel_counts)
     channel = top_channel[0] if top_channel else "-"
     if top_channel:
         tags["top_channel"] = top_channel[0]
     if processed <= 0:
         tags["severity"] = "degraded"
-        return ReportPayload(fallback, channel, tags)
-    failure_rate = failed / processed if processed else 0.0
-    if failure_rate >= failure_threshold:
+        return ReportPayload(settings.fallback, channel, tags)
+    failure_rate = failed / processed
+    tags["failure_rate"] = f"{failure_rate * 100.0:.1f}%"
+    if failure_rate >= settings.failure_threshold:
         tags["severity"] = "high"
-        tags["failure_rate"] = f"{failure_rate * 100.0:.1f}%"
-        return ReportPayload(fallback, channel, tags)
-    template = templates.get(locale)
+        return ReportPayload(settings.fallback, channel, tags)
+    template = settings.templates.get(locale)
     if template is None:
         tags["severity"] = "degraded"
-        return ReportPayload(fallback, channel, tags)
-    header = template.header.format(start=start or "-", end=end or "-")
-    summary = template.summary.format(
-        total=processed,
-        success=succeeded,
-        failure=failed,
-        success_rate=(succeeded / processed * 100.0) if processed else 0.0,
-    )
-    lines = [header, summary]
+        return ReportPayload(settings.fallback, channel, tags)
+    range_text = _format_range(start, end)
+    context = {
+        "week_range": range_text,
+        "jobs_processed": processed,
+        "jobs_success": succeeded,
+        "jobs_failure": failed,
+        "failure_rate": tags["failure_rate"],
+        "top_channel": channel,
+    }
+    lines = [template.title.format(**context)]
+    metrics_lines: list[tuple[str, str]] = [
+        ("jobs_processed", str(processed)),
+        ("jobs_success", str(succeeded)),
+        ("jobs_failure", str(failed)),
+    ]
     channels_line = _format_top_items(channel_counts)
     if channels_line:
-        lines.append(template.channels.format(channels=channels_line))
-    failure_line = _format_top_items(failure_tags)
-    if failure_line:
-        lines.append(template.failures.format(failures=failure_line))
+        metrics_lines.append(("top_channels", channels_line))
+        context["top_channels"] = channels_line
+    failures_line = _format_top_items(failure_tags)
+    if failures_line:
+        metrics_lines.append(("top_failures", failures_line))
+        context["top_failures"] = failures_line
+    context.setdefault("top_channels", "-")
+    context.setdefault("top_failures", "-")
+    for name, value in metrics_lines:
+        lines.append(template.line.format(metric=name, value=value))
+    if template.footer:
+        lines.append(template.footer.format(**context))
     tags["severity"] = "normal"
-    tags["failure_rate"] = f"{failure_rate * 100.0:.1f}%"
     return ReportPayload("\n".join(lines), channel, tags)
 
 
@@ -129,6 +154,10 @@ def _format_top_items(items: Mapping[str, Any], limit: int = 3) -> str:
     return ", ".join(f"{name} ({count})" for name, count in ordered)
 
 
+def _format_range(start: str | None, end: str | None) -> str:
+    return f"{start or '-'}〜{end or '-'}"
+
+
 def _top_ranked_items(items: Mapping[str, Any], limit: int) -> list[tuple[str, int]]:
     pairs: list[tuple[str, int]] = []
     for name, raw in items.items():
@@ -158,4 +187,9 @@ def _lookup_tag(tags: Iterable[tuple[str, str]], key: str) -> str | None:
     return None
 
 
-__all__ = ["ReportPayload", "WeeklyReportTemplate", "generate_weekly_summary"]
+__all__ = [
+    "ReportPayload",
+    "WeeklyReportTemplate",
+    "WeeklyReportSettings",
+    "generate_weekly_summary",
+]

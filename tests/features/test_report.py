@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
 
 from llm_generic_bot.features.report import (
     ReportPayload,
+    WeeklyReportSettings,
     WeeklyReportTemplate,
     generate_weekly_summary,
 )
@@ -18,14 +20,17 @@ def _tags(**items: str) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(items.items()))
 
 
-TEMPLATES = {
-    "ja": WeeklyReportTemplate(
-        header="📊 運用サマリ {start}〜{end}",
-        summary="総ジョブ: {total}件 / 成功: {success}件 / 失敗: {failure}件 (成功率 {success_rate:.1f}%)",
-        channels="活発チャンネル: {channels}",
-        failures="主要エラー: {failures}",
-    )
-}
+SETTINGS = WeeklyReportSettings(
+    templates={
+        "ja": WeeklyReportTemplate(
+            title="📊 運用サマリ {week_range}",
+            line="・{metric}: {value}",
+            footer="詳細は運用ダッシュボードへ",
+        )
+    },
+    fallback="fallback",
+    failure_threshold=0.3,
+)
 
 
 def test_weekly_report_formats_real_snapshot() -> None:
@@ -45,19 +50,13 @@ def test_weekly_report_formats_real_snapshot() -> None:
         observations={},
     )
 
-    payload = generate_weekly_summary(
-        snapshot,
-        locale="ja",
-        fallback="fallback",
-        failure_threshold=0.3,
-        templates=TEMPLATES,
-    )
+    payload = generate_weekly_summary(snapshot, locale="ja", settings=SETTINGS)
 
     assert isinstance(payload, ReportPayload)
     assert payload.channel == "#alerts"
-    assert "📊 運用サマリ" in payload.body
-    assert "114" in payload.body and "4" in payload.body
-    assert "timeout" in payload.body and "quota" in payload.body
+    assert payload.body.splitlines()[0] == "📊 運用サマリ 2024-04-01〜2024-04-07"
+    assert "・jobs_processed: 118" in payload.body
+    assert "timeout (3)" in payload.body and "quota (1)" in payload.body
     assert payload.tags["severity"] == "normal"
     assert payload.tags["locale"] == "ja"
     assert payload.tags["period"] == "2024-04-01/2024-04-07"
@@ -80,9 +79,7 @@ def test_weekly_report_handles_threshold_and_fallback(failure_threshold: float) 
     payload = generate_weekly_summary(
         snapshot,
         locale="ja",
-        fallback="fallback body",
-        failure_threshold=failure_threshold,
-        templates=TEMPLATES,
+        settings=replace(SETTINGS, failure_threshold=failure_threshold, fallback="fallback body"),
     )
 
     assert payload.body == "fallback body"
@@ -94,17 +91,11 @@ def test_weekly_report_handles_threshold_and_fallback(failure_threshold: float) 
 def test_weekly_report_prefers_configured_template_locale() -> None:
     templates = {
         "en": WeeklyReportTemplate(
-            header="Weekly summary {start} to {end}",
-            summary="Processed {total} / Success {success} / Failure {failure} ({success_rate:.1f}%)",
-            channels="Channels: {channels}",
-            failures="Failures: {failures}",
+            title="Weekly summary {week_range}",
+            line="- {metric}: {value}",
+            footer="Thanks",
         ),
-        "ja": WeeklyReportTemplate(
-            header="📈 サマリ {start}〜{end}",
-            summary="処理数 {total} 成功 {success} 失敗 {failure} (成功率 {success_rate:.1f}%)",
-            channels="活発チャンネル: {channels}",
-            failures="主要エラー: {failures}",
-        ),
+        "ja": SETTINGS.templates["ja"],
     }
     snapshot = WeeklyMetricsSnapshot(
         start=datetime(2024, 4, 15, tzinfo=timezone.utc),
@@ -123,12 +114,37 @@ def test_weekly_report_prefers_configured_template_locale() -> None:
     payload = generate_weekly_summary(
         snapshot,
         locale="en",
-        fallback="fallback",
-        failure_threshold=0.2,
-        templates=templates,
+        settings=WeeklyReportSettings(
+            templates=templates,
+            fallback="fallback",
+            failure_threshold=0.2,
+        ),
     )
 
     assert payload.channel == "#alerts"
     assert payload.tags["top_channel"] == "#alerts"
     assert payload.tags["locale"] == "en"
-    assert payload.body.startswith("Weekly summary")
+    assert payload.body.startswith("Weekly summary 2024-04-15〜2024-04-21")
+
+
+def test_weekly_report_handles_unconvertible_snapshot() -> None:
+    snapshot = WeeklyMetricsSnapshot(
+        start=datetime(2024, 4, 22, tzinfo=timezone.utc),
+        end=datetime(2024, 4, 28, tzinfo=timezone.utc),
+        counters={
+            "send.success": {
+                "invalid": CounterSnapshot(count=5),
+            }
+        },
+        observations={
+            "latency": {
+                ("job", "weekly"): "oops",  # type: ignore[dict-item]
+            }
+        },
+    )
+
+    payload = generate_weekly_summary(snapshot, locale="ja", settings=SETTINGS)
+
+    assert payload.body == SETTINGS.fallback
+    assert payload.tags["severity"] == "degraded"
+    assert payload.channel == "-"

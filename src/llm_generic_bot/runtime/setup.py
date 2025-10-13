@@ -348,10 +348,9 @@ def setup_runtime(
                 failure_threshold=get_float(report_cfg.get("failure_threshold"), 0.5),
                 templates={
                     locale: WeeklyReportTemplate(
-                        header=title_template.format(week_range="{start} – {end}"),
-                        summary="",
-                        channels="",
-                        failures="",
+                        title=title_template.format(week_range="{start} – {end}"),
+                        line="",
+                        footer="",
                     )
                 },
             )

@@ -68,3 +68,41 @@ def test_collect_weekly_snapshot_returns_empty_snapshot() -> None:
     assert snapshot.start == snapshot.end
     assert snapshot.counters == {}
     assert snapshot.observations == {}
+
+
+def test_collect_weekly_snapshot_materializes_full_statistics() -> None:
+    base = datetime(2024, 1, 15, tzinfo=timezone.utc)
+    clock_values = iter(
+        [
+            base - timedelta(days=1),
+            base - timedelta(hours=20),
+            base - timedelta(hours=18),
+            base - timedelta(hours=12),
+            base,
+        ]
+    )
+    service = InMemoryMetricsService(clock=_clock_from(clock_values))
+    recorder = make_metrics_recorder(service)
+
+    recorder.increment("send.success")
+    recorder.increment("send.success")
+    recorder.observe("send.latency", 0.2)
+    recorder.observe("send.latency", 1.4, tags={"channel": "alerts"})
+
+    snapshot = asyncio.run(service.collect_weekly_snapshot())
+
+    assert snapshot.counters == {
+        "send.success": {(): CounterSnapshot(count=2)}
+    }
+    assert snapshot.observations == {
+        "send.latency": {
+            (): ObservationSnapshot(count=1, minimum=0.2, maximum=0.2, total=0.2, average=0.2),
+            (("channel", "alerts"),): ObservationSnapshot(
+                count=1,
+                minimum=1.4,
+                maximum=1.4,
+                total=1.4,
+                average=1.4,
+            ),
+        }
+    }

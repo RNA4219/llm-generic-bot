@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from importlib import import_module
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Mapping, Optional, cast
 
@@ -18,7 +19,7 @@ from .core.scheduler import Scheduler
 from .features.dm_digest import build_dm_digest
 from .features.news import build_news_post
 from .features.omikuji import build_omikuji_post
-from .features.weather import build_weather_post
+from .features.weather import ReactionHistoryProvider, build_weather_post
 
 def _as_mapping(value: object) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
@@ -59,6 +60,31 @@ def _optional_str(value: object) -> Optional[str]:
     if isinstance(value, str) and value:
         return value
     return None
+
+
+def _resolve_object(value: object) -> object | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return value
+    dotted = value.strip()
+    if not dotted:
+        return None
+    module_path: str
+    attr_path: str
+    if ":" in dotted:
+        module_path, attr_path = dotted.split(":", 1)
+    else:
+        module_path, sep, attr_path = dotted.rpartition(".")
+        if not sep:
+            raise ValueError(f"Invalid dotted path: {dotted}")
+    module = import_module(module_path)
+    target: object = module
+    for part in attr_path.split("."):
+        if not part:
+            raise ValueError(f"Invalid dotted path: {dotted}")
+        target = getattr(target, part)
+    return target
 
 
 def setup_runtime(
@@ -148,8 +174,20 @@ def setup_runtime(
     weather_cfg = _as_mapping(cfg.get("weather"))
     schedule_value = weather_cfg.get("schedule")
     schedule = schedule_value if isinstance(schedule_value, str) else "21:00"
+    engagement_cfg = _as_mapping(weather_cfg.get("engagement"))
+    history_provider_raw = engagement_cfg.get("history_provider")
+    history_provider_resolved = _resolve_object(history_provider_raw)
+    reaction_history_provider = cast(Optional[ReactionHistoryProvider], history_provider_resolved)
+
     async def job_weather() -> Optional[str]:
-        return await build_weather_post(cfg)
+        return await build_weather_post(
+            cfg,
+            cooldown=cooldown,
+            reaction_history_provider=reaction_history_provider,
+            platform=platform,
+            channel=default_channel,
+            job="weather",
+        )
 
     weather_priority_raw = weather_cfg.get("priority")
     weather_priority = int(_num(weather_priority_raw, 5.0)) if weather_priority_raw is not None else 5

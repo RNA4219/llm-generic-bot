@@ -25,6 +25,11 @@
     "schedule": "21:00",
     "thresholds": { "hot_30": 30.0, "hot_35": 35.0, "delta_warn": 7.0, "delta_strong": 10.0 },
     "icons": { "hot_30": "🌡️", "hot_35": "🔥", "delta_up": "🔺", "delta_down": "🔻", "warn": "⚠️" },
+    "engagement": {
+      "history_provider": "your_project.metrics:weather_reaction_history",
+      "history_limit": 5,
+      "target_reactions": 5
+    },
     "cities": {
       "関東": ["Tokyo", "Yokohama"],
       "関西": ["Osaka", "Kyoto"]

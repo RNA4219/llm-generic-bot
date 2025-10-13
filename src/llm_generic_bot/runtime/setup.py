@@ -24,7 +24,9 @@ from ..features.dm_digest import (
     SummaryProvider as DigestSummaryProvider,
     build_dm_digest,
 )
+from ..features.news import build_news_post as _build_news_post
 from ..features.omikuji import build_omikuji_post
+from ..features.weather import build_weather_post as _build_weather_post
 from .jobs import register_news_job, register_weather_job
 from .jobs.helpers import (
     as_mapping as _as_mapping,
@@ -35,7 +37,16 @@ from .jobs.helpers import (
     resolve_object as _resolve_object,
 )
 
-__all__ = ["setup_runtime"]
+__all__ = [
+    "setup_runtime",
+    "build_weather_post",
+    "build_news_post",
+    "build_dm_digest",
+    "build_omikuji_post",
+]
+
+build_weather_post = _build_weather_post
+build_news_post = _build_news_post
 
 
 _resolve_reference = _resolve_object

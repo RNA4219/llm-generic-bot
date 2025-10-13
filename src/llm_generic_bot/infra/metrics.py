@@ -53,19 +53,146 @@ _LATENCY_BUCKETS: Tuple[Tuple[float, str], ...] = (
 )
 
 
+@dataclass
+class _GlobalMetricsAggregator:
+    lock: Lock = field(default_factory=Lock)
+    backend: MetricsRecorder = field(default_factory=lambda: _NOOP_BACKEND)
+    backend_configured: bool = False
+    success: dict[str, int] = field(default_factory=dict)
+    failure: dict[str, int] = field(default_factory=dict)
+    histogram: dict[str, dict[str, int]] = field(default_factory=dict)
+    denials: list[dict[str, str]] = field(default_factory=list)
+
+    def configure_backend(self, recorder: MetricsRecorder | None) -> None:
+        backend, configured = self._resolve_backend(recorder)
+        with self.lock:
+            self.backend = backend
+            self.backend_configured = configured
+
+    def report_send_success(
+        self,
+        *,
+        job: str,
+        platform: str,
+        channel: str | None,
+        duration_seconds: float,
+        permit_tags: Mapping[str, str] | None,
+    ) -> None:
+        base_tags = _base_tags(job, platform, channel)
+        tags = _merge_tags(base_tags, permit_tags)
+        duration_tags = {**base_tags, "unit": "seconds"}
+        with self.lock:
+            backend = self.backend
+            configured = self.backend_configured
+            if configured:
+                self.success[job] = self.success.get(job, 0) + 1
+                self._record_latency(job, duration_seconds)
+        backend.increment("send.success", tags=tags)
+        backend.observe(
+            "send.duration", duration_seconds, tags=duration_tags
+        )
+
+    def report_send_failure(
+        self,
+        *,
+        job: str,
+        platform: str,
+        channel: str | None,
+        duration_seconds: float,
+        error_type: str,
+    ) -> None:
+        base_tags = _base_tags(job, platform, channel)
+        increment_tags = dict(base_tags)
+        increment_tags["error"] = error_type
+        duration_tags = {**base_tags, "unit": "seconds"}
+        with self.lock:
+            backend = self.backend
+            configured = self.backend_configured
+            if configured:
+                self.failure[job] = self.failure.get(job, 0) + 1
+                self._record_latency(job, duration_seconds)
+        backend.increment("send.failure", tags=increment_tags)
+        backend.observe(
+            "send.duration", duration_seconds, tags=duration_tags
+        )
+
+    def report_permit_denied(
+        self,
+        *,
+        job: str,
+        platform: str,
+        channel: str | None,
+        reason: str,
+        permit_tags: Mapping[str, str] | None,
+    ) -> None:
+        base_tags = _base_tags(job, platform, channel)
+        tags = _merge_tags(base_tags, permit_tags)
+        tags["reason"] = reason
+        with self.lock:
+            backend = self.backend
+            configured = self.backend_configured
+            if configured:
+                self.denials.append(dict(tags))
+        backend.increment("send.denied", tags=tags)
+
+    def weekly_snapshot(self) -> dict[str, object]:
+        generated_at = _utcnow().isoformat()
+        with self.lock:
+            success = dict(self.success)
+            failure = dict(self.failure)
+            histogram = {
+                job: dict(buckets) for job, buckets in self.histogram.items()
+            }
+            denials = [dict(item) for item in self.denials]
+        success_rate: dict[str, dict[str, float | int]] = {}
+        for job in sorted(set(success) | set(failure)):
+            success_count = success.get(job, 0)
+            failure_count = failure.get(job, 0)
+            total = success_count + failure_count
+            if total == 0:
+                continue
+            success_rate[job] = {
+                "success": success_count,
+                "failure": failure_count,
+                "ratio": success_count / total,
+            }
+        return {
+            "generated_at": generated_at,
+            "success_rate": success_rate,
+            "latency_histogram_seconds": histogram,
+            "permit_denials": denials,
+        }
+
+    def reset(self) -> None:
+        with self.lock:
+            self.backend = _NOOP_BACKEND
+            self.backend_configured = False
+            self.success.clear()
+            self.failure.clear()
+            self.histogram.clear()
+            self.denials.clear()
+
+    def _record_latency(self, job: str, value: float) -> None:
+        bucket = _select_bucket(value)
+        job_hist = self.histogram.setdefault(job, {})
+        job_hist[bucket] = job_hist.get(bucket, 0) + 1
+
+    @staticmethod
+    def _resolve_backend(
+        recorder: MetricsRecorder | None,
+    ) -> tuple[MetricsRecorder, bool]:
+        if recorder is None:
+            return _NOOP_BACKEND, False
+        if isinstance(recorder, MetricsService):
+            return make_metrics_recorder(recorder), True
+        return recorder, True
+
+
+_AGGREGATOR = _GlobalMetricsAggregator()
+
+
 def configure_backend(recorder: MetricsRecorder | None) -> None:
-    global _backend, _backend_configured
-    configured = recorder is not None
-    backend: MetricsRecorder
-    if recorder is None:
-        backend = _NOOP_BACKEND
-    elif isinstance(recorder, MetricsService):
-        backend = make_metrics_recorder(recorder)
-    else:
-        backend = recorder
-    with _lock:
-        _backend = backend
-        _backend_configured = configured
+    _AGGREGATOR.configure_backend(recorder)
 
 
 async def report_send_success(
@@ -76,17 +203,13 @@ async def report_send_success(
     duration_seconds: float,
     permit_tags: Mapping[str, str] | None = None,
 ) -> None:
-    base_tags = _base_tags(job, platform, channel)
-    tags = _merge_tags(base_tags, permit_tags)
-    duration_tags = {**base_tags, "unit": "seconds"}
-    with _lock:
-        backend = _backend
-        configured = _backend_configured
-        if configured:
-            _success[job] = _success.get(job, 0) + 1
-            _record_latency(job, duration_seconds)
-    backend.increment("send.success", tags=tags)
-    backend.observe("send.duration", duration_seconds, tags=duration_tags)
+    _AGGREGATOR.report_send_success(
+        job=job,
+        platform=platform,
+        channel=channel,
+        duration_seconds=duration_seconds,
+        permit_tags=permit_tags,
+    )
 
 
 async def report_send_failure(
@@ -97,18 +220,13 @@ async def report_send_failure(
     duration_seconds: float,
     error_type: str,
 ) -> None:
-    base_tags = _base_tags(job, platform, channel)
-    increment_tags = dict(base_tags)
-    increment_tags["error"] = error_type
-    duration_tags = {**base_tags, "unit": "seconds"}
-    with _lock:
-        backend = _backend
-        configured = _backend_configured
-        if configured:
-            _failure[job] = _failure.get(job, 0) + 1
-            _record_latency(job, duration_seconds)
-    backend.increment("send.failure", tags=increment_tags)
-    backend.observe("send.duration", duration_seconds, tags=duration_tags)
+    _AGGREGATOR.report_send_failure(
+        job=job,
+        platform=platform,
+        channel=channel,
+        duration_seconds=duration_seconds,
+        error_type=error_type,
+    )
 
 
 def report_permit_denied(
@@ -119,14 +237,13 @@ def report_permit_denied(
     reason: str,
     permit_tags: Mapping[str, str] | None = None,
 ) -> None:
-    base_tags = _base_tags(job, platform, channel)
-    tags = _merge_tags(base_tags, permit_tags)
-    tags["reason"] = reason
-    with _lock:
-        backend = _backend
-        if _backend_configured:
-            _denials.append(dict(tags))
-    backend.increment("send.denied", tags=tags)
+    _AGGREGATOR.report_permit_denied(
+        job=job,
+        platform=platform,
+        channel=channel,
+        reason=reason,
+        permit_tags=permit_tags,
+    )
 
 
 def weekly_snapshot() -> dict[str, object]:
@@ -156,7 +273,7 @@ def weekly_snapshot() -> dict[str, object]:
     }
 
 
-def _base_tags(job: str, platform: str, channel: str | None) -> Dict[str, str]:
+def _base_tags(job: str, platform: str, channel: str | None) -> dict[str, str]:
     return {
         "job": job,
         "platform": platform,
@@ -167,20 +284,11 @@ def _base_tags(job: str, platform: str, channel: str | None) -> Dict[str, str]:
 def _merge_tags(
     base_tags: Mapping[str, str],
     permit_tags: Mapping[str, str] | None,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     tags = dict(base_tags)
     if permit_tags:
         tags.update(dict(permit_tags))
     return tags
-
-
-def _record_latency(job: str, value: float) -> None:
-    bucket = _select_bucket(value)
-    job_hist = _histogram.get(job)
-    if job_hist is None:
-        job_hist = {}
-        _histogram[job] = job_hist
-    job_hist[bucket] = job_hist.get(bucket, 0) + 1
 
 
 def _select_bucket(value: float) -> str:
@@ -191,9 +299,4 @@ def _select_bucket(value: float) -> str:
 
 
 def reset_for_test() -> None:
-    global _backend, _backend_configured
-    with _lock:
-        _backend = _NOOP_BACKEND
-        _backend_configured = False
-        for store in (_success, _failure, _histogram, _denials):
-            store.clear()
+    _AGGREGATOR.reset()

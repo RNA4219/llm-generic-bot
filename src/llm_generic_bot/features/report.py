@@ -20,10 +20,12 @@ class ReportPayload:
 class WeeklyReportTemplate:
     """各ロケールのメッセージテンプレート."""
 
-    header: str
-    summary: str
-    channels: str
-    failures: str
+    title: str
+    line: str
+    footer: str | None = None
+
+
+TemplateLike = WeeklyReportTemplate | Mapping[str, object]
 
 
 def generate_weekly_summary(
@@ -32,7 +34,7 @@ def generate_weekly_summary(
     locale: str,
     fallback: str,
     failure_threshold: float,
-    templates: Mapping[str, WeeklyReportTemplate],
+    templates: Mapping[str, TemplateLike],
 ) -> ReportPayload:
     """週次メトリクスをテンプレートへ整形し通知ペイロードを生成する.
 
@@ -65,26 +67,42 @@ def generate_weekly_summary(
         tags["severity"] = "high"
         tags["failure_rate"] = f"{failure_rate * 100.0:.1f}%"
         return ReportPayload(fallback, channel, tags)
-    template = templates.get(locale)
+    template = _resolve_template(templates.get(locale))
     if template is None:
         tags["severity"] = "degraded"
         return ReportPayload(fallback, channel, tags)
-    header = template.header.format(start=start or "-", end=end or "-")
-    summary = template.summary.format(
-        total=processed,
-        success=succeeded,
-        failure=failed,
-        success_rate=(succeeded / processed * 100.0) if processed else 0.0,
+    success_rate_pct = (succeeded / processed * 100.0) if processed else 0.0
+    failure_rate_pct = failure_rate * 100.0
+    week_range = _format_week_range(start, end)
+    base_context: dict[str, Any] = {
+        "start": start or "-",
+        "end": end or "-",
+        "week_range": week_range,
+        "total": processed,
+        "success": succeeded,
+        "failure": failed,
+        "success_rate": success_rate_pct,
+        "failure_rate": failure_rate_pct,
+        "top_channel": top_channel[0] if top_channel else "-",
+    }
+    header = template.title.format(**base_context)
+    lines = [header]
+    summary_value = (
+        f"{processed}件 (成功 {succeeded}件 / 失敗 {failed}件, 成功率 {success_rate_pct:.1f}%)"
     )
-    lines = [header, summary]
+    lines.append(template.line.format(label="総ジョブ", value=summary_value, **base_context))
     channels_line = _format_top_items(channel_counts)
     if channels_line:
-        lines.append(template.channels.format(channels=channels_line))
+        lines.append(
+            template.line.format(label="活発チャンネル", value=channels_line, **base_context)
+        )
     failure_line = _format_top_items(failure_tags)
     if failure_line:
-        lines.append(template.failures.format(failures=failure_line))
+        lines.append(template.line.format(label="主要エラー", value=failure_line, **base_context))
+    if template.footer:
+        lines.append(template.footer.format(**base_context))
     tags["severity"] = "normal"
-    tags["failure_rate"] = f"{failure_rate * 100.0:.1f}%"
+    tags["failure_rate"] = f"{failure_rate_pct:.1f}%"
     return ReportPayload("\n".join(lines), channel, tags)
 
 
@@ -156,6 +174,29 @@ def _lookup_tag(tags: Iterable[tuple[str, str]], key: str) -> str | None:
         if name == key and value:
             return value
     return None
+
+
+def _resolve_template(value: TemplateLike | None) -> WeeklyReportTemplate | None:
+    if isinstance(value, WeeklyReportTemplate):
+        return value
+    if isinstance(value, Mapping):
+        title = value.get("title")
+        line = value.get("line")
+        footer_raw = value.get("footer")
+        if isinstance(title, str) and isinstance(line, str):
+            footer = str(footer_raw) if isinstance(footer_raw, str) else None
+            return WeeklyReportTemplate(title=title, line=line, footer=footer)
+    return None
+
+
+def _format_week_range(start: str | None, end: str | None) -> str:
+    if start and end:
+        return f"{start}〜{end}"
+    if start:
+        return f"{start}〜-"
+    if end:
+        return f"-〜{end}"
+    return "-"
 
 
 __all__ = ["ReportPayload", "WeeklyReportTemplate", "generate_weekly_summary"]

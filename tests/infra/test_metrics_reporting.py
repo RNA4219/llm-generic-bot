@@ -50,7 +50,12 @@ def reset_metrics_module() -> None:
     metrics.reset_for_test()
 
 
-@pytest.mark.asyncio
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.mark.anyio("asyncio")
 async def test_metrics_records_expected_labels_and_snapshot() -> None:
     recorder = RecordingMetrics()
     metrics.configure_backend(recorder)
@@ -76,7 +81,7 @@ async def test_metrics_records_expected_labels_and_snapshot() -> None:
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio("asyncio")
 async def test_metrics_null_backend_falls_back_to_noop() -> None:
     with freeze_time("2025-01-06T09:00:00+00:00"):
         await metrics.report_send_success(job="weather", platform="discord", channel="alerts", duration_seconds=0.5, permit_tags={"decision": "allow"})

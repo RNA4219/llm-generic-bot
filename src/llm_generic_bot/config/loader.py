@@ -13,6 +13,7 @@ class Settings:
     def __init__(self, path: str):
         self.path = path
         self._data: Dict[str, Any] = {}
+        self._snapshot: Dict[str, Any] = {}
         self._mtime = 0.0
         self.reload(force=True)
 
@@ -27,18 +28,25 @@ class Settings:
             if force or st.st_mtime > self._mtime:
                 with open(self.path, "r", encoding="utf-8") as f:
                     new_data = json.load(f)
-                diff = _diff_mapping(self._data, new_data)
+                diff = emit_settings_diff(self._snapshot, new_data)
                 if diff:
                     _LOGGER.info(
-                        "Settings reloaded from %s",
-                        self.path,
-                        extra={"event": "settings_reload", "diff": diff},
+                        "settings_reload",
+                        extra={
+                            "event": "settings_reload",
+                            "path": self.path,
+                            "previous": self._snapshot,
+                            "current": new_data,
+                            "diff": diff,
+                        },
                     )
                 self._data = new_data
+                self._snapshot = json.loads(json.dumps(new_data))
                 self._mtime = st.st_mtime
         except FileNotFoundError:
             # use empty defaults
             self._data = {}
+            self._snapshot = {}
         except (json.JSONDecodeError, OSError) as exc:
             _LOGGER.warning("Failed to reload settings from %s: %s", self.path, exc)
 
@@ -46,7 +54,9 @@ class Settings:
 _MISSING = object()
 
 
-def _diff_mapping(old: Mapping[str, Any], new: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+def emit_settings_diff(
+    previous: Mapping[str, Any], current: Mapping[str, Any]
+) -> Dict[str, Dict[str, Any]]:
     diff: Dict[str, Dict[str, Any]] = {}
 
     def _walk(old_value: Any, new_value: Any, path: tuple[str, ...]) -> None:
@@ -72,5 +82,5 @@ def _diff_mapping(old: Mapping[str, Any], new: Mapping[str, Any]) -> Dict[str, D
             key = ".".join(path) or "<root>"
             diff[key] = {"old": old_value, "new": new_value}
 
-    _walk(old, new, ())
+    _walk(previous, current, ())
     return diff

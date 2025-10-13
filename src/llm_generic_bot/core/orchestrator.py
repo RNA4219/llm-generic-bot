@@ -5,7 +5,10 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Mapping, Optional, Protocol
+from typing import Mapping, Optional, Protocol, Sequence
+
+from llm_generic_bot.features import report as report_feature
+from llm_generic_bot.infra import metrics as metrics_facade
 
 from .cooldown import CooldownGate
 from .dedupe import NearDuplicateFilter
@@ -70,6 +73,12 @@ class NullMetricsRecorder:
 
     def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
         return None
+
+
+class WeeklyReportError(RuntimeError):
+    def __init__(self, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 @dataclass
@@ -310,3 +319,88 @@ class Orchestrator:
                 measurements=measurements,
                 metadata=metadata,
             )
+
+
+def _fallback_weekly_snapshot() -> dict[str, object]:
+    return {
+        "range": {"start": None, "end": None},
+        "counters": {},
+        "observations": {},
+        "incidents": [],
+        "summary": {"total_posts": 0},
+    }
+
+
+def _normalize_report_payload(payload: object) -> tuple[object, object | None]:
+    if isinstance(payload, Mapping):
+        return payload.get("body"), payload.get("tags")
+    if isinstance(payload, Sequence) and not isinstance(
+        payload, (str, bytes, bytearray)
+    ) and len(payload) == 2:
+        body_value, tags_value = payload
+        return body_value, tags_value
+    return payload, None
+
+
+async def compose_weekly_report(
+    *,
+    channel: str,
+    job_tag: str,
+    fallback_body: str,
+) -> dict[str, object]:
+    snapshot_callable = getattr(metrics_facade, "weekly_snapshot", None)
+    if callable(snapshot_callable):
+        try:
+            if asyncio.iscoroutinefunction(snapshot_callable):
+                snapshot = await snapshot_callable()
+            else:
+                snapshot = snapshot_callable()
+        except WeeklyReportError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 一時的な取得失敗は再試行対象
+            raise WeeklyReportError(
+                "failed to fetch weekly metrics snapshot",
+                retryable=True,
+            ) from exc
+    else:
+        snapshot = None
+
+    snapshot_payload: object
+    if snapshot is None:
+        snapshot_payload = _fallback_weekly_snapshot()
+    else:
+        snapshot_payload = snapshot
+
+    try:
+        built = report_feature.build_weekly_report(
+            snapshot_payload,
+            fallback_body=fallback_body,
+        )
+    except WeeklyReportError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 生成失敗は恒久的と判断し再試行不可
+        raise WeeklyReportError(
+            "failed during weekly report generation",
+            retryable=False,
+        ) from exc
+
+    body_value, tags_value = _normalize_report_payload(built)
+    if not isinstance(body_value, str):
+        raise WeeklyReportError(
+            "weekly report generation returned invalid body",
+            retryable=False,
+        )
+
+    tags_dict: dict[str, str] = {}
+    if isinstance(tags_value, Mapping):
+        tags_dict.update({str(key): str(value) for key, value in tags_value.items()})
+    elif isinstance(tags_value, Sequence) and not isinstance(
+        tags_value, (str, bytes, bytearray)
+    ):
+        for key, value in tags_value:
+            tags_dict[str(key)] = str(value)
+
+    tags_dict["channel"] = channel
+    tags_dict["job_tag"] = job_tag
+
+    return {"body": body_value, "tags": tags_dict}

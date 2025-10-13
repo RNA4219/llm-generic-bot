@@ -27,10 +27,15 @@
 - [OPS-06] セキュリティスキャン拡充（`.github/workflows/ci.yml`）: CodeQL 解析と `pip-audit` を週次ジョブで追加し、依存ライブラリの脆弱性検出を自動化する。依存: [OPS-05] の共通セットアップ整備。→ 実装済み
 
 ## Sprint 2: UX & コンテンツ
-- [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator.py`）: 反応履歴を参照し出力頻度を調整。
-- [UX-02] ニュース配信実装（`features/news.py`）: フィード取得・要約・クールダウンの統合。
-- [UX-03] おみくじ生成（`features/omikuji.py`）: コンテンツ生成とテンプレート、ローテーション制御。
-- [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェスト生成とスケジュール接続。
+### 完了済み
+- [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator.py`）: リアクション履歴をもとに出力頻度を調整し、`tests/features/test_weather_engagement.py` で閾値・クールダウン・再開シナリオを固定。
+- [UX-02] ニュース配信実装（`features/news.py`）: フィード取得・要約・クールダウンを統合し、`tests/features/test_news.py` で正常系とフォールバック・クールダウン抑止を検証。
+- [UX-03] おみくじ生成（`features/omikuji.py`）: テンプレートローテーションとユーザー別シードを実装し、`tests/features/test_omikuji.py` でローテーションとフォールバック挙動をカバー。
+- [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。
+
+### 残課題
+- ニュース／おみくじ／DM ダイジェストの異常系（Permit 拒否・クールダウン解除後の再送・フィード欠損）を対象とした結合テストを追加し、運用監視項目を整理する。
+- Engagement 指標の長期トレンド分析と、Permit クォータ変動時の通知頻度チューニング方針を整理する。
 
 ## Sprint 3: 運用・可観測性
 - [OPS-02] 週次サマリ（`core/orchestrator.py`, `features/report.py`）: 成果・失敗を集計し運用向けに通知。
@@ -44,7 +49,7 @@
   - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無と `next_slot` 呼び出しを制御できている。残課題は `llm_generic_bot.core.scheduler` におけるジッタ範囲最小/最大境界と、Permit 後バッチ遅延との連携をプロパティベースで検証すること。
   - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否のログイベントとメトリクス更新を確認済み。残課題は `Orchestrator` の重複スキップ経路（`send_duplicate_skip`）や `send.duration` メトリクス単位（秒）を追加検証し、ログとメトリクスの整合性を固定すること。
 - Sprint 1: `tests/adapters/test_retry_policy.py` に JSON ログのスナップショットケースを追加し、`tests/core/test_coalesce_queue.py` へ優先度逆転ガードの境界ケースを拡張する。同時に `tests/core/test_quota_gate.py` では Permit 拒否理由の種類ごとに `llm_generic_bot.core.arbiter` のタグ付けを検証し、構造化ログ側と整合させる。
-- Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py` を追加し、`features/news.py` と `features/omikuji.py` のキャッシュ/クールダウン統合、フォールバック文言、Permit 連携を網羅する。あわせて `tests/core/test_scheduler_jitter.py` にジッタ境界ケースを盛り込み、News/おみくじのスケジュール遅延仕様を固定する。
+- Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携はカバーしているため、`tests/core/test_scheduler_jitter.py` でのジッタ境界ケースと、Permit 拒否・クールダウン解除後再送を扱う結合テストを追補する。
 - Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`infra/metrics.py`（新設予定）と設定再読込監査のログパス（`config` パッケージ想定）をスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
 
 ### 参照タスク

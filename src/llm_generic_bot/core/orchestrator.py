@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Mapping, Optional, Protocol
 from .cooldown import CooldownGate
 from .dedupe import NearDuplicateFilter
 from ..infra import MetricsBackend, collect_weekly_snapshot, make_metrics_recorder
+from ..infra import metrics as metrics_module
 
 if TYPE_CHECKING:
     from ..infra.metrics import WeeklyMetricsSnapshot
@@ -108,12 +109,15 @@ class Orchestrator:
         self._cooldown = cooldown
         self._dedupe = dedupe
         self._permit = permit
+        recorder: MetricsRecorder | None
         if isinstance(metrics, MetricsBackend):
             self._metrics_service = metrics
-            self._metrics = make_metrics_recorder(metrics)
+            recorder = make_metrics_recorder(metrics)
         else:
             self._metrics_service = None
-            self._metrics = metrics or NullMetricsRecorder()
+            recorder = metrics
+        self._metrics = recorder or NullMetricsRecorder()
+        metrics_module.configure_backend(recorder)
         self._logger = logger or logging.getLogger(__name__)
         self._queue: asyncio.Queue[_SendRequest | None] = asyncio.Queue(maxsize=queue_size)
         self._worker: asyncio.Task[None] | None = None
@@ -203,7 +207,14 @@ class Orchestrator:
         if not decision.allowed:
             retryable_flag = "true" if decision.retryable else "false"
             denied_tags = {**tags, "retryable": retryable_flag}
-            self._metrics.increment("send.denied", denied_tags)
+            reason = decision.reason or "unknown"
+            metrics_module.report_permit_denied(
+                job=job_name,
+                platform=request.platform,
+                channel=request.channel,
+                reason=reason,
+                permit_tags={"retryable": retryable_flag},
+            )
             denied_metadata = {
                 "correlation_id": request.correlation_id,
                 "reason": decision.reason,
@@ -247,11 +258,19 @@ class Orchestrator:
                 raise
             await self._sender.send(request.text, request.channel)
         except Exception as exc:  # noqa: BLE001 - 上位での再送制御対象
-            self._metrics.increment("send.failure", tags)
+            duration = time.perf_counter() - start
+            await metrics_module.report_send_failure(
+                job=job_name,
+                platform=request.platform,
+                channel=request.channel,
+                duration_seconds=duration,
+                error_type=exc.__class__.__name__,
+            )
             failure_metadata = {
                 "correlation_id": request.correlation_id,
                 "error_type": exc.__class__.__name__,
                 "error_message": str(exc),
+                "duration_sec": duration,
             }
             self._record_event("send.failure", tags, metadata=failure_metadata)
             self._logger.error(
@@ -264,6 +283,7 @@ class Orchestrator:
                     "channel": request.channel,
                     "error_type": exc.__class__.__name__,
                     "error_message": str(exc),
+                    "duration_sec": duration,
                 },
             )
             return
@@ -278,11 +298,19 @@ class Orchestrator:
             "channel": request.channel,
             "duration_sec": duration,
         }
+        permit_tags: dict[str, str] | None = None
         if request.engagement_score is not None:
-            success_tags["engagement_score"] = _format_metric_value(request.engagement_score)
+            formatted_score = _format_metric_value(request.engagement_score)
+            success_tags["engagement_score"] = formatted_score
             log_extra["engagement_score"] = request.engagement_score
-        self._metrics.increment("send.success", success_tags)
-        self._metrics.observe("send.duration", duration, success_tags)
+            permit_tags = {"engagement_score": formatted_score}
+        await metrics_module.report_send_success(
+            job=job_name,
+            platform=request.platform,
+            channel=request.channel,
+            duration_seconds=duration,
+            permit_tags=permit_tags,
+        )
         metadata = {"correlation_id": request.correlation_id}
         if request.engagement_score is not None:
             metadata["engagement_score"] = request.engagement_score

@@ -13,7 +13,7 @@
 - integration テストは以下で運用経路をカバーしている:
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
-  - `tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers`: `config/settings.example.json` で使用している `llm_generic_bot.runtime.providers:WeatherProviderFactory` 等のプロバイダ参照が `_resolve_configured_object` で正しく解決され、Weather/News/おみくじ/DM ダイジェストの各ジョブに接続されることを検証。
+  - `tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers`: `llm_generic_bot.runtime.providers` に実装済みの `SAMPLE_NEWS_FEED` / `SAMPLE_NEWS_SUMMARY` / `SAMPLE_DM_LOG` / `SAMPLE_DM_SUMMARY` / `SAMPLE_DM_SENDER` をサンプル設定 `config/settings.example.json` が参照していることを前提に、`_resolve_configured_object` がそれらを正しく実体化し Weather/News/おみくじ/DM ダイジェストの各ジョブへ接続する流れを検証。
 - `tests/integration/test_runtime_multicontent.py`: `setup_runtime` が Weather/News/おみくじ/DM ダイジェストの 4 ジョブを登録し、
   - Weather/News/おみくじは設定どおりのチャンネルへエンキューされることを確認。
   - DM ダイジェストはスケジューラのキューを増やさずに sender が直接 DM を送ることを、DM ジョブ実行後もエンキュー件数が変化しない挙動で検証。

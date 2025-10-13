@@ -29,6 +29,7 @@ class Scenario:
     expected: str | None
     permit_return: Callable[[str, str | None, str], PermitDecision]
     expect_retry: bool
+    permit_allowed: bool
 
 
 def _allowed(*_: object) -> PermitDecision:
@@ -53,6 +54,7 @@ SCENARIOS = (
         expected="Daily Digest\nまとめ",
         permit_return=lambda platform, channel, job: PermitDecision.allowed(job),
         expect_retry=True,
+        permit_allowed=True,
     ),
     Scenario(
         name="digest_no_entries",
@@ -68,6 +70,34 @@ SCENARIOS = (
         expected=None,
         permit_return=_allowed,
         expect_retry=False,
+        permit_allowed=True,
+    ),
+    Scenario(
+        name="digest_permit_denied",
+        cfg={
+            "source_channel": "123",
+            "recipient_id": "user-42",
+            "job": "digest",
+            "header": "Daily Digest",
+            "max_events": 5,
+        },
+        entries=[
+            DigestLogEntry(
+                datetime(2024, 4, 1, 12, 0, tzinfo=timezone.utc),
+                "INFO",
+                "first",
+            ),
+        ],
+        summary="まとめ",
+        expected=None,
+        permit_return=lambda platform, channel, job: PermitDecision(
+            allowed=False,
+            reason="quota",
+            retryable=False,
+            job=job,
+        ),
+        expect_retry=False,
+        permit_allowed=False,
     ),
 )
 
@@ -137,12 +167,24 @@ async def test_build_dm_digest_flow(scenario: Scenario, caplog: pytest.LogCaptur
         for entry in scenario.entries:
             assert entry.message in summary_inputs[0]
         assert permit_calls == [("discord_dm", scenario.cfg["recipient_id"], scenario.cfg["job"])]
-        expected_attempts = 2 if scenario.expect_retry else 1
-        assert len(send_calls) == expected_attempts
-        assert all(call["recipient_id"] == scenario.cfg["recipient_id"] for call in send_calls)
-        assert send_calls[-1]["text"] == scenario.expected
-        if scenario.expect_retry:
-            assert any("dm_digest_retry" in record.message for record in caplog.records)
+        if scenario.permit_allowed:
+            expected_attempts = 2 if scenario.expect_retry else 1
+            assert len(send_calls) == expected_attempts
+            assert all(call["recipient_id"] == scenario.cfg["recipient_id"] for call in send_calls)
+            assert send_calls[-1]["text"] == scenario.expected
+            if scenario.expect_retry:
+                assert any("dm_digest_retry" in record.message for record in caplog.records)
+        else:
+            assert not send_calls
+            denied_records = [
+                record for record in caplog.records if record.message == "dm_digest_permit_denied"
+            ]
+            assert len(denied_records) == 1
+            denied_record = denied_records[0]
+            assert denied_record.event == "dm_digest_permit_denied"
+            assert denied_record.job == scenario.cfg["job"]
+            assert denied_record.recipient == scenario.cfg["recipient_id"]
+            assert denied_record.retryable is False
     else:
         assert not summary_inputs
         assert not permit_calls

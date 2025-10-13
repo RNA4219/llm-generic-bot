@@ -130,3 +130,42 @@ async def test_metrics_weekly_snapshot_latency_boundaries() -> None:
         "edge": {"1s": 1, "3s": 1, ">3s": 1}
     }
     assert snapshot["permit_denials"] == []
+
+
+@pytest.mark.anyio("asyncio")
+async def test_metrics_configure_backend_accepts_metrics_service() -> None:
+    service = metrics.InMemoryMetricsService()
+    metrics.configure_backend(service)
+    await metrics.report_send_success(
+        job="edge",
+        platform="web",
+        channel=None,
+        duration_seconds=0.25,
+        permit_tags={"decision": "allow"},
+    )
+    snapshot = await metrics.collect_weekly_snapshot(service)
+    send_success = snapshot.counters["send.success"]
+    ((tags_key, counter_snapshot),) = send_success.items()
+    assert dict(tags_key) == {
+        "job": "edge",
+        "platform": "web",
+        "channel": "-",
+        "decision": "allow",
+    }
+    assert counter_snapshot.count == 1
+
+
+@pytest.mark.anyio("asyncio")
+async def test_metrics_report_send_success_preserves_backend_state_when_channel_missing() -> None:
+    recorder = RecordingMetrics()
+    metrics.configure_backend(recorder)
+    await metrics.report_send_success(
+        job="edge",
+        platform="web",
+        channel=None,
+        duration_seconds=0.1,
+        permit_tags=None,
+    )
+    assert recorder.increment_calls == [
+        ("send.success", {"job": "edge", "platform": "web", "channel": "-"})
+    ]

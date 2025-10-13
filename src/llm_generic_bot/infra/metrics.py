@@ -1,193 +1,41 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
-import inspect
-import time
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+# LEGACY_METRICS_SPLIT_CHECKLIST
+# - [x] Snapshot dataclasses extracted to metrics_snapshot.py
+# - [x] Service layer moved to metrics_service.py
+# - [ ] Legacy module-level state replaced with structured backend
+
 from threading import Lock
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Protocol, Tuple
+from typing import Dict, Mapping, MutableMapping, Tuple
 
-TagsKey = Tuple[Tuple[str, str], ...]
-MetricKind = str
+from .metrics_service import (
+    InMemoryMetricsService,
+    MetricsRecorder,
+    MetricsService,
+    NullMetricsRecorder,
+    WeeklyMetricsSnapshot,
+    collect_weekly_snapshot,
+    make_metrics_recorder,
+    utcnow,
+)
+from .metrics_snapshot import CounterSnapshot, ObservationSnapshot
 
-
-def _normalize_tags(tags: Mapping[str, str] | None) -> TagsKey:
-    if not tags:
-        return ()
-    return tuple(sorted(tags.items()))
-
-
-def _utcnow() -> datetime:
-    return datetime.fromtimestamp(time.time(), timezone.utc)
-
-
-@dataclass(frozen=True)
-class CounterSnapshot:
-    count: int
-
-
-@dataclass(frozen=True)
-class ObservationSnapshot:
-    count: int
-    minimum: float
-    maximum: float
-    total: float
-    average: float
-
-
-@dataclass(frozen=True)
-class WeeklyMetricsSnapshot:
-    start: datetime
-    end: datetime
-    counters: Mapping[str, Mapping[TagsKey, CounterSnapshot]]
-    observations: Mapping[str, Mapping[TagsKey, ObservationSnapshot]]
-
-    @classmethod
-    def empty(cls, *, now: datetime | None = None) -> "WeeklyMetricsSnapshot":
-        reference = now or datetime.now(timezone.utc)
-        return cls(start=reference, end=reference, counters={}, observations={})
-
-
-@dataclass(frozen=True)
-class _MetricRecord:
-    name: str
-    recorded_at: datetime
-    tags: TagsKey
-    kind: MetricKind
-    value: float
-
-
-class MetricsRecorder(Protocol):
-    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
-        ...
-
-    def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
-        ...
-
-
-class NullMetricsRecorder(MetricsRecorder):
-    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
-        return None
-
-    def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
-        return None
-
-
-class MetricsService(MetricsRecorder):
-    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
-        self._clock = clock or _utcnow
-        self._lock = Lock()
-        self._records: List[_MetricRecord] = []
-
-    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
-        self._store(name, 1.0, tags, "increment")
-
-    def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
-        self._store(name, float(value), tags, "observe")
-
-    def record_event(
-        self,
-        name: str,
-        *,
-        tags: Mapping[str, str] | None = None,
-        measurements: Mapping[str, float] | None = None,
-        metadata: Mapping[str, Any] | None = None,
-    ) -> None:
-        if measurements:
-            value = next(iter(measurements.values()))
-            self.observe(name, float(value), tags=tags)
-            return
-        self.increment(name, tags=tags)
-
-    def collect_weekly_snapshot(
-        self, now: datetime | None = None
-    ) -> WeeklyMetricsSnapshot | Awaitable[WeeklyMetricsSnapshot]:
-        reference = now or self._clock()
-        start = reference - timedelta(days=7)
-        with self._lock:
-            relevant = [r for r in self._records if start <= r.recorded_at <= reference]
-            self._records = [r for r in self._records if r.recorded_at >= start]
-        counters: Dict[str, Dict[TagsKey, int]] = {}
-        observations: Dict[str, Dict[TagsKey, List[float]]] = {}
-        for record in relevant:
-            if record.kind == "increment":
-                counter_metric = counters.get(record.name)
-                if counter_metric is None:
-                    counter_metric = {}
-                    counters[record.name] = counter_metric
-                counter_metric[record.tags] = counter_metric.get(record.tags, 0) + 1
-            elif record.kind == "observe":
-                observation_metric = observations.get(record.name)
-                if observation_metric is None:
-                    observation_metric = {}
-                    observations[record.name] = observation_metric
-                value_list = observation_metric.get(record.tags)
-                if value_list is None:
-                    value_list = []
-                    observation_metric[record.tags] = value_list
-                value_list.append(record.value)
-        return WeeklyMetricsSnapshot(
-            start=start,
-            end=reference,
-            counters=_materialize_counters(counters),
-            observations=_materialize_observations(observations),
-        )
-
-    def _store(
-        self,
-        name: str,
-        value: float,
-        tags: Mapping[str, str] | None,
-        kind: MetricKind,
-    ) -> None:
-        record = _MetricRecord(
-            name=name,
-            recorded_at=self._clock(),
-            tags=_normalize_tags(tags),
-            kind=kind,
-            value=value,
-        )
-        with self._lock:
-            self._records.append(record)
-
-
-class InMemoryMetricsService(MetricsService):
-    async def collect_weekly_snapshot(
-        self, now: datetime | None = None
-    ) -> WeeklyMetricsSnapshot:
-        result = super().collect_weekly_snapshot(now=now)
-        if inspect.isawaitable(result):
-            return await result
-        return result
-
-
-class _MetricsRecorderAdapter:
-    __slots__ = ("_service",)
-
-    def __init__(self, service: MetricsService) -> None:
-        self._service = service
-
-    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
-        self._service.record_event(name, tags=tags)
-
-    def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
-        self._service.record_event(name, tags=tags, measurements={"value": value})
-
-
-def make_metrics_recorder(service: MetricsService) -> _MetricsRecorderAdapter:
-    return _MetricsRecorderAdapter(service)
-
-
-async def collect_weekly_snapshot(
-    metrics: MetricsService | None,
-) -> WeeklyMetricsSnapshot:
-    if metrics is None:
-        return WeeklyMetricsSnapshot.empty()
-    result = metrics.collect_weekly_snapshot()
-    if inspect.isawaitable(result):
-        return await result
-    return result
+__all__ = [
+    "CounterSnapshot",
+    "InMemoryMetricsService",
+    "MetricsRecorder",
+    "MetricsService",
+    "NullMetricsRecorder",
+    "ObservationSnapshot",
+    "WeeklyMetricsSnapshot",
+    "collect_weekly_snapshot",
+    "configure_backend",
+    "report_permit_denied",
+    "report_send_failure",
+    "report_send_success",
+    "weekly_snapshot",
+    "reset_for_test",
+]
 
 
 _lock = Lock()
@@ -196,8 +44,8 @@ _backend: MetricsRecorder = _NOOP_BACKEND
 _backend_configured = False
 _success: Dict[str, int] = {}
 _failure: Dict[str, int] = {}
-_histogram: Dict[str, Dict[str, int]] = {}
-_denials: List[Dict[str, str]] = []
+_histogram: Dict[str, MutableMapping[str, int]] = {}
+_denials: list[Dict[str, str]] = []
 _LATENCY_BUCKETS: Tuple[Tuple[float, str], ...] = (
     (1.0, "1s"),
     (3.0, "3s"),
@@ -282,7 +130,7 @@ def report_permit_denied(
 
 
 def weekly_snapshot() -> dict[str, object]:
-    generated_at = _utcnow().isoformat()
+    generated_at = utcnow().isoformat()
     with _lock:
         success = dict(_success)
         failure = dict(_failure)
@@ -340,40 +188,6 @@ def _select_bucket(value: float) -> str:
         if value <= threshold:
             return label
     return _LATENCY_BUCKETS[-1][1]
-
-
-def _materialize_counters(
-    data: Mapping[str, Mapping[TagsKey, int]]
-) -> Dict[str, Dict[TagsKey, CounterSnapshot]]:
-    materialized: Dict[str, Dict[TagsKey, CounterSnapshot]] = {}
-    for name, series in data.items():
-        counters: Dict[TagsKey, CounterSnapshot] = {}
-        for tags, count in series.items():
-            counters[tags] = CounterSnapshot(count=count)
-        materialized[name] = counters
-    return materialized
-
-
-def _materialize_observations(
-    data: Mapping[str, Mapping[TagsKey, List[float]]]
-) -> Dict[str, Dict[TagsKey, ObservationSnapshot]]:
-    materialized: Dict[str, Dict[TagsKey, ObservationSnapshot]] = {}
-    for name, series in data.items():
-        observations: Dict[TagsKey, ObservationSnapshot] = {}
-        for tags, values in series.items():
-            if not values:
-                continue
-            total = float(sum(values))
-            count = len(values)
-            observations[tags] = ObservationSnapshot(
-                count=count,
-                minimum=min(values),
-                maximum=max(values),
-                total=total,
-                average=total / count,
-            )
-        materialized[name] = observations
-    return materialized
 
 
 def reset_for_test() -> None:

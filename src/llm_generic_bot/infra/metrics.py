@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Any, Callable, Dict, List, Mapping, Protocol, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Protocol, Tuple
 
 TagsKey = Tuple[Tuple[str, str], ...]
 MetricKind = str
@@ -99,7 +99,9 @@ class MetricsService(MetricsRecorder):
             return
         self.increment(name, tags=tags)
 
-    def collect_weekly_snapshot(self, now: datetime | None = None) -> WeeklyMetricsSnapshot:
+    def collect_weekly_snapshot(
+        self, now: datetime | None = None
+    ) -> WeeklyMetricsSnapshot | Awaitable[WeeklyMetricsSnapshot]:
         reference = now or self._clock()
         start = reference - timedelta(days=7)
         with self._lock:
@@ -153,7 +155,10 @@ class InMemoryMetricsService(MetricsService):
     async def collect_weekly_snapshot(
         self, now: datetime | None = None
     ) -> WeeklyMetricsSnapshot:
-        return super().collect_weekly_snapshot(now=now)
+        result = super().collect_weekly_snapshot(now=now)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
 
 class _MetricsRecorderAdapter:

@@ -63,7 +63,7 @@ def _optional_str(value: object) -> Optional[str]:
     return None
 
 
-def _resolve_reference(value: str) -> object:
+def _resolve_object(value: str) -> object:
     module_path, sep, attr_path = value.partition(":")
     if not sep:
         module_path, _, attr_path = value.rpartition(".")
@@ -80,9 +80,12 @@ def _resolve_history_provider(value: object) -> Optional[ReactionHistoryProvider
     if value is None:
         return None
     if isinstance(value, str):
-        resolved = _resolve_reference(value)
+        resolved = _resolve_object(value)
         return cast(Optional[ReactionHistoryProvider], resolved)
     return cast(Optional[ReactionHistoryProvider], value)
+
+
+_resolve_reference = _resolve_object
 
 
 def setup_runtime(

@@ -1,10 +1,26 @@
 from __future__ import annotations
 
+import importlib
+import sys
+
 import pytest
 
 from llm_generic_bot.runtime import providers
 from llm_generic_bot.runtime.setup import setup_runtime
 from llm_generic_bot.features.news import NewsFeedItem
+
+
+def test_importing_main_registers_sample_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    with monkeypatch.context() as patch:
+        for name in list(sys.modules):
+            if name == "llm_generic_bot" or name.startswith("llm_generic_bot."):
+                patch.delitem(sys.modules, name, raising=False)
+
+        importlib.import_module("llm_generic_bot.main")
+
+        providers_module = sys.modules["llm_generic_bot.runtime.providers"]
+
+    assert hasattr(providers_module.SAMPLE_DM_SENDER, "deliveries")
 
 
 @pytest.fixture

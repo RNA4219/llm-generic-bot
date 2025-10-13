@@ -212,6 +212,50 @@ async def test_weekly_snapshot_ignores_events_older_than_seven_days() -> None:
 
 
 @pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_respects_configured_retention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_time = datetime(2025, 3, 10, tzinfo=timezone.utc)
+    current = {"value": base_time}
+
+    def clock() -> datetime:
+        return current["value"]
+
+    monkeypatch.setattr(metrics, "_utcnow", lambda: current["value"])
+
+    service = metrics.MetricsService(clock=clock, retention_days=3)
+    metrics.configure_backend(service)
+    metrics.set_retention_days(3)
+
+    current["value"] = base_time - timedelta(days=5)
+    await metrics.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.4,
+        permit_tags={"decision": "allow"},
+    )
+
+    current["value"] = base_time
+    await metrics.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.6,
+        permit_tags={"decision": "allow"},
+    )
+
+    snapshot = metrics.weekly_snapshot()
+
+    assert snapshot["generated_at"] == base_time.isoformat()
+    assert snapshot["success_rate"] == {
+        "weather": {"success": 1, "failure": 0, "ratio": pytest.approx(1.0)}
+    }
+    assert snapshot["latency_histogram_seconds"] == {"weather": {"1s": 1}}
+    assert snapshot["permit_denials"] == []
+
+
+@pytest.mark.anyio("asyncio")
 async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
     current = {"value": datetime(2025, 2, 10, tzinfo=timezone.utc)}
 

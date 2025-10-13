@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Protocol, Sequence, cast
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, cast
 import json
 import os
 import time
@@ -32,7 +32,8 @@ class WeatherPost(str):
 CACHE = Path("weather_cache.json")
 
 def _read_cache() -> Dict[str, Any]:
-    if not CACHE.exists(): return {}
+    if not CACHE.exists():
+        return {}
     try:
         return json.loads(CACHE.read_text(encoding="utf-8"))
     except Exception:
@@ -40,6 +41,22 @@ def _read_cache() -> Dict[str, Any]:
 
 def _write_cache(data: Dict[str, Any]) -> None:
     CACHE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    if isinstance(value, bytes):
+        try:
+            return float(value.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            return None
+    return None
 
 async def build_weather_post(
     cfg: Dict[str, Any],
@@ -145,8 +162,24 @@ async def build_weather_post(
         for city in cities:
             try:
                 raw = await fetch_current_city(city, api_key=api_key, units=units, lang=lang)
-                temp = float((raw.get("main") or {}).get("temp"))
-                desc = (raw.get("weather") or [{}])[0].get("description", "")
+                if not isinstance(raw, Mapping):
+                    raise TypeError("unexpected weather payload")
+                main_data = raw.get("main")
+                temp_value: Any = None
+                if isinstance(main_data, Mapping):
+                    temp_value = main_data.get("temp")
+                temp = _coerce_float(temp_value)
+                if temp is None:
+                    raise ValueError("temperature missing")
+                weather_items = raw.get("weather")
+                desc = ""
+                if isinstance(weather_items, Sequence):
+                    for item in weather_items:
+                        if isinstance(item, Mapping):
+                            desc_value = item.get("description")
+                            if isinstance(desc_value, str):
+                                desc = desc_value
+                                break
                 hot_icon = ""
                 if temp > hot35:
                     hot_icon = icons.get("hot_35", "🔥")
@@ -154,8 +187,11 @@ async def build_weather_post(
                     hot_icon = icons.get("hot_30", "🌡️")
                 delta_tag = ""
                 y = (yesterday or {}).get(city)
-                if y is not None and "temp" in y:
-                    delta = temp - float(y["temp"])
+                delta_source: Optional[float] = None
+                if isinstance(y, Mapping):
+                    delta_source = _coerce_float(y.get("temp"))
+                if delta_source is not None:
+                    delta = temp - delta_source
                     if abs(delta) >= dstrong:
                         delta_tag = (
                             f"{icons.get('warn','⚠️')} "

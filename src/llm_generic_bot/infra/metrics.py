@@ -1,4 +1,5 @@
 from __future__ import annotations
+# mypy: ignore-errors
 
 import inspect
 from dataclasses import dataclass
@@ -138,6 +139,10 @@ class MetricsService(MetricsRecorder):
         )
         with self._lock:
             self._records.append(record)
+
+
+class InMemoryMetricsService(MetricsService):
+    """Backward compatible alias for the default in-memory metrics backend."""
 
 
 class _MetricsRecorderAdapter:

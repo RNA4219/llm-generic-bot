@@ -50,7 +50,7 @@ class CoalesceQueue:
         channel: Optional[str] = None,
     ) -> None:
         ts = created_at if created_at is not None else time.time()
-        batch = self._find_batch(ts, channel, job)
+        batch = self._find_batch(ts, channel, job, priority)
         if batch is None:
             batch = _PendingBatch(
                 start=ts,
@@ -91,9 +91,17 @@ class CoalesceQueue:
         ready.sort(key=lambda item: (item.priority, item.created_at))
         return ready
 
-    def _find_batch(self, ts: float, channel: Optional[str], job: str) -> Optional[_PendingBatch]:
+    def _find_batch(
+        self,
+        ts: float,
+        channel: Optional[str],
+        job: str,
+        priority: int,
+    ) -> Optional[_PendingBatch]:
         for batch in self._pending:
             if batch.channel != channel or batch.job != job:
+                continue
+            if priority > batch.priority:
                 continue
             if ts - batch.start <= self._window:
                 return batch

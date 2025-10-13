@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+# NOTE: tests monkeypatch the module-level `dt` alias to control time.
 from dataclasses import dataclass
 from typing import Awaitable, Callable, List, Optional, Protocol
 import zoneinfo

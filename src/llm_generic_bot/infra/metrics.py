@@ -6,6 +6,7 @@ from __future__ import annotations
 # - [ ] Remove legacy global wrappers once call sites migrate
 
 import time
+from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -217,7 +218,10 @@ class _GlobalMetricsAggregator:
     success: dict[str, int] = field(default_factory=dict)
     failure: dict[str, int] = field(default_factory=dict)
     histogram: dict[str, dict[str, int]] = field(default_factory=dict)
-    denials: list[dict[str, str]] = field(default_factory=list)
+    denials: deque[tuple[datetime, dict[str, str]]] = field(default_factory=deque)
+    success_events: deque[tuple[datetime, str]] = field(default_factory=deque)
+    failure_events: deque[tuple[datetime, str]] = field(default_factory=deque)
+    latency_events: deque[tuple[datetime, str, str]] = field(default_factory=deque)
 
     def configure_backend(self, recorder: MetricsRecorder | None) -> None:
         backend, configured = self._resolve_backend(recorder)
@@ -237,12 +241,15 @@ class _GlobalMetricsAggregator:
         base_tags = _base_tags(job, platform, channel)
         tags = _merge_tags(base_tags, permit_tags)
         duration_tags = {**base_tags, "unit": "seconds"}
+        recorded_at = _utcnow()
         with self.lock:
             backend = self.backend
             configured = self.backend_configured
             if configured:
+                self._expire_events(recorded_at)
                 self.success[job] = self.success.get(job, 0) + 1
-                self._record_latency(job, duration_seconds)
+                self.success_events.append((recorded_at, job))
+                self._record_latency(job, duration_seconds, recorded_at)
         backend.increment("send.success", tags=tags)
         backend.observe(
             "send.duration", duration_seconds, tags=duration_tags
@@ -261,12 +268,15 @@ class _GlobalMetricsAggregator:
         increment_tags = dict(base_tags)
         increment_tags["error"] = error_type
         duration_tags = {**base_tags, "unit": "seconds"}
+        recorded_at = _utcnow()
         with self.lock:
             backend = self.backend
             configured = self.backend_configured
             if configured:
+                self._expire_events(recorded_at)
                 self.failure[job] = self.failure.get(job, 0) + 1
-                self._record_latency(job, duration_seconds)
+                self.failure_events.append((recorded_at, job))
+                self._record_latency(job, duration_seconds, recorded_at)
         backend.increment("send.failure", tags=increment_tags)
         backend.observe(
             "send.duration", duration_seconds, tags=duration_tags
@@ -284,22 +294,25 @@ class _GlobalMetricsAggregator:
         base_tags = _base_tags(job, platform, channel)
         tags = _merge_tags(base_tags, permit_tags)
         tags["reason"] = reason
+        recorded_at = _utcnow()
         with self.lock:
             backend = self.backend
             configured = self.backend_configured
             if configured:
-                self.denials.append(dict(tags))
+                self._expire_events(recorded_at)
+                self.denials.append((recorded_at, dict(tags)))
         backend.increment("send.denied", tags=tags)
 
     def weekly_snapshot(self) -> dict[str, object]:
-        generated_at = _utcnow().isoformat()
+        generated_at_dt = _utcnow()
         with self.lock:
+            self._expire_events(generated_at_dt)
             success = dict(self.success)
             failure = dict(self.failure)
             histogram = {
                 job: dict(buckets) for job, buckets in self.histogram.items()
             }
-            denials = [dict(item) for item in self.denials]
+            denials = [dict(payload) for _, payload in self.denials]
         success_rate: dict[str, dict[str, float | int]] = {}
         for job in sorted(set(success) | set(failure)):
             success_count = success.get(job, 0)
@@ -313,7 +326,7 @@ class _GlobalMetricsAggregator:
                 "ratio": success_count / total,
             }
         return {
-            "generated_at": generated_at,
+            "generated_at": generated_at_dt.isoformat(),
             "success_rate": success_rate,
             "latency_histogram_seconds": histogram,
             "permit_denials": denials,
@@ -327,11 +340,48 @@ class _GlobalMetricsAggregator:
             self.failure.clear()
             self.histogram.clear()
             self.denials.clear()
+            self.success_events.clear()
+            self.failure_events.clear()
+            self.latency_events.clear()
 
-    def _record_latency(self, job: str, value: float) -> None:
+    def _record_latency(
+        self, job: str, value: float, recorded_at: datetime
+    ) -> None:
         bucket = _select_bucket(value)
         job_hist = self.histogram.setdefault(job, {})
         job_hist[bucket] = job_hist.get(bucket, 0) + 1
+        self.latency_events.append((recorded_at, job, bucket))
+
+    def _expire_events(self, reference: datetime) -> None:
+        cutoff = reference - timedelta(days=7)
+        while self.success_events and self.success_events[0][0] < cutoff:
+            _, job = self.success_events.popleft()
+            remaining = self.success.get(job, 0) - 1
+            if remaining <= 0:
+                self.success.pop(job, None)
+            else:
+                self.success[job] = remaining
+        while self.failure_events and self.failure_events[0][0] < cutoff:
+            _, job = self.failure_events.popleft()
+            remaining = self.failure.get(job, 0) - 1
+            if remaining <= 0:
+                self.failure.pop(job, None)
+            else:
+                self.failure[job] = remaining
+        while self.latency_events and self.latency_events[0][0] < cutoff:
+            _, job, bucket = self.latency_events.popleft()
+            job_hist = self.histogram.get(job)
+            if not job_hist:
+                continue
+            remaining = job_hist.get(bucket, 0) - 1
+            if remaining <= 0:
+                job_hist.pop(bucket, None)
+            else:
+                job_hist[bucket] = remaining
+            if not job_hist:
+                self.histogram.pop(job, None)
+        while self.denials and self.denials[0][0] < cutoff:
+            self.denials.popleft()
 
     @staticmethod
     def _resolve_backend(

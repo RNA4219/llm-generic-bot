@@ -164,3 +164,41 @@ async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
     assert counters.get(boundary_tags) == metrics.CounterSnapshot(count=1)
     assert counters.get(fresh_tags) == metrics.CounterSnapshot(count=1)
     assert tuple(sorted({"bucket": "too_old"}.items())) not in counters
+
+
+@pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_ignores_events_older_than_seven_days() -> None:
+    recorder = RecordingMetrics()
+    metrics.configure_backend(recorder)
+    job_kwargs = {"job": "weather", "platform": "discord", "channel": "alerts"}
+
+    with freeze_time("2025-02-02T12:00:00+00:00"):
+        await metrics.report_send_failure(
+            **job_kwargs, duration_seconds=4.2, error_type="timeout"
+        )
+        metrics.report_permit_denied(
+            **job_kwargs, reason="too_old", permit_tags={"scope": "legacy"}
+        )
+
+    with freeze_time("2025-02-10T12:00:00+00:00"):
+        await metrics.report_send_success(
+            **job_kwargs, duration_seconds=0.8, permit_tags={"decision": "allow"}
+        )
+        metrics.report_permit_denied(
+            **job_kwargs, reason="fresh", permit_tags={"scope": "current"}
+        )
+        snapshot = metrics.weekly_snapshot()
+
+    assert snapshot["success_rate"] == {
+        "weather": {"success": 1, "failure": 0, "ratio": 1.0}
+    }
+    assert snapshot["latency_histogram_seconds"] == {"weather": {"1s": 1}}
+    assert snapshot["permit_denials"] == [
+        {
+            "job": "weather",
+            "platform": "discord",
+            "channel": "alerts",
+            "scope": "current",
+            "reason": "fresh",
+        }
+    ]

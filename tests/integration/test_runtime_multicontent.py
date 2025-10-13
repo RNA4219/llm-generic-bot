@@ -12,7 +12,11 @@ from llm_generic_bot import main as main_module
 from llm_generic_bot.core.queue import CoalesceQueue
 from llm_generic_bot.features.dm_digest import DigestLogEntry
 from llm_generic_bot.features.news import NewsFeedItem
-from llm_generic_bot.infra.metrics import CounterSnapshot, WeeklyMetricsSnapshot
+from llm_generic_bot.infra.metrics import (
+    CounterSnapshot,
+    MetricsService,
+    WeeklyMetricsSnapshot,
+)
 
 
 _PROVIDERS_MODULE = "llm_generic_bot.runtime.providers"
@@ -225,82 +229,83 @@ async def test_setup_runtime_registers_all_jobs(monkeypatch: pytest.MonkeyPatch)
     await orchestrator.close()
 
 
+class RecordingMetricsService(MetricsService):
+    instances: List["RecordingMetricsService"] = []
+    snapshot: WeeklyMetricsSnapshot = WeeklyMetricsSnapshot.empty()
+
+    def __init__(self) -> None:
+        super().__init__(clock=lambda: dt.datetime(2024, 1, 8, tzinfo=dt.timezone.utc))
+        self.calls = 0
+        RecordingMetricsService.instances.append(self)
+
+    async def collect_weekly_snapshot(
+        self, now: dt.datetime | None = None
+    ) -> WeeklyMetricsSnapshot:
+        del now
+        self.calls += 1
+        return self.snapshot
+
+
 async def test_weekly_report_job_uses_metrics_and_template(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    RecordingMetricsService.instances.clear()
     snapshot = WeeklyMetricsSnapshot(
         start=dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc),
         end=dt.datetime(2024, 1, 8, tzinfo=dt.timezone.utc),
-        counters={"send.success": {(): CounterSnapshot(count=4)}},
+        counters={
+            "send.success": {
+                (("job", "weekly"), ("platform", "discord"), ("channel", "ops-weekly")):
+                CounterSnapshot(count=4)
+            },
+            "send.failure": {
+                (
+                    ("job", "weekly"),
+                    ("platform", "discord"),
+                    ("channel", "ops-weekly"),
+                    ("error", "timeout"),
+                ): CounterSnapshot(count=1)
+            },
+        },
         observations={},
     )
-
-    class RecordingMetricsService:
-        def __init__(self, *_: Any, **__: Any) -> None:
-            self.calls = 0
-
-        def record_event(
-            self,
-            name: str,
-            *,
-            tags: Optional[Dict[str, str]] = None,
-            measurements: Optional[Dict[str, float]] = None,
-            metadata: Optional[Dict[str, Any]] = None,
-        ) -> None:
-            del name, tags, measurements, metadata
-            return None
-
-        async def collect_weekly_snapshot(
-            self, now: dt.datetime | None = None
-        ) -> WeeklyMetricsSnapshot:
-            del now
-            self.calls += 1
-            return snapshot
-
-    from llm_generic_bot.runtime import setup as runtime_setup
-
-    metrics_service = RecordingMetricsService()
-    monkeypatch.setattr(runtime_setup, "MetricsService", lambda *_: metrics_service)
-
-    weekly_snapshot_calls: List[Dict[str, Any]] = []
-
-    def fake_weekly_snapshot() -> Dict[str, Any]:
-        payload = {
-            "generated_at": "2024-01-08T00:00:00+00:00",
-            "success_rate": {"weather": {"ratio": 0.75}},
-            "latency_histogram_seconds": {},
-            "permit_denials": [],
-        }
-        weekly_snapshot_calls.append(payload)
-        return payload
-
-    monkeypatch.setattr(runtime_setup.metrics_module, "weekly_snapshot", fake_weekly_snapshot)
+    RecordingMetricsService.snapshot = snapshot
 
     settings: Dict[str, Any] = {
         "timezone": "UTC",
         "profiles": {"discord": {"enabled": True, "channel": "general"}},
-        "metrics": {"backend": "memory"},
+        "metrics": {"backend": RecordingMetricsService},
         "report": {
             "enabled": True,
             "job": "weekly_report",
-            "schedule": "09:00",
+            "schedule": "Monday 09:00",
             "channel": "ops-weekly",
             "priority": 7,
+            "locale": "ja",
+            "failure_threshold": 0.8,
             "permit": {
                 "platform": "discord",
                 "channel": "ops-weekly",
                 "job": "weekly_report",
             },
             "template": {
-                "title": "📊 運用サマリ ({week_range})",
-                "line": "・{metric}: {value}",
-                "footer": "詳細は運用ダッシュボードを参照",
+                "header": "📊 運用サマリ {start}〜{end}",
+                "summary": "総計 {total} / 成功 {success} / 失敗 {failure} (成功率 {success_rate:.0f}%)",
+                "channels": "活発チャンネル: {channels}",
+                "failures": "主要エラー: {failures}",
+                "fallback": "データが不足しています",
             },
         },
     }
 
     scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+
+    assert "weekly_report" in jobs
+    service = RecordingMetricsService.instances[-1]
+
+    snapshot_result = await orchestrator.weekly_snapshot()
+    assert snapshot_result is snapshot
 
     enqueue_calls: List[Dict[str, Any]] = []
 
@@ -325,23 +330,80 @@ async def test_weekly_report_job_uses_metrics_and_template(
 
     monkeypatch.setattr(orchestrator, "enqueue", fake_enqueue)
 
-    assert "weekly_report" in jobs
+    job_func = jobs["weekly_report"]
+    baseline_calls = service.calls
+    body = await job_func()
+
+    assert service.calls == baseline_calls + 1
+    assert body.splitlines()[0] == "📊 運用サマリ 2024-01-01〜2024-01-08"
+    assert "成功率 80%" in body
+    assert "timeout" in body
+
+    await scheduler.sender.send(body, job="weekly_report")
+    assert enqueue_calls and enqueue_calls[-1]["channel"] == "ops-weekly"
+    assert enqueue_calls[-1]["platform"] == "discord"
+
+    await orchestrator.close()
+
+
+async def test_weekly_report_job_runs_only_on_configured_weekday(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    RecordingMetricsService.instances.clear()
+    RecordingMetricsService.snapshot = WeeklyMetricsSnapshot(
+        start=dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc),
+        end=dt.datetime(2024, 1, 8, tzinfo=dt.timezone.utc),
+        counters={"send.success": {(): CounterSnapshot(count=2)}},
+        observations={},
+    )
+
+    settings: Dict[str, Any] = {
+        "timezone": "UTC",
+        "profiles": {"discord": {"enabled": True, "channel": "general"}},
+        "metrics": {"backend": RecordingMetricsService},
+        "report": {
+            "enabled": True,
+            "schedule": "Monday 09:00",
+            "channel": "ops-weekly",
+            "locale": "ja",
+            "template": {
+                "header": "週次 {start}〜{end}",
+                "summary": "処理 {total}",
+                "channels": "{channels}",
+                "failures": "{failures}",
+                "fallback": "fallback",
+            },
+        },
+    }
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+
+    report_module = sys.modules["llm_generic_bot.runtime.jobs.report"]
+
+    class _Monday(dt.datetime):
+        @classmethod
+        def now(cls, tz: dt.tzinfo | None = None) -> "_Monday":
+            return cls(2024, 1, 1, 9, tzinfo=tz)
+
+    class _Tuesday(dt.datetime):
+        @classmethod
+        def now(cls, tz: dt.tzinfo | None = None) -> "_Tuesday":
+            return cls(2024, 1, 2, 9, tzinfo=tz)
 
     job_func = jobs["weekly_report"]
-    text = await job_func()
 
-    assert metrics_service.calls == 1
-    assert len(weekly_snapshot_calls) == 1
-    assert isinstance(text, str)
-    lines = text.splitlines()
-    assert lines[0] == "📊 運用サマリ (2024-01-01 – 2024-01-08)"
-    assert "weather" in lines[1] and "75%" in lines[1]
-    assert lines[-1] == "詳細は運用ダッシュボードを参照"
+    monkeypatch.setattr(report_module.dt, "datetime", _Monday)
+    monday_result = await job_func()
+    assert isinstance(monday_result, str) and monday_result.startswith("週次")
 
-    await scheduler.sender.send(text, job="weekly_report")
-    assert enqueue_calls and enqueue_calls[-1]["job"] == "weekly_report"
-    assert enqueue_calls[-1]["platform"] == "discord"
-    assert enqueue_calls[-1]["channel"] == "ops-weekly"
+    service = RecordingMetricsService.instances[-1]
+    assert service.calls == 1
+
+    monkeypatch.setattr(report_module.dt, "datetime", _Tuesday)
+    tuesday_result = await job_func()
+    assert tuesday_result is None
+    assert service.calls == 1
 
     await orchestrator.close()
 

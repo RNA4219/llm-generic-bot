@@ -4,7 +4,7 @@ from __future__ import annotations
 # - [ ] プロファイル別の送信者解決をコンフィグ駆動へ移行
 # - [ ] ジョブ登録ロジックを宣言的なテーブル定義へ移設
 
-import datetime as dt
+import inspect
 from functools import wraps
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Mapping, Optional, cast
@@ -33,15 +33,14 @@ from ..infra.metrics import MetricsService
 from .jobs import JobContext, ScheduledJob
 from .jobs.common import (
     as_mapping,
-    collect_schedules,
     get_float,
-    optional_str,
     resolve_object,
 )
 from .jobs.dm_digest import build_dm_digest_jobs
 from .jobs.news import build_news_jobs
 from .jobs.omikuji import build_omikuji_jobs
 from .jobs.weather import build_weather_jobs
+from .jobs.report import build_report_jobs
 
 _resolve_object = resolve_object
 
@@ -171,9 +170,8 @@ def setup_runtime(
     )
 
     metrics_cfg = as_mapping(cfg.get("metrics"))
-    metrics_service: Optional[MetricsService] = None
-    if metrics_cfg.get("backend", "memory") == "memory":
-        metrics_service = MetricsService()
+    metrics_service = _build_metrics_backend(metrics_cfg)
+    metrics_module.configure_backend(metrics_service)
 
     orchestrator = Orchestrator(
         sender=active_sender,
@@ -257,76 +255,37 @@ def setup_runtime(
         for scheduled in factory(context):
             _register_job(scheduler, jobs, scheduled)
 
-    report_cfg = as_mapping(cfg.get("report"))
-    if report_cfg.get("enabled"):
-        job_name = str(report_cfg.get("job", "weekly_report"))
-        job_channel = optional_str(report_cfg.get("channel")) or default_channel
-        job_priority = max(int(get_float(report_cfg.get("priority"), 5.0)), 0)
-        template_cfg = as_mapping(report_cfg.get("template"))
-        title_template = str(template_cfg.get("title", "{week_range}"))
-        line_template = str(template_cfg.get("line", "{metric}: {value}"))
-        footer_template = optional_str(template_cfg.get("footer"))
-        permit_cfg = as_mapping(report_cfg.get("permit"))
-        permit_platform = str(permit_cfg.get("platform", platform))
-        permit_channel = optional_str(permit_cfg.get("channel")) or job_channel
-        permit_job = optional_str(permit_cfg.get("job")) or job_name
-        permit_overrides[job_name] = (permit_platform, permit_channel, permit_job)
-
-        raw_schedules = collect_schedules(report_cfg, default="09:00")
-        schedules = tuple(
-            (value.rsplit(" ", 1)[-1].strip() or "09:00") if value else "09:00"
-            for value in raw_schedules
-        )
-
-        async def job_weekly_report() -> Optional[str]:
-            snapshot = await orchestrator.weekly_snapshot()
-            metrics_data = metrics_module.weekly_snapshot()
-            start_dt = snapshot.start
-            end_dt = snapshot.end
-            if start_dt.tzinfo is None:
-                start_dt = start_dt.replace(tzinfo=dt.timezone.utc)
-            if end_dt.tzinfo is None:
-                end_dt = end_dt.replace(tzinfo=dt.timezone.utc)
-            start_local = start_dt.astimezone(scheduler.tz)
-            end_local = end_dt.astimezone(scheduler.tz)
-            week_range = f"{start_local:%Y-%m-%d} – {end_local:%Y-%m-%d}"
-            success_rate = metrics_data.get("success_rate")
-            lines: list[str] = []
-            if isinstance(success_rate, Mapping):
-                for name, payload in sorted(success_rate.items()):
-                    if not isinstance(payload, Mapping):
-                        continue
-                    ratio_value = payload.get("ratio")
-                    if not isinstance(ratio_value, (int, float)):
-                        continue
-                    lines.append(
-                        line_template.format(
-                            metric=f"{name} success",
-                            value=f"{float(ratio_value):.0%}",
-                        )
-                    )
-            if not lines:
-                total = sum(entry.count for series in snapshot.counters.values() for entry in series.values())
-                if total:
-                    lines.append(line_template.format(metric="events", value=str(total)))
-            if not lines:
-                return None
-            message_parts = [title_template.format(week_range=week_range)]
-            message_parts.extend(lines)
-            if footer_template:
-                message_parts.append(footer_template)
-            return "\n".join(message_parts)
-
-        _register_job(
-            scheduler,
-            jobs,
-            ScheduledJob(
-                name=job_name,
-                func=job_weekly_report,
-                schedules=schedules,
-                channel=job_channel,
-                priority=job_priority,
-            ),
-        )
+    for scheduled in build_report_jobs(
+        context,
+        orchestrator=orchestrator,
+        permit_overrides=permit_overrides,
+    ):
+        _register_job(scheduler, jobs, scheduled)
 
     return scheduler, orchestrator, jobs
+
+
+def _build_metrics_backend(
+    metrics_cfg: Mapping[str, Any]
+) -> Optional[MetricsService]:
+    backend = metrics_cfg.get("backend")
+    if backend is None:
+        return None
+    if isinstance(backend, str):
+        lowered = backend.strip().lower()
+        if not lowered or lowered in {"none", "disabled", "off"}:
+            return None
+        if lowered == "memory":
+            return MetricsService()
+        backend = _resolve_object(backend)
+    if inspect.isclass(backend):
+        instance = backend()
+    elif callable(backend):
+        instance = backend()
+    else:
+        instance = backend
+    if isinstance(instance, MetricsService):
+        return instance
+    if hasattr(instance, "collect_weekly_snapshot") and hasattr(instance, "record_event"):
+        return cast(MetricsService, instance)
+    raise TypeError("metrics backend must expose record_event and collect_weekly_snapshot")

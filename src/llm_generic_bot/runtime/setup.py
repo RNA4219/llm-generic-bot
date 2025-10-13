@@ -305,15 +305,15 @@ def setup_runtime(
         job_channel = optional_str(report_cfg.get("channel")) or default_channel
         job_priority = max(int(get_float(report_cfg.get("priority"), 5.0)), 0)
         template_cfg = as_mapping(report_cfg.get("template"))
-        title_template = str(template_cfg.get("title", "{week_range}"))
-        line_template = str(template_cfg.get("line", "{metric}: {value}"))
+        raw_title = template_cfg.get("title")
+        title_template = raw_title if isinstance(raw_title, str) else "{week_range}"
+        raw_line = template_cfg.get("line")
+        line_template = raw_line if isinstance(raw_line, str) else "{label}: {value}"
         footer_template = optional_str(template_cfg.get("footer"))
-        summary_title_template = title_template.replace("{week_range}", "{start} – {end}")
-        summary_line_template = line_template.replace("{metric}", "{label}")
-        summary_footer_template = (
-            footer_template.replace("{week_range}", "{start} – {end}")
-            if footer_template
-            else None
+        summary_template = WeeklyReportTemplate(
+            title=title_template,
+            line=line_template,
+            footer=footer_template,
         )
         permit_cfg = as_mapping(report_cfg.get("permit"))
         permit_platform = str(permit_cfg.get("platform", platform))
@@ -337,6 +337,14 @@ def setup_runtime(
             end_local = end_dt.astimezone(scheduler.tz)
             success_rate = metrics_data.get("success_rate")
             lines: list[str] = []
+            start_text = start_local.date().isoformat()
+            end_text = end_local.date().isoformat()
+            week_range_text = f"{start_text}〜{end_text}"
+            line_context = {
+                "start": start_text,
+                "end": end_text,
+                "week_range": week_range_text,
+            }
             if isinstance(success_rate, Mapping):
                 for name, payload in sorted(success_rate.items()):
                     if not isinstance(payload, Mapping):
@@ -345,9 +353,10 @@ def setup_runtime(
                     if not isinstance(ratio_value, (int, float)):
                         continue
                     lines.append(
-                        line_template.format(
+                        summary_template.format_line(
                             metric=f"{name} success",
                             value=f"{float(ratio_value):.0%}",
+                            **line_context,
                         )
                     )
             if not lines:
@@ -355,7 +364,13 @@ def setup_runtime(
                     entry.count for series in snapshot.counters.values() for entry in series.values()
                 )
                 if total:
-                    lines.append(line_template.format(metric="events", value=str(total)))
+                    lines.append(
+                        summary_template.format_line(
+                            metric="events",
+                            value=str(total),
+                            **line_context,
+                        )
+                    )
             locale = optional_str(report_cfg.get("locale")) or "default"
             fallback = optional_str(report_cfg.get("fallback")) or ""
             payload = generate_weekly_summary(
@@ -364,11 +379,7 @@ def setup_runtime(
                 fallback=fallback,
                 failure_threshold=get_float(report_cfg.get("failure_threshold"), 0.5),
                 templates={
-                    locale: WeeklyReportTemplate(
-                        title=summary_title_template,
-                        line=summary_line_template,
-                        footer=summary_footer_template,
-                    )
+                    locale: summary_template
                 },
             )
             severity = payload.tags.get("severity") if isinstance(payload.tags, Mapping) else None

@@ -72,10 +72,14 @@ class CoalesceQueue:
         remaining: List[_PendingBatch] = []
         for batch in self._pending:
             if batch.force_ready or now >= batch.ready_at:
+                if len(batch.messages) == 1:
+                    text_obj = batch.messages[0]
+                else:
+                    text_obj = "\n".join(str(message) for message in batch.messages)
                 ready.append(
                     QueueBatch(
                         priority=batch.priority,
-                        text="\n".join(batch.messages),
+                        text=text_obj,
                         channel=batch.channel,
                         job=batch.job,
                         created_at=batch.start,

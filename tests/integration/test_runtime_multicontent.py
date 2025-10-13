@@ -10,6 +10,7 @@ import pytest
 
 from llm_generic_bot import main as main_module
 from llm_generic_bot.core.queue import CoalesceQueue
+from llm_generic_bot.features.dm_digest import DigestLogEntry
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -106,6 +107,7 @@ async def test_setup_runtime_registers_all_jobs(monkeypatch: pytest.MonkeyPatch)
     scheduler._sleep = no_sleep  # type: ignore[assignment]
 
     enqueue_calls: List[Dict[str, Any]] = []
+    pushed_jobs: List[str] = []
 
     async def fake_enqueue(
         text: str,
@@ -128,6 +130,27 @@ async def test_setup_runtime_registers_all_jobs(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(orchestrator, "enqueue", fake_enqueue)
 
+    original_push = scheduler.queue.push
+
+    def spy_push(
+        text: str,
+        *,
+        priority: int,
+        job: str,
+        created_at: Optional[float] = None,
+        channel: Optional[str] = None,
+    ) -> None:
+        pushed_jobs.append(job)
+        original_push(
+            text,
+            priority=priority,
+            job=job,
+            created_at=created_at,
+            channel=channel,
+        )
+
+    monkeypatch.setattr(scheduler.queue, "push", spy_push)
+
     assert set(jobs) == {"weather", "news", "omikuji", "dm_digest"}
 
     tz = zoneinfo.ZoneInfo("UTC")
@@ -139,17 +162,81 @@ async def test_setup_runtime_registers_all_jobs(monkeypatch: pytest.MonkeyPatch)
     ]
 
     for now, expected_job in schedule_checks:
+        previous_calls = len(enqueue_calls)
         await scheduler._run_due_jobs(now)
         await scheduler.dispatch_ready_batches(now.timestamp())
-        assert enqueue_calls[-1]["job"] == expected_job
+        if expected_job == "dm_digest":
+            assert len(enqueue_calls) == previous_calls
+        else:
+            assert len(enqueue_calls) == previous_calls + 1
+            assert enqueue_calls[-1]["job"] == expected_job
 
     assert [call["channel"] for call in enqueue_calls] == [
         "general",
         "news-channel",
         "general",
-        None,
     ]
 
+    assert pushed_jobs == ["weather", "news", "omikuji"]
+
     assert weather_calls and news_calls and omikuji_calls and dm_calls
+
+    await orchestrator.close()
+
+
+async def test_dm_digest_job_sends_without_scheduler_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    async def collect_logs(_channel: str, *, limit: int) -> List[DigestLogEntry]:
+        del limit
+        return [DigestLogEntry(timestamp=dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc), level="INFO", message="event")]
+
+    async def summarize(_text: str, *, max_events: int | None = None) -> str:
+        del max_events
+        return "summary"
+
+    dm_sender_calls: List[str] = []
+    async def dm_send(
+        text: str,
+        *_: Any,
+        job: Optional[str] = None,
+        recipient_id: Optional[str] = None,
+        **__: Any,
+    ) -> None:
+        dm_sender_calls.append(f"{job}:{recipient_id}:{text}")
+
+    settings: Dict[str, Any] = {
+        "timezone": "UTC",
+        "profiles": {"discord": {"enabled": True, "channel": "general"}},
+        "dm_digest": {
+            "schedule": "08:00",
+            "source_channel": "logs",
+            "recipient_id": "user-1",
+            "log_provider": SimpleNamespace(collect=collect_logs),
+            "summary_provider": SimpleNamespace(summarize=summarize),
+            "sender": SimpleNamespace(send=dm_send),
+        },
+    }
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    pushed_jobs: List[str] = []
+
+    def spy_push(
+        _text: str,
+        *,
+        priority: int,
+        job: str,
+        created_at: Optional[float] = None,
+        channel: Optional[str] = None,
+    ) -> None:
+        del priority, created_at, channel
+        pushed_jobs.append(job)
+
+    monkeypatch.setattr(scheduler.queue, "push", spy_push)
+    tz = zoneinfo.ZoneInfo("UTC")
+    await scheduler._run_due_jobs(dt.datetime(2024, 1, 1, 8, 0, tzinfo=tz))
+
+    assert "dm_digest" in jobs
+    assert pushed_jobs == []
+    assert dm_sender_calls == ["dm_digest:user-1:Daily Digest\nsummary"]
 
     await orchestrator.close()

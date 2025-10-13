@@ -20,12 +20,51 @@ def _tags(**items: str) -> tuple[tuple[str, str], ...]:
 
 TEMPLATES = {
     "ja": WeeklyReportTemplate(
-        header="📊 運用サマリ {start}〜{end}",
-        summary="総ジョブ: {total}件 / 成功: {success}件 / 失敗: {failure}件 (成功率 {success_rate:.1f}%)",
-        channels="活発チャンネル: {channels}",
-        failures="主要エラー: {failures}",
+        title="📊 運用サマリ {week_range}",
+        line="・{label}: {value}",
+        footer="Powered by Ops",
     )
 }
+
+
+def test_weekly_report_uses_template_schema_directly() -> None:
+    snapshot = WeeklyMetricsSnapshot(
+        start=datetime(2024, 4, 1, tzinfo=timezone.utc),
+        end=datetime(2024, 4, 7, tzinfo=timezone.utc),
+        counters={
+            "send.success": {
+                _tags(job="weather", platform="slack", channel="#alerts"): CounterSnapshot(count=72),
+                _tags(job="alert", platform="slack", channel="#ops"): CounterSnapshot(count=42),
+            },
+            "send.failure": {
+                _tags(job="alert", platform="slack", channel="#alerts", error="timeout"): CounterSnapshot(count=3),
+                _tags(job="alert", platform="slack", channel="#alerts", error="quota"): CounterSnapshot(count=1),
+            },
+        },
+        observations={},
+    )
+
+    template_cfg = {
+        "title": "📊 運用サマリ {week_range}",
+        "line": "・{label}: {value}",
+        "footer": "Powered by Ops",
+    }
+
+    payload = generate_weekly_summary(
+        snapshot,
+        locale="ja",
+        fallback="fallback",
+        failure_threshold=0.3,
+        templates={"ja": template_cfg},
+    )
+
+    expected = """📊 運用サマリ 2024-04-01〜2024-04-07\n・総ジョブ: 118件 (成功 114件 / 失敗 4件, 成功率 96.6%)\n・活発チャンネル: #alerts (76), #ops (42)\n・主要エラー: timeout (3), quota (1)\nPowered by Ops"""
+
+    assert payload.body == expected
+    assert payload.channel == "#alerts"
+    assert payload.tags["severity"] == "normal"
+    assert payload.tags["failure_rate"] == "3.4%"
+    assert payload.tags["period"] == "2024-04-01/2024-04-07"
 
 
 def test_weekly_report_formats_real_snapshot() -> None:
@@ -53,11 +92,11 @@ def test_weekly_report_formats_real_snapshot() -> None:
         templates=TEMPLATES,
     )
 
+    expected = """📊 運用サマリ 2024-04-01〜2024-04-07\n・総ジョブ: 118件 (成功 114件 / 失敗 4件, 成功率 96.6%)\n・活発チャンネル: #alerts (76), #ops (42)\n・主要エラー: timeout (3), quota (1)\nPowered by Ops"""
+
     assert isinstance(payload, ReportPayload)
     assert payload.channel == "#alerts"
-    assert "📊 運用サマリ" in payload.body
-    assert "114" in payload.body and "4" in payload.body
-    assert "timeout" in payload.body and "quota" in payload.body
+    assert payload.body == expected
     assert payload.tags["severity"] == "normal"
     assert payload.tags["locale"] == "ja"
     assert payload.tags["period"] == "2024-04-01/2024-04-07"
@@ -94,16 +133,14 @@ def test_weekly_report_handles_threshold_and_fallback(failure_threshold: float) 
 def test_weekly_report_prefers_configured_template_locale() -> None:
     templates = {
         "en": WeeklyReportTemplate(
-            header="Weekly summary {start} to {end}",
-            summary="Processed {total} / Success {success} / Failure {failure} ({success_rate:.1f}%)",
-            channels="Channels: {channels}",
-            failures="Failures: {failures}",
+            title="Weekly summary {week_range}",
+            line="* {label}: {value}",
+            footer=None,
         ),
         "ja": WeeklyReportTemplate(
-            header="📈 サマリ {start}〜{end}",
-            summary="処理数 {total} 成功 {success} 失敗 {failure} (成功率 {success_rate:.1f}%)",
-            channels="活発チャンネル: {channels}",
-            failures="主要エラー: {failures}",
+            title="📈 サマリ {week_range}",
+            line="・{label}: {value}",
+            footer=None,
         ),
     }
     snapshot = WeeklyMetricsSnapshot(
@@ -131,4 +168,4 @@ def test_weekly_report_prefers_configured_template_locale() -> None:
     assert payload.channel == "#alerts"
     assert payload.tags["top_channel"] == "#alerts"
     assert payload.tags["locale"] == "en"
-    assert payload.body.startswith("Weekly summary")
+    assert payload.body.splitlines()[0] == "Weekly summary 2024-04-15〜2024-04-21"

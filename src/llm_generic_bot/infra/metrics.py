@@ -99,7 +99,9 @@ class MetricsService(MetricsRecorder):
             return
         self.increment(name, tags=tags)
 
-    def collect_weekly_snapshot(self, now: datetime | None = None) -> WeeklyMetricsSnapshot:
+    async def collect_weekly_snapshot(
+        self, now: datetime | None = None
+    ) -> WeeklyMetricsSnapshot:
         reference = now or self._clock()
         start = reference - timedelta(days=7)
         with self._lock:
@@ -150,10 +152,7 @@ class MetricsService(MetricsRecorder):
 
 
 class InMemoryMetricsService(MetricsService):
-    async def collect_weekly_snapshot(
-        self, now: datetime | None = None
-    ) -> WeeklyMetricsSnapshot:
-        return super().collect_weekly_snapshot(now=now)
+    pass
 
 
 class _MetricsRecorderAdapter:
@@ -185,7 +184,8 @@ async def collect_weekly_snapshot(
 
 
 _lock = Lock()
-_backend: MetricsRecorder = NullMetricsRecorder()
+_NOOP_BACKEND = NullMetricsRecorder()
+_backend: MetricsRecorder = _NOOP_BACKEND
 _backend_configured = False
 _success: Dict[str, int] = {}
 _failure: Dict[str, int] = {}
@@ -198,16 +198,19 @@ _LATENCY_BUCKETS: Tuple[Tuple[float, str], ...] = (
 )
 
 
-def configure_backend(recorder: MetricsService | MetricsRecorder) -> None:
+def configure_backend(recorder: MetricsRecorder | None) -> None:
     global _backend, _backend_configured
+    configured = recorder is not None
     backend: MetricsRecorder
-    if isinstance(recorder, MetricsService):
+    if recorder is None:
+        backend = _NOOP_BACKEND
+    elif isinstance(recorder, MetricsService):
         backend = make_metrics_recorder(recorder)
     else:
         backend = recorder
     with _lock:
         _backend = backend
-        _backend_configured = True
+        _backend_configured = configured
 
 
 async def report_send_success(
@@ -271,7 +274,7 @@ def report_permit_denied(
     backend.increment("send.denied", tags=tags)
 
 
-def weekly_snapshot() -> Mapping[str, object]:
+def weekly_snapshot() -> dict[str, object]:
     generated_at = _utcnow().isoformat()
     with _lock:
         success = dict(_success)
@@ -369,7 +372,7 @@ def _materialize_observations(
 def reset_for_test() -> None:
     global _backend, _backend_configured
     with _lock:
-        _backend = NullMetricsRecorder()
+        _backend = _NOOP_BACKEND
         _backend_configured = False
         for store in (_success, _failure, _histogram, _denials):
             store.clear()

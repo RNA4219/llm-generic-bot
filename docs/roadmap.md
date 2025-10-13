@@ -11,8 +11,8 @@
 - integration テストは以下で運用経路をカバーしている:
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
-  - `tests/integration/test_runtime_multicontent.py`: Weather/News/おみくじ/DM ダイジェストの 4 ジョブが `setup_runtime` 経由でスケジュール登録され、各ジョブが想定チャンネルへエンキューされることを確認。
-  - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン発動時に送信を抑止し、Permit 呼び出しがスキップされることを検証。
+- `tests/integration/test_runtime_multicontent.py`: `setup_runtime` が Weather/News/おみくじ/DM ダイジェストの 4 ジョブを登録し、各ジョブが設定どおりのチャンネルへエンキューされるまでを検証。
+- `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
 - 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、News/おみくじ/DM ダイジェスト経路の異常系（Permit 拒否・クールダウン解除後再送）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ

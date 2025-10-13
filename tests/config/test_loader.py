@@ -43,6 +43,12 @@ def test_settings_example_contains_report_and_metrics_blocks() -> None:
     assert permit_cfg.get("channel") == "ops-weekly"
     assert permit_cfg.get("platform") == "discord"
 
+    template_cfg = report.get("template") if isinstance(report, dict) else None
+    assert isinstance(template_cfg, dict)
+    assert template_cfg.get("title") == "📊 運用サマリ ({week_range})"
+    assert template_cfg.get("line") == "・{metric}: {value}"
+    assert template_cfg.get("footer") == "詳細は運用ダッシュボードを参照"
+
     metrics_cfg = settings.get("metrics")
     assert isinstance(metrics_cfg, dict)
     assert metrics_cfg.get("_usage", "").startswith("ランタイムメトリクス")
@@ -53,3 +59,4 @@ def test_settings_example_contains_report_and_metrics_blocks() -> None:
     assert isinstance(export_cfg, dict)
     assert export_cfg.get("enabled") is False
     assert export_cfg.get("destination") == "stdout"
+    assert export_cfg.get("_usage", "").startswith("メトリクスのエクスポート")

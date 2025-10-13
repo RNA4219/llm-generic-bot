@@ -1,11 +1,11 @@
 # ロードマップ
 
 ## 現在の完成度
-- `main.py` は設定読込後に日次天気ジョブをスケジュールし、近傍デデュープ・クールダウン・Permit 判定を経て Discord/Misskey 送信クラスへ委譲している。
+- `main.py` はプロキシ兼エントリーポイントとして `runtime.setup.setup_runtime` を呼び出し、スケジューラ起動と終了時のオーケストレータ停止のみを担う。ランタイム構築ロジックは `src/llm_generic_bot/runtime/setup.py` へ集約済み。
 - 天気機能は OpenWeather から都市ごとの現在値を取得し、30℃/35℃閾値や前日比ΔTをもとに注意枠を生成しつつ today/yesterday キャッシュをローテーションしている。
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
 - PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
-  - `src/llm_generic_bot/main.py` の `setup_runtime` は `PermitGate.permit` の結果を `PermitDecision` に包み直し、許可時はジョブ名を差し替えつつ `Orchestrator.enqueue` へ渡す。
+  - `src/llm_generic_bot/runtime/setup.py` の `setup_runtime` は `PermitGate.permit` の結果を `PermitDecision` に包み直し、許可時はジョブ名を差し替えつつ `Orchestrator.enqueue` へ渡す。
   - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 判定前のメッセージ束を保持する。`Scheduler.queue.push` で積まれたバッチは `dispatch_ready_batches` を経て `sender.send` で `Orchestrator.enqueue` に載せられ、内部ワーカー `_process` が Permit を評価する。不許可時は `send.denied` を記録してバッチを破棄する。
   - ジッタは `core/scheduler.py` の `Scheduler` で既定有効となり、Permit 判定前のバッチに対して `next_slot` が遅延を決定してからオーケストレータへ渡す。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
 - integration テストは以下で運用経路をカバーしている:
@@ -39,7 +39,7 @@
 
 ## Sprint 3: 運用・可観測性
 - [OPS-02] 週次サマリ（`core/orchestrator.py`, `features/report.py`）: 成果・失敗を集計し運用向けに通知。
-- [OPS-03] 設定再読込ログ（`main.py`, `config/*`）: リロード時の差分検出と監査ログ。
+- [OPS-03] 設定再読込ログ（`src/llm_generic_bot/runtime/setup.py`, `config/*`）: リロード時の差分検出と監査ログ。
 - [OPS-04] ランタイムメトリクス（`infra/metrics.py` 新設）: スケジューラ遅延や送信成功率を可視化。
 
 ## テストロードマップ

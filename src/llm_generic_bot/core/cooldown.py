@@ -30,7 +30,14 @@ class CooldownGate:
     def multiplier(self, platform: str, channel: str, job: str,
                    time_band_factor: float = 1.0, engagement_recent: float = 1.0) -> float:
         key = self._key(platform, channel, job)
-        q = self.history.get(key, deque())
-        rate = len(q)  # count in window
+        q = self.history.get(key)
+        if q is not None:
+            now = time.time()
+            cut = now - self.window
+            while q and q[0] < cut:
+                q.popleft()
+            rate = len(q)
+        else:
+            rate = 0
         mult = 1.0 + self.k_rate*rate + self.k_time*time_band_factor + self.k_eng*(1.0 - engagement_recent)
         return max(self.mult_min, min(self.mult_max, mult))

@@ -21,6 +21,36 @@
   "arbiter": { "jitter_sec": [60, 180] },
   "dedupe": { "enable": true, "recent_k": 20, "sim_threshold": 0.93 },
   "limits": { "max_lines_night": 4, "max_emojis_night": 1 },
+  "report": {
+    "_usage": "週次サマリ機能: enabled を true にすると指定スケジュールで週間レポートを生成し通知する",
+    "enabled": false,
+    "job": "weekly_report",
+    "schedule": "Monday 09:00",
+    "channel": "ops-weekly",
+    "priority": 3,
+    "permit": {
+      "_usage": "PermitGate を通す際に使用するプラットフォーム/チャンネル/ジョブ識別子",
+      "platform": "discord",
+      "channel": "ops-weekly",
+      "job": "weekly_report"
+    },
+    "template": {
+      "_usage": "週次メトリクスの通知本文テンプレート",
+      "title": "📊 運用サマリ ({week_range})",
+      "line": "・{metric}: {value}",
+      "footer": "詳細は運用ダッシュボードを参照"
+    }
+  },
+  "metrics": {
+    "_usage": "ランタイムメトリクスの収集/エクスポート設定 (infra.metrics のデフォルト値と同一)",
+    "backend": "memory",
+    "retention_days": 14,
+    "export": {
+      "_usage": "メトリクスのエクスポート先や送信方式を定義",
+      "enabled": false,
+      "destination": "stdout"
+    }
+  },
   "weather": {
     "schedule": "21:00",
     "thresholds": { "hot_30": 30.0, "hot_35": 35.0, "delta_warn": 7.0, "delta_strong": 10.0 },

@@ -172,17 +172,20 @@ def setup_runtime(
     weather_cfg = _as_mapping(cfg.get("weather"))
     schedule_value = weather_cfg.get("schedule")
     schedule = schedule_value if isinstance(schedule_value, str) else "21:00"
-    engagement_cfg = _as_mapping(weather_cfg.get("engagement"))
-    history_provider = _resolve_history_provider(engagement_cfg.get("history_provider"))
-
     weather_params = inspect.signature(build_weather_post).parameters
+    engagement_cfg = _as_mapping(weather_cfg.get("engagement"))
+    history_provider: Optional[ReactionHistoryProvider] = None
+    if "reaction_history_provider" in weather_params:
+        history_provider = _resolve_history_provider(
+            engagement_cfg.get("history_provider")
+        )
 
     async def job_weather() -> Optional[str]:
         call_kwargs: dict[str, object] = {}
-        if "cooldown" in weather_params:
-            call_kwargs["cooldown"] = cooldown
         if "reaction_history_provider" in weather_params:
             call_kwargs["reaction_history_provider"] = history_provider
+        if "cooldown" in weather_params:
+            call_kwargs["cooldown"] = cooldown if history_provider else None
         if "platform" in weather_params:
             call_kwargs["platform"] = platform
         if "channel" in weather_params:

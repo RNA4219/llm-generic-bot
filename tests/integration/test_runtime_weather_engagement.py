@@ -54,6 +54,7 @@ def anyio_backend() -> str:
 async def test_weather_runtime_engagement_controls_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     cache_path = tmp_path / "weather_cache.json"
     monkeypatch.setattr(weather_module, "CACHE", cache_path)
@@ -98,8 +99,11 @@ async def test_weather_runtime_engagement_controls_dispatch(
     scheduler.jitter_enabled = False
 
     enqueue_calls: List[Dict[str, Any]] = []
+    send_calls: List[Dict[str, Any]] = []
 
-    async def fake_enqueue(
+    original_enqueue = orchestrator.enqueue
+
+    async def wrapped_enqueue(
         text: str,
         *,
         job: str,
@@ -116,11 +120,34 @@ async def test_weather_runtime_engagement_controls_dispatch(
                 "correlation_id": correlation_id,
             }
         )
-        return "corr"
+        return await original_enqueue(
+            text,
+            job=job,
+            platform=platform,
+            channel=channel,
+            correlation_id=correlation_id,
+        )
 
-    monkeypatch.setattr(orchestrator, "enqueue", fake_enqueue)
+    async def fake_send(
+        text: str,
+        channel: Optional[str] = None,
+        *,
+        job: Optional[str] = None,
+    ) -> None:
+        send_calls.append(
+            {
+                "text": text,
+                "channel": channel,
+                "job": job,
+            }
+        )
+
+    monkeypatch.setattr(orchestrator, "enqueue", wrapped_enqueue)
+    monkeypatch.setattr(orchestrator._sender, "send", fake_send)
 
     job = jobs["weather"]
+
+    caplog.set_level("INFO", logger="llm_generic_bot.core.orchestrator")
 
     result_low = await job()
     assert result_low is None
@@ -130,7 +157,11 @@ async def test_weather_runtime_engagement_controls_dispatch(
 
     now = dt.datetime.now(scheduler.tz).replace(hour=0, minute=0, second=0, microsecond=0)
     await scheduler._run_due_jobs(now)
+    records_before = [r for r in caplog.records if r.message == "send_success"]
+    assert not records_before
+
     await scheduler.dispatch_ready_batches(now.timestamp())
+    await orchestrator.flush()
 
     assert len(enqueue_calls) == 1
     assert enqueue_calls[0]["text"]
@@ -140,5 +171,12 @@ async def test_weather_runtime_engagement_controls_dispatch(
 
     assert [call.platform for call in provider.calls] == ["discord", "discord"]
     assert [call.channel for call in provider.calls] == ["general", "general"]
+
+    records = [r for r in caplog.records if r.message == "send_success"]
+    assert len(records) == len(records_before) + 1
+    assert records[-1].engagement_score == pytest.approx(1.0)
+
+    assert len(send_calls) == 1
+    assert send_calls[0]["text"] == enqueue_calls[0]["text"]
 
     await orchestrator.close()

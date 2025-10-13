@@ -9,6 +9,7 @@ from typing import Mapping, Optional, Protocol
 
 from .cooldown import CooldownGate
 from .dedupe import NearDuplicateFilter
+from ..infra.metrics import MetricsService, WeeklyMetricsSnapshot, collect_weekly_snapshot, make_metrics_recorder
 
 
 class Sender(Protocol):
@@ -95,7 +96,7 @@ class Orchestrator:
         cooldown: CooldownGate,
         dedupe: NearDuplicateFilter,
         permit: PermitEvaluator,
-        metrics: MetricsRecorder | None = None,
+        metrics: MetricsService | MetricsRecorder | None = None,
         logger: Optional[logging.Logger] = None,
         queue_size: int = 128,
         platform: str = "-",
@@ -104,7 +105,12 @@ class Orchestrator:
         self._cooldown = cooldown
         self._dedupe = dedupe
         self._permit = permit
-        self._metrics = metrics or NullMetricsRecorder()
+        if isinstance(metrics, MetricsService):
+            self._metrics_service = metrics
+            self._metrics = make_metrics_recorder(metrics)
+        else:
+            self._metrics_service = None
+            self._metrics = metrics or NullMetricsRecorder()
         self._logger = logger or logging.getLogger(__name__)
         self._queue: asyncio.Queue[_SendRequest | None] = asyncio.Queue(maxsize=queue_size)
         self._worker: asyncio.Task[None] | None = None
@@ -150,6 +156,9 @@ class Orchestrator:
         if self._worker:
             await self._worker
 
+    async def weekly_snapshot(self) -> WeeklyMetricsSnapshot:
+        return await collect_weekly_snapshot(self._metrics_service)
+
     def _start_worker(self) -> None:
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._run())
@@ -192,6 +201,12 @@ class Orchestrator:
             retryable_flag = "true" if decision.retryable else "false"
             denied_tags = {**tags, "retryable": retryable_flag}
             self._metrics.increment("send.denied", denied_tags)
+            denied_metadata = {
+                "correlation_id": request.correlation_id,
+                "reason": decision.reason,
+                "retryable": decision.retryable,
+            }
+            self._record_event("send.denied", denied_tags, metadata=denied_metadata)
             self._logger.info(
                 "permit_denied",
                 extra={
@@ -230,6 +245,12 @@ class Orchestrator:
             await self._sender.send(request.text, request.channel)
         except Exception as exc:  # noqa: BLE001 - 上位での再送制御対象
             self._metrics.increment("send.failure", tags)
+            failure_metadata = {
+                "correlation_id": request.correlation_id,
+                "error_type": exc.__class__.__name__,
+                "error_message": str(exc),
+            }
+            self._record_event("send.failure", tags, metadata=failure_metadata)
             self._logger.error(
                 "send_failed",
                 extra={
@@ -259,8 +280,33 @@ class Orchestrator:
             log_extra["engagement_score"] = request.engagement_score
         self._metrics.increment("send.success", success_tags)
         self._metrics.observe("send.duration", duration, success_tags)
+        metadata = {"correlation_id": request.correlation_id}
+        if request.engagement_score is not None:
+            metadata["engagement_score"] = request.engagement_score
+        self._record_event(
+            "send.success",
+            success_tags,
+            measurements={"duration_sec": duration},
+            metadata=metadata,
+        )
         self._cooldown.note_post(request.platform, request.channel or "-", job_name)
         self._logger.info(
             "send_success",
             extra=log_extra,
         )
+
+    def _record_event(
+        self,
+        name: str,
+        tags: Mapping[str, str],
+        *,
+        measurements: Mapping[str, float] | None = None,
+        metadata: Mapping[str, object] | None = None,
+    ) -> None:
+        if self._metrics_service is not None:
+            self._metrics_service.record_event(
+                name,
+                tags=tags,
+                measurements=measurements,
+                metadata=metadata,
+            )

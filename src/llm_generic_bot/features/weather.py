@@ -31,6 +31,15 @@ class WeatherPost(str):
 
 CACHE = Path("weather_cache.json")
 
+
+def _coerce_float(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
 def _read_cache() -> Dict[str, Any]:
     if not CACHE.exists(): return {}
     try:
@@ -91,9 +100,14 @@ async def build_weather_post(
             platform=platform,
             channel=channel,
         )
-        recent = list(history)[-history_limit:]
+        recent_raw = list(history)[-history_limit:]
+        recent = [
+            value
+            for value in (_coerce_float(item) for item in recent_raw)
+            if value is not None
+        ]
         if recent:
-            total = sum(float(value) for value in recent)
+            total = sum(recent)
             average = total / len(recent)
             normalized = average / target_reactions if target_reactions > 0 else average
             engagement_score = max(0.0, min(1.0, normalized))

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterator
 
+from llm_generic_bot.infra import collect_weekly_snapshot
 from llm_generic_bot.infra.metrics import (
     CounterSnapshot,
     MetricsService,
     ObservationSnapshot,
+    WeeklyMetricsSnapshot,
 )
 
 
@@ -53,3 +56,12 @@ def test_collect_weekly_snapshot_filters_and_groups() -> None:
         total=0.75,
         average=0.75,
     )
+
+
+def test_collect_weekly_snapshot_returns_empty_snapshot() -> None:
+    snapshot = asyncio.run(collect_weekly_snapshot(None))
+
+    assert isinstance(snapshot, WeeklyMetricsSnapshot)
+    assert snapshot.start == snapshot.end
+    assert snapshot.counters == {}
+    assert snapshot.observations == {}

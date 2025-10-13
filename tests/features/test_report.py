@@ -46,7 +46,7 @@ def test_weekly_report_uses_template_schema_directly() -> None:
 
     template_cfg = {
         "title": "📊 運用サマリ {week_range}",
-        "line": "・{label}: {value}",
+        "line": "・{metric}: {value}",
         "footer": "Powered by Ops",
     }
 
@@ -58,7 +58,13 @@ def test_weekly_report_uses_template_schema_directly() -> None:
         templates={"ja": template_cfg},
     )
 
-    expected = """📊 運用サマリ 2024-04-01〜2024-04-07\n・総ジョブ: 118件 (成功 114件 / 失敗 4件, 成功率 96.6%)\n・活発チャンネル: #alerts (76), #ops (42)\n・主要エラー: timeout (3), quota (1)\nPowered by Ops"""
+    expected = (
+        "📊 運用サマリ 2024-04-01〜2024-04-07\n"
+        "・総ジョブ: 118件 (成功 114件 / 失敗 4件, 成功率 96.6%)\n"
+        "・活発チャンネル: #alerts (76), #ops (42)\n"
+        "・主要エラー: timeout (3), quota (1)\n"
+        "Powered by Ops"
+    )
 
     assert payload.body == expected
     assert payload.channel == "#alerts"
@@ -92,7 +98,13 @@ def test_weekly_report_formats_real_snapshot() -> None:
         templates=TEMPLATES,
     )
 
-    expected = """📊 運用サマリ 2024-04-01〜2024-04-07\n・総ジョブ: 118件 (成功 114件 / 失敗 4件, 成功率 96.6%)\n・活発チャンネル: #alerts (76), #ops (42)\n・主要エラー: timeout (3), quota (1)\nPowered by Ops"""
+    expected = (
+        "📊 運用サマリ 2024-04-01〜2024-04-07\n"
+        "・総ジョブ: 118件 (成功 114件 / 失敗 4件, 成功率 96.6%)\n"
+        "・活発チャンネル: #alerts (76), #ops (42)\n"
+        "・主要エラー: timeout (3), quota (1)\n"
+        "Powered by Ops"
+    )
 
     assert isinstance(payload, ReportPayload)
     assert payload.channel == "#alerts"

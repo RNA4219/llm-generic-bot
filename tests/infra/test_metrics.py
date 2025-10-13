@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Mapping
 
 import pytest
 
@@ -27,25 +28,27 @@ def test_collect_weekly_snapshot_filters_and_groups() -> None:
             base - timedelta(days=8),
             base - timedelta(days=1),
             base - timedelta(hours=2),
+            base,
         ]
     )
-    service = MetricsService(clock=_clock_from(clock_values))
+    service = InMemoryMetricsService(clock=_clock_from(clock_values))
+    recorder = make_metrics_recorder(service)
 
-    service.increment(
+    recorder.increment(
         "send.success",
         tags={"job": "weather", "platform": "slack"},
     )
-    service.increment(
+    recorder.increment(
         "send.success",
         tags={"job": "weather", "platform": "slack"},
     )
-    service.observe(
+    recorder.observe(
         "send.latency",
         0.75,
         tags={"job": "weather", "platform": "slack"},
     )
 
-    snapshot = service.collect_weekly_snapshot(base)
+    snapshot = asyncio.run(service.collect_weekly_snapshot())
 
     assert snapshot["start"] == base - timedelta(days=7)
     assert snapshot["end"] == base

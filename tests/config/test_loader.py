@@ -78,7 +78,7 @@ def test_settings_example_contains_report_and_metrics_blocks() -> None:
     template_cfg = report.get("template") if isinstance(report, dict) else None
     assert isinstance(template_cfg, dict)
     assert template_cfg.get("title") == "📊 運用サマリ ({week_range})"
-    assert template_cfg.get("line") == "・{metric}: {value}"
+    assert template_cfg.get("line") == "・{label}: {value}"
     assert template_cfg.get("footer") == "詳細は運用ダッシュボードを参照"
 
     metrics_cfg = settings.get("metrics")

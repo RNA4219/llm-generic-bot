@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import Awaitable
 from datetime import datetime, timezone
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, Mapping, Protocol, runtime_checkable
@@ -61,7 +62,10 @@ async def collect_weekly_snapshot(
 ) -> WeeklyMetricsSnapshot:
     if metrics is None:
         return _empty_weekly_snapshot()
-    return await metrics.collect_weekly_snapshot()
+    result = metrics.collect_weekly_snapshot()
+    if isinstance(result, Awaitable):
+        return await result
+    return result
 
 
 def __getattr__(name: str) -> Any:

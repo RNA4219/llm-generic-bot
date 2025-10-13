@@ -174,13 +174,15 @@ def setup_runtime(
     schedule_value = weather_cfg.get("schedule")
     schedule = schedule_value if isinstance(schedule_value, str) else "21:00"
     async def job_weather() -> Optional[str]:
-        return await build_weather_post(
-            cfg,
-            reaction_history_provider=reaction_history_provider,
-            platform=platform,
-            channel=default_channel,
-            job="weather",
-        )
+        kwargs: dict[str, Any] = {}
+        if reaction_history_provider is not None:
+            kwargs = {
+                "reaction_history_provider": reaction_history_provider,
+                "platform": platform,
+                "channel": default_channel,
+                "job": "weather",
+            }
+        return await build_weather_post(cfg, **kwargs)
 
     weather_priority_raw = weather_cfg.get("priority")
     weather_priority = int(_num(weather_priority_raw, 5.0)) if weather_priority_raw is not None else 5

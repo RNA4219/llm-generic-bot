@@ -42,7 +42,7 @@
     }
   },
   "metrics": {
-    "_usage": "ランタイムメトリクスの収集/エクスポート設定 (infra.metrics.default と同一)",
+    "_usage": "ランタイムメトリクスの収集/エクスポート設定 (infra.metrics.default と同一)。retention_days で保持日数(既定7日)を上書き",
     "backend": "memory",
     "retention_days": 14,
     "export": {

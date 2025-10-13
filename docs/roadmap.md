@@ -3,6 +3,7 @@
 ## 現在の完成度
 - `main.py` はプロキシ兼エントリーポイントとして `runtime.setup.setup_runtime` を呼び出し、スケジューラ起動と終了時のオーケストレータ停止のみを担う。ランタイム構築ロジックは `src/llm_generic_bot/runtime/setup.py` へ集約済み。
 - `setup_runtime` は設定値に含まれる `module.attr` / `module:path` 形式の文字列を `_resolve_configured_object` でインポートし、依存解決済みオブジェクトを `llm_generic_bot.runtime.providers`（サンプル実装）へ接続することで実行時にプラガブルな Provider を差し替えられる。
+- `setup_runtime` は設定ファイル内のプロバイダ指定（`module.attr` / `module:path`）を `_resolve_configured_object` でインポート解決し、`llm_generic_bot.runtime.providers` のサンプル実装を通じて DI 可能なコンテンツ取得層・送信層を差し替えられる。これにより、設定差し替えだけでダミー実装や本番実装を切り替えつつ、共通のセットアップフローを維持できる。
 - 天気機能は OpenWeather から都市ごとの現在値を取得し、30℃/35℃閾値や前日比ΔTをもとに注意枠を生成しつつ today/yesterday キャッシュをローテーションしている。
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
 - PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
@@ -12,6 +13,7 @@
 - integration テストは以下で運用経路をカバーしている:
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
+  - `tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers`: `config/settings.example.json` で使用している `llm_generic_bot.runtime.providers:WeatherProviderFactory` 等のプロバイダ参照が `_resolve_configured_object` で正しく解決され、Weather/News/おみくじ/DM ダイジェストの各ジョブに接続されることを検証。
 - `tests/integration/test_runtime_multicontent.py`: `setup_runtime` が Weather/News/おみくじ/DM ダイジェストの 4 ジョブを登録し、
   - Weather/News/おみくじは設定どおりのチャンネルへエンキューされることを確認。
   - DM ダイジェストはスケジューラのキューを増やさずに sender が直接 DM を送ることを、DM ジョブ実行後もエンキュー件数が変化しない挙動で検証。

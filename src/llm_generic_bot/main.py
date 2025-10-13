@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from importlib import import_module
 from types import SimpleNamespace
@@ -174,15 +175,21 @@ def setup_runtime(
     engagement_cfg = _as_mapping(weather_cfg.get("engagement"))
     history_provider = _resolve_history_provider(engagement_cfg.get("history_provider"))
 
+    weather_params = inspect.signature(build_weather_post).parameters
+
     async def job_weather() -> Optional[str]:
-        return await build_weather_post(
-            cfg,
-            cooldown=cooldown,
-            reaction_history_provider=history_provider,
-            platform=platform,
-            channel=default_channel,
-            job="weather",
-        )
+        call_kwargs: dict[str, object] = {}
+        if "cooldown" in weather_params:
+            call_kwargs["cooldown"] = cooldown
+        if "reaction_history_provider" in weather_params:
+            call_kwargs["reaction_history_provider"] = history_provider
+        if "platform" in weather_params:
+            call_kwargs["platform"] = platform
+        if "channel" in weather_params:
+            call_kwargs["channel"] = default_channel
+        if "job" in weather_params:
+            call_kwargs["job"] = "weather"
+        return await build_weather_post(cfg, **call_kwargs)
 
     weather_priority_raw = weather_cfg.get("priority")
     weather_priority = int(_num(weather_priority_raw, 5.0)) if weather_priority_raw is not None else 5

@@ -5,11 +5,14 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Mapping, Optional, Protocol
+from typing import TYPE_CHECKING, Mapping, Optional, Protocol
 
 from .cooldown import CooldownGate
 from .dedupe import NearDuplicateFilter
-from ..infra.metrics import MetricsService, WeeklyMetricsSnapshot, collect_weekly_snapshot, make_metrics_recorder
+from ..infra import MetricsBackend, collect_weekly_snapshot, make_metrics_recorder
+
+if TYPE_CHECKING:
+    from ..infra.metrics import WeeklyMetricsSnapshot
 
 
 class Sender(Protocol):
@@ -96,7 +99,7 @@ class Orchestrator:
         cooldown: CooldownGate,
         dedupe: NearDuplicateFilter,
         permit: PermitEvaluator,
-        metrics: MetricsService | MetricsRecorder | None = None,
+        metrics: MetricsBackend | MetricsRecorder | None = None,
         logger: Optional[logging.Logger] = None,
         queue_size: int = 128,
         platform: str = "-",
@@ -105,7 +108,7 @@ class Orchestrator:
         self._cooldown = cooldown
         self._dedupe = dedupe
         self._permit = permit
-        if isinstance(metrics, MetricsService):
+        if isinstance(metrics, MetricsBackend):
             self._metrics_service = metrics
             self._metrics = make_metrics_recorder(metrics)
         else:

@@ -259,20 +259,41 @@ class Orchestrator:
             await self._sender.send(request.text, request.channel)
         except Exception as exc:  # noqa: BLE001 - 上位での再送制御対象
             duration = time.perf_counter() - start
-            await metrics_module.report_send_failure(
-                job=job_name,
-                platform=request.platform,
-                channel=request.channel,
-                duration_seconds=duration,
-                error_type=exc.__class__.__name__,
-            )
+            error_type = exc.__class__.__name__
+            failure_tags = {**tags, "error": error_type}
+            aggregator = getattr(metrics_module, "_AGGREGATOR", None)
+            original_backend: MetricsRecorder | None = None
+            suppress_backend = False
+            if aggregator is not None:
+                backend = getattr(aggregator, "backend", None)
+                if backend is self._metrics:
+                    original_backend = backend
+                    setattr(aggregator, "backend", metrics_module.NullMetricsRecorder())
+                    suppress_backend = True
+            try:
+                await metrics_module.report_send_failure(
+                    job=job_name,
+                    platform=request.platform,
+                    channel=request.channel,
+                    duration_seconds=duration,
+                    error_type=error_type,
+                )
+            finally:
+                if suppress_backend and original_backend is not None:
+                    setattr(aggregator, "backend", original_backend)
+            self._metrics.increment("send.failure", failure_tags)
             failure_metadata = {
                 "correlation_id": request.correlation_id,
-                "error_type": exc.__class__.__name__,
+                "error_type": error_type,
                 "error_message": str(exc),
                 "duration_sec": duration,
             }
-            self._record_event("send.failure", tags, metadata=failure_metadata)
+            self._record_event(
+                "send.failure",
+                failure_tags,
+                measurements={"duration_sec": duration},
+                metadata=failure_metadata,
+            )
             self._logger.error(
                 "send_failed",
                 extra={
@@ -281,7 +302,7 @@ class Orchestrator:
                     "job": job_name,
                     "platform": request.platform,
                     "channel": request.channel,
-                    "error_type": exc.__class__.__name__,
+                    "error_type": error_type,
                     "error_message": str(exc),
                     "duration_sec": duration,
                 },

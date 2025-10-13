@@ -1,144 +1,100 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from collections import Counter, defaultdict
+import datetime as dt
 from threading import Lock
-from typing import Callable, Dict, Iterable, List, Mapping, Tuple
+from typing import Dict, Mapping
 
-from llm_generic_bot.core.orchestrator import MetricsRecorder
+from llm_generic_bot.core.orchestrator import MetricsRecorder, NullMetricsRecorder
 
-TagsKey = Tuple[Tuple[str, str], ...]
-MetricKind = str
-
-
-def _normalize_tags(tags: Mapping[str, str] | None) -> TagsKey:
-    if not tags:
-        return ()
-    return tuple(sorted(tags.items()))
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+_BUCKETS: tuple[tuple[float, str], ...] = ((1.0, "1s"), (3.0, "3s"), (10.0, "10s"), (float("inf"), "inf"))
+_backend: MetricsRecorder = NullMetricsRecorder()
+_backend_configured = False
+_lock = Lock()
+_success: Dict[str, int] = {}
+_failure: Dict[str, int] = {}
+_histogram: defaultdict[str, Counter[str]] = defaultdict(Counter)
+_denials: list[dict[str, str]] = []
 
 
-@dataclass(frozen=True)
-class CounterSnapshot:
-    count: int
+def configure_backend(recorder: MetricsRecorder | None) -> None:
+    global _backend, _backend_configured
+    with _lock:
+        _backend = recorder or NullMetricsRecorder()
+        _backend_configured = recorder is not None
+        for store in (_success, _failure, _histogram, _denials):
+            store.clear()
 
 
-@dataclass(frozen=True)
-class ObservationSnapshot:
-    count: int
-    minimum: float
-    maximum: float
-    total: float
-    average: float
+def _base_tags(job: str, platform: str, channel: str | None) -> dict[str, str]:
+    return {"job": job, "platform": platform, "channel": channel or "-"}
 
 
-@dataclass(frozen=True)
-class WeeklyMetricsSnapshot:
-    start: datetime
-    end: datetime
-    counters: Mapping[str, Mapping[TagsKey, CounterSnapshot]]
-    observations: Mapping[str, Mapping[TagsKey, ObservationSnapshot]]
+def report_permit_denied(
+    *, job: str, platform: str, channel: str | None, reason: str, permit_tags: Mapping[str, str] | None = None
+) -> None:
+    tags = {**_base_tags(job, platform, channel), "reason": reason, **(permit_tags or {})}
+    _backend.increment("send.denied", tags)
+    if _backend_configured:
+        with _lock:
+            _denials.append(tags.copy())
 
 
-@dataclass(frozen=True)
-class _MetricRecord:
-    name: str
-    recorded_at: datetime
-    tags: TagsKey
-    kind: MetricKind
-    value: float
+def _record(job: str, duration_seconds: float, *, success: bool) -> None:
+    if not _backend_configured:
+        return
+    bucket = next(label for limit, label in _BUCKETS if duration_seconds <= limit)
+    with _lock:
+        _histogram[job][bucket] += 1
+        counter = _success if success else _failure
+        counter[job] = counter.get(job, 0) + 1
 
 
-class MetricsService(MetricsRecorder):
-    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
-        self._clock = clock or _utcnow
-        self._lock = Lock()
-        self._records: List[_MetricRecord] = []
-
-    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
-        self._store(name, 1.0, tags, "increment")
-
-    def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
-        self._store(name, float(value), tags, "observe")
-
-    def collect_weekly_snapshot(self, now: datetime) -> WeeklyMetricsSnapshot:
-        start = now - timedelta(days=7)
-        with self._lock:
-            relevant = [r for r in self._records if start <= r.recorded_at <= now]
-            self._records = [r for r in self._records if r.recorded_at >= start]
-        counters: Dict[str, Dict[TagsKey, int]] = {}
-        observations: Dict[str, Dict[TagsKey, List[float]]] = {}
-        for record in relevant:
-            if record.kind == "increment":
-                counter_metric = counters.get(record.name)
-                if counter_metric is None:
-                    counter_metric = {}
-                    counters[record.name] = counter_metric
-                counter_metric[record.tags] = counter_metric.get(record.tags, 0) + 1
-            elif record.kind == "observe":
-                observation_metric = observations.get(record.name)
-                if observation_metric is None:
-                    observation_metric = {}
-                    observations[record.name] = observation_metric
-                value_list = observation_metric.get(record.tags)
-                if value_list is None:
-                    value_list = []
-                    observation_metric[record.tags] = value_list
-                value_list.append(record.value)
-        return WeeklyMetricsSnapshot(
-            start=start,
-            end=now,
-            counters=_materialize_counters(counters),
-            observations=_materialize_observations(observations),
-        )
-
-    def _store(
-        self,
-        name: str,
-        value: float,
-        tags: Mapping[str, str] | None,
-        kind: MetricKind,
-    ) -> None:
-        record = _MetricRecord(
-            name=name,
-            recorded_at=self._clock(),
-            tags=_normalize_tags(tags),
-            kind=kind,
-            value=value,
-        )
-        with self._lock:
-            self._records.append(record)
+async def report_send_success(
+    *, job: str, platform: str, channel: str | None, duration_seconds: float, permit_tags: Mapping[str, str] | None = None
+) -> None:
+    tags = _base_tags(job, platform, channel)
+    _backend.increment("send.success", {**tags, **(permit_tags or {})})
+    _record(job, duration_seconds, success=True)
+    _backend.observe("send.duration", duration_seconds, {**tags, "unit": "seconds"})
 
 
-def _materialize_counters(
-    data: Mapping[str, Mapping[TagsKey, int]]
-) -> Dict[str, Dict[TagsKey, CounterSnapshot]]:
+async def report_send_failure(
+    *, job: str, platform: str, channel: str | None, duration_seconds: float, error_type: str
+) -> None:
+    tags = _base_tags(job, platform, channel)
+    _backend.increment("send.failure", {**tags, "error": error_type})
+    _record(job, duration_seconds, success=False)
+    _backend.observe("send.duration", duration_seconds, {**tags, "unit": "seconds"})
+
+
+def weekly_snapshot() -> dict[str, object]:
+    generated = dt.datetime.now(dt.timezone.utc).isoformat()
+    with _lock:
+        jobs = sorted(set(_success) | set(_failure))
+        success_rate = {}
+        for job in jobs:
+            s, f = _success.get(job, 0), _failure.get(job, 0)
+            if s + f:
+                success_rate[job] = {"success": s, "failure": f, "ratio": s / (s + f)}
+        latency = {
+            job: {label: counts[label] for _, label in _BUCKETS if counts[label] > 0}
+            for job, counts in sorted(_histogram.items())
+            if counts
+        }
+        denials = list(_denials)
     return {
-        name: {tags: CounterSnapshot(count=count) for tags, count in per_tags.items()}
-        for name, per_tags in data.items()
+        "generated_at": generated,
+        "success_rate": success_rate,
+        "latency_histogram_seconds": latency,
+        "permit_denials": denials,
     }
 
 
-def _materialize_observations(
-    data: Mapping[str, Mapping[TagsKey, Iterable[float]]]
-) -> Dict[str, Dict[TagsKey, ObservationSnapshot]]:
-    result: Dict[str, Dict[TagsKey, ObservationSnapshot]] = {}
-    for name, per_tags in data.items():
-        result[name] = {}
-        for tags, values in per_tags.items():
-            value_list = list(values)
-            total = sum(value_list)
-            count = len(value_list)
-            minimum = min(value_list)
-            maximum = max(value_list)
-            result[name][tags] = ObservationSnapshot(
-                count=count,
-                minimum=minimum,
-                maximum=maximum,
-                total=total,
-                average=total / count,
-            )
-    return result
+def reset_for_test() -> None:
+    global _backend, _backend_configured
+    with _lock:
+        _backend = NullMetricsRecorder()
+        _backend_configured = False
+        for store in (_success, _failure, _histogram, _denials):
+            store.clear()

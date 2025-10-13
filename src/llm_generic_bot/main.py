@@ -182,16 +182,19 @@ def setup_runtime(
 
     async def job_weather() -> Optional[str]:
         call_kwargs: dict[str, object] = {}
-        if "reaction_history_provider" in weather_params:
+        if (
+            history_provider is not None
+            and "reaction_history_provider" in weather_params
+        ):
             call_kwargs["reaction_history_provider"] = history_provider
-        if "cooldown" in weather_params:
-            call_kwargs["cooldown"] = cooldown if history_provider else None
-        if "platform" in weather_params:
-            call_kwargs["platform"] = platform
-        if "channel" in weather_params:
-            call_kwargs["channel"] = default_channel
-        if "job" in weather_params:
-            call_kwargs["job"] = "weather"
+            if "cooldown" in weather_params:
+                call_kwargs["cooldown"] = cooldown
+            if "platform" in weather_params:
+                call_kwargs["platform"] = platform
+            if "channel" in weather_params:
+                call_kwargs["channel"] = default_channel
+            if "job" in weather_params:
+                call_kwargs["job"] = "weather"
         return await build_weather_post(cfg, **call_kwargs)
 
     weather_priority_raw = weather_cfg.get("priority")

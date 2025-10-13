@@ -95,7 +95,7 @@ async def test_weather_runtime_engagement_controls_dispatch(
 
     queue = CoalesceQueue(window_seconds=0.0, threshold=1)
 
-    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    scheduler, orchestrator, _ = main_module.setup_runtime(settings, queue=queue)
     scheduler.jitter_enabled = False
 
     enqueue_calls: List[Dict[str, Any]] = []
@@ -145,22 +145,25 @@ async def test_weather_runtime_engagement_controls_dispatch(
     monkeypatch.setattr(orchestrator, "enqueue", wrapped_enqueue)
     monkeypatch.setattr(orchestrator._sender, "send", fake_send)
 
-    job = jobs["weather"]
-
     caplog.set_level("INFO", logger="llm_generic_bot.core.orchestrator")
-
-    result_low = await job()
-    assert result_low is None
-
-    await scheduler.dispatch_ready_batches()
-    assert enqueue_calls == []
 
     now = dt.datetime.now(scheduler.tz).replace(hour=0, minute=0, second=0, microsecond=0)
     await scheduler._run_due_jobs(now)
+    await scheduler.dispatch_ready_batches(now.timestamp())
+    await orchestrator.flush()
+
+    assert enqueue_calls == []
+    assert len(provider.calls) == 1
+    assert provider.calls[0].job == "weather"
+    assert provider.calls[0].platform == "discord"
+    assert provider.calls[0].channel == "general"
+
     records_before = [r for r in caplog.records if r.message == "send_success"]
     assert not records_before
 
-    await scheduler.dispatch_ready_batches(now.timestamp())
+    next_now = now + dt.timedelta(days=1)
+    await scheduler._run_due_jobs(next_now)
+    await scheduler.dispatch_ready_batches(next_now.timestamp())
     await orchestrator.flush()
 
     assert len(enqueue_calls) == 1

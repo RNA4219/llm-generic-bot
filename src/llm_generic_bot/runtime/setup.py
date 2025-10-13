@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import inspect
-import time
-from importlib import import_module
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Mapping, Optional, cast
 
@@ -27,89 +24,18 @@ from ..features.dm_digest import (
     SummaryProvider as DigestSummaryProvider,
     build_dm_digest,
 )
-from ..features.news import (
-    FeedProvider,
-    SummaryProvider as NewsSummaryProvider,
-    build_news_post,
-)
 from ..features.omikuji import build_omikuji_post
-from ..features.weather import ReactionHistoryProvider, build_weather_post
+from .jobs import register_news_job, register_weather_job
+from .jobs.helpers import (
+    as_mapping as _as_mapping,
+    collect_schedules as _collect_schedules,
+    is_enabled as _is_enabled,
+    optional_str as _optional_str,
+    resolve_configured_object as _resolve_configured_object,
+    resolve_object as _resolve_object,
+)
 
 __all__ = ["setup_runtime"]
-
-
-def _as_mapping(value: object) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
-
-
-def _is_enabled(config: Mapping[str, Any], *, default: bool = True) -> bool:
-    flag = config.get("enabled")
-    if flag is None:
-        return default
-    if isinstance(flag, bool):
-        return flag
-    if isinstance(flag, (int, float)):
-        return bool(flag)
-    if isinstance(flag, str):
-        lowered = flag.strip().lower()
-        if lowered in {"", "0", "false", "off"}:
-            return False
-        if lowered in {"1", "true", "on"}:
-            return True
-    return default
-
-
-def _schedule_values(raw: object) -> list[str]:
-    if isinstance(raw, str):
-        return [raw] if raw else []
-    if isinstance(raw, (list, tuple, set)):
-        return [str(value) for value in raw if isinstance(value, str) and value]
-    return []
-
-
-def _collect_schedules(config: Mapping[str, Any], *, default: str) -> list[str]:
-    schedules = _schedule_values(config.get("schedule"))
-    schedules.extend(_schedule_values(config.get("schedules")))
-    return schedules or [default]
-
-
-def _optional_str(value: object) -> Optional[str]:
-    if isinstance(value, str) and value:
-        return value
-    return None
-
-
-def _resolve_object(value: str) -> object:
-    module_path, sep, attr_path = value.partition(":")
-    if not sep:
-        module_path, _, attr_path = value.rpartition(".")
-    if not module_path or not attr_path:
-        raise ValueError(f"invalid reference: {value}")
-    module = import_module(module_path)
-    obj: object = module
-    for attr in attr_path.split("."):
-        obj = getattr(obj, attr)
-    return obj
-
-
-def _resolve_configured_object(value: object, *, context: str) -> object | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        try:
-            return _resolve_object(value)
-        except Exception as exc:
-            raise ValueError(f"{context}: failed to resolve '{value}'") from exc
-    return value
-
-
-def _resolve_history_provider(value: object) -> Optional[ReactionHistoryProvider]:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        resolved = _resolve_object(value)
-        return cast(Optional[ReactionHistoryProvider], resolved)
-    return cast(Optional[ReactionHistoryProvider], value)
 
 
 _resolve_reference = _resolve_object
@@ -223,108 +149,30 @@ def setup_runtime(
 
     scheduler = Scheduler(tz=tz, sender=cast(Sender, SimpleNamespace(send=send)), queue=queue)
     weather_cfg = _as_mapping(cfg.get("weather"))
-    schedule_value = weather_cfg.get("schedule")
-    schedule = schedule_value if isinstance(schedule_value, str) else "21:00"
-    weather_params = inspect.signature(build_weather_post).parameters
-    engagement_cfg = _as_mapping(weather_cfg.get("engagement"))
-    history_provider: Optional[ReactionHistoryProvider] = None
-    if "reaction_history_provider" in weather_params:
-        history_provider = _resolve_history_provider(
-            engagement_cfg.get("history_provider")
-        )
-
-    async def job_weather() -> Optional[str]:
-        call_kwargs: dict[str, Any] = {}
-        if (
-            history_provider is not None
-            and "reaction_history_provider" in weather_params
-        ):
-            call_kwargs["reaction_history_provider"] = history_provider
-            if "cooldown" in weather_params:
-                call_kwargs["cooldown"] = cooldown
-            if "platform" in weather_params:
-                call_kwargs["platform"] = platform
-            if "channel" in weather_params:
-                call_kwargs["channel"] = default_channel
-            if "job" in weather_params:
-                call_kwargs["job"] = "weather"
-        return await build_weather_post(cfg, **call_kwargs)
-
-    weather_priority_raw = weather_cfg.get("priority")
-    weather_priority = int(_num(weather_priority_raw, 5.0)) if weather_priority_raw is not None else 5
-    scheduler.every_day(
-        "weather",
-        schedule,
-        job_weather,
-        channel=default_channel,
-        priority=max(weather_priority, 0),
+    weather_job_name, weather_job = register_weather_job(
+        scheduler=scheduler,
+        config=weather_cfg,
+        global_config=cfg,
+        cooldown=cooldown,
+        platform=platform,
+        default_channel=default_channel,
     )
 
-    jobs: dict[str, Callable[[], Awaitable[Optional[str]]]] = {"weather": job_weather}
+    jobs: dict[str, Callable[[], Awaitable[Optional[str]]]] = {
+        weather_job_name: weather_job
+    }
 
     news_cfg = _as_mapping(cfg.get("news"))
-    if news_cfg and _is_enabled(news_cfg):
-        news_feed_provider = _resolve_configured_object(
-            news_cfg.get("feed_provider"),
-            context="news.feed_provider",
-        )
-        news_summary_provider = _resolve_configured_object(
-            news_cfg.get("summary_provider"),
-            context="news.summary_provider",
-        )
-        if news_feed_provider is not None and news_summary_provider is not None:
-            job_name = str(news_cfg.get("job", "news"))
-            news_priority = max(int(_num(news_cfg.get("priority"), 5.0)), 0)
-            news_channel = _optional_str(news_cfg.get("channel")) or default_channel
-
-            async def job_news() -> Optional[str]:
-                platform_name = platform
-                state = {"suppress_cooldown": bool(news_cfg.get("suppress_cooldown", False))}
-
-                def _permit_hook(*, job: str, suppress_cooldown: bool) -> None:
-                    state["suppress_cooldown"] = suppress_cooldown
-
-                async def _cooldown_check(
-                    *,
-                    job: str,
-                    platform: Optional[str],
-                    channel: Optional[str],
-                ) -> bool:
-                    if state["suppress_cooldown"]:
-                        return False
-                    normalized_job = job or job_name
-                    normalized_platform = platform if platform is not None else platform_name
-                    normalized_channel = channel if channel is not None else news_channel
-                    key = (
-                        (normalized_platform or "-"),
-                        (normalized_channel or "-"),
-                        (normalized_job or "-"),
-                    )
-                    history = cooldown.history.get(key)
-                    if history is None:
-                        return False
-                    cutoff = time.time() - cooldown.window
-                    while history and history[0] < cutoff:
-                        history.popleft()
-                    return bool(history)
-
-                return await build_news_post(
-                    news_cfg,
-                    feed_provider=cast(FeedProvider, news_feed_provider),
-                    summary_provider=cast(NewsSummaryProvider, news_summary_provider),
-                    permit=_permit_hook,
-                    cooldown=_cooldown_check,
-                )
-
-            jobs[job_name] = job_news
-            for hhmm in _collect_schedules(news_cfg, default="21:00"):
-                scheduler.every_day(
-                    job_name,
-                    hhmm,
-                    job_news,
-                    channel=news_channel,
-                    priority=news_priority,
-                )
+    news_job = register_news_job(
+        scheduler=scheduler,
+        config=news_cfg,
+        default_channel=default_channel,
+        cooldown=cooldown,
+        platform=platform,
+    )
+    if news_job is not None:
+        job_name, job_callable = news_job
+        jobs[job_name] = job_callable
 
     omikuji_cfg = _as_mapping(cfg.get("omikuji"))
     if omikuji_cfg and _is_enabled(omikuji_cfg):

@@ -147,45 +147,55 @@ async def build_weather_post(
                 raw = await fetch_current_city(city, api_key=api_key, units=units, lang=lang)
                 temp = float((raw.get("main") or {}).get("temp"))
                 desc = (raw.get("weather") or [{}])[0].get("description", "")
-                hot_icon = ""
-                if temp > hot35:
-                    hot_icon = icons.get("hot_35", "🔥")
-                elif temp > hot30:
-                    hot_icon = icons.get("hot_30", "🌡️")
-                delta_tag = ""
-                y = (yesterday or {}).get(city)
-                if y is not None and "temp" in y:
-                    delta = temp - float(y["temp"])
-                    if abs(delta) >= dstrong:
-                        delta_tag = (
-                            f"{icons.get('warn','⚠️')} "
-                            + (
-                                icons.get("delta_up", "🔺")
-                                if delta > 0
-                                else icons.get("delta_down", "🔻")
-                            )
-                            + f"({delta:+.1f})"
-                        )
-                        warns.append(f"• {city}: 前日比 {delta:+.1f}℃（強）")
-                    elif abs(delta) >= dwarn:
-                        delta_tag = (
+                snapshot = {"temp": temp, "ts": int(time.time()), "desc": desc}
+            except Exception:
+                fallback_source = previous_today.get(city) or yesterday.get(city)
+                if not (isinstance(fallback_source, dict) and "temp" in fallback_source):
+                    out_lines.append(f"{city}: (cache)")
+                    continue
+                temp = float(fallback_source["temp"])
+                desc = str(fallback_source.get("desc", ""))
+                snapshot = dict(fallback_source)
+                snapshot["temp"] = temp
+                snapshot.setdefault("ts", int(time.time()))
+                snapshot["desc"] = desc
+            hot_icon = ""
+            if temp > hot35:
+                hot_icon = icons.get("hot_35", "🔥")
+            elif temp > hot30:
+                hot_icon = icons.get("hot_30", "🌡️")
+            delta_tag = ""
+            y = (yesterday or {}).get(city)
+            if y is not None and "temp" in y:
+                delta = temp - float(y["temp"])
+                if abs(delta) >= dstrong:
+                    delta_tag = (
+                        f"{icons.get('warn','⚠️')} "
+                        + (
                             icons.get("delta_up", "🔺")
                             if delta > 0
                             else icons.get("delta_down", "🔻")
-                        ) + f"({delta:+.1f})"
-                        warns.append(f"• {city}: 前日比 {delta:+.1f}℃")
-                out_lines.append(
-                    linefmt.format(
-                        city=city,
-                        temp=temp,
-                        desc=desc,
-                        hot_icon=hot_icon,
-                        delta_tag=delta_tag,
+                        )
+                        + f"({delta:+.1f})"
                     )
+                    warns.append(f"• {city}: 前日比 {delta:+.1f}℃（強）")
+                elif abs(delta) >= dwarn:
+                    delta_tag = (
+                        icons.get("delta_up", "🔺")
+                        if delta > 0
+                        else icons.get("delta_down", "🔻")
+                    ) + f"({delta:+.1f})"
+                    warns.append(f"• {city}: 前日比 {delta:+.1f}℃")
+            out_lines.append(
+                linefmt.format(
+                    city=city,
+                    temp=temp,
+                    desc=desc,
+                    hot_icon=hot_icon,
+                    delta_tag=delta_tag,
                 )
-                now_snap[city] = {"temp": temp, "ts": int(time.time())}
-            except Exception:
-                out_lines.append(f"{city}: (cache)")
+            )
+            now_snap[city] = snapshot
         out_lines.append("")
 
     if warns:

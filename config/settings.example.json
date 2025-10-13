@@ -44,6 +44,52 @@
       "time_band_factor": 1.0
     }
   },
+  "news": {
+    "_provider_reference_usage": "feed_provider と summary_provider はドット区切り（module.attr もしくは module:path）で呼び出し可能なオブジェクトを指定する",
+    "enabled": true,
+    "job": "news",
+    "schedule": ["07:30", "19:30"],
+    "channel": "discord-news",
+    "priority": 8,
+    "feed_url": "https://example.com/news/feed.xml",
+    "feed_provider": "llm_generic_bot.runtime.providers.SAMPLE_NEWS_FEED",
+    "summary_provider": "llm_generic_bot.runtime.providers.SAMPLE_NEWS_SUMMARY",
+    "language": "ja",
+    "template": {
+      "header": "📰 今日のニュースまとめ",
+      "item": "・{title}: {summary} ({link})",
+      "footer": "#news ハッシュタグで反応をシェア"
+    },
+    "suppress_cooldown": false
+  },
+  "omikuji": {
+    "enabled": true,
+    "job": "omikuji",
+    "schedule": "09:00",
+    "channel": "fortune",
+    "priority": 6,
+    "user_id": "user-1234567890",
+    "templates": [
+      { "id": "basic", "text": "{user} さんの運勢は {fortune} です" }
+    ],
+    "fortunes": ["大吉", "中吉", "小吉", "凶"],
+    "history_window_days": 30
+  },
+  "dm_digest": {
+    "_provider_reference_usage": "log_provider・summary_provider・sender はドット区切り（module.attr もしくは module:path）で指定する",
+    "enabled": true,
+    "job": "dm_digest",
+    "schedule": "22:00",
+    "priority": 4,
+    "source_channel": "support-dm",
+    "recipient_id": "user-recipient-0001",
+    "log_provider": "llm_generic_bot.runtime.providers.SAMPLE_DM_LOG",
+    "summary_provider": "llm_generic_bot.runtime.providers.SAMPLE_DM_SUMMARY",
+    "sender": "llm_generic_bot.runtime.providers.SAMPLE_DM_SENDER",
+    "max_events": 20,
+    "max_attempts": 2,
+    "channel": null
+  },
   "profiles": {
     "discord": { "enabled": true },
     "misskey": { "enabled": false }

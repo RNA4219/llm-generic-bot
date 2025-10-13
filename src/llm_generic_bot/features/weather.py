@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Sequence, Mapping, Tuple, Optional, TypedDict, Union
 import time, json, os
 from pathlib import Path
 from ..adapters.openweather import fetch_current_city
@@ -16,7 +16,46 @@ def _read_cache() -> Dict[str, Any]:
 def _write_cache(data: Dict[str, Any]) -> None:
     CACHE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-async def build_weather_post(cfg: Dict[str, Any]) -> str:
+class EngagementMetrics(TypedDict):
+    recent: float
+    threshold: float
+    window: int
+
+
+def _compute_engagement(
+    history: Optional[Sequence[Mapping[str, Any]]],
+    *,
+    window: int,
+) -> float:
+    if not history or window <= 0:
+        return 0.0
+    normalized: List[Tuple[float, float]] = []
+    for item in history:
+        if not isinstance(item, Mapping):
+            continue
+        ts_raw = item.get("timestamp")
+        reactions_raw = item.get("reactions")
+        try:
+            ts = float(ts_raw)
+            reactions = float(reactions_raw)
+        except (TypeError, ValueError):
+            continue
+        normalized.append((ts, max(reactions, 0.0)))
+    normalized.sort(key=lambda pair: pair[0], reverse=True)
+    if not normalized:
+        return 0.0
+    recent = [value for _, value in normalized[:window]]
+    if not recent:
+        return 0.0
+    return sum(recent) / float(len(recent))
+
+
+async def build_weather_post(
+    cfg: Dict[str, Any],
+    *,
+    reaction_history: Optional[Sequence[Mapping[str, Any]]] = None,
+    include_metrics: bool = False,
+) -> Union[str, Tuple[str, EngagementMetrics]]:
     ow = cfg.get("openweather", {})
     wc = cfg.get("weather", {})
     thresholds = wc.get("thresholds", {})
@@ -29,6 +68,9 @@ async def build_weather_post(cfg: Dict[str, Any]) -> str:
     header = tpl.get("header", "今夜の各地の天気")
     linefmt = tpl.get("line", "{city}: {temp:.1f}℃ {desc} {hot_icon}{delta_tag}")
     footer_warn = tpl.get("footer_warn", "— 注意喚起 —\n{bullets}")
+    engagement_cfg = wc.get("engagement", {})
+    engagement_window = int(engagement_cfg.get("window", 5) or 0)
+    engagement_threshold = float(engagement_cfg.get("threshold", 0.0) or 0.0)
 
     units = ow.get("units","metric")
     lang = ow.get("lang","ja")
@@ -100,4 +142,16 @@ async def build_weather_post(cfg: Dict[str, Any]) -> str:
     # rotate cache
     new_cache = {"today": now_snap, "yesterday": previous_today}
     _write_cache(new_cache)
-    return "\n".join(out_lines).strip()
+    text = "\n".join(out_lines).strip()
+    if not include_metrics:
+        return text
+    recent_value = _compute_engagement(
+        reaction_history,
+        window=engagement_window if engagement_window > 0 else 0,
+    )
+    metrics: EngagementMetrics = {
+        "recent": recent_value,
+        "threshold": engagement_threshold,
+        "window": max(engagement_window, 0),
+    }
+    return text, metrics

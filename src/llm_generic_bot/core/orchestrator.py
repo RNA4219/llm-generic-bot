@@ -5,7 +5,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Mapping, Optional, Protocol
+from typing import Mapping, Optional, Protocol, MutableMapping
 
 from .cooldown import CooldownGate
 from .dedupe import NearDuplicateFilter
@@ -78,6 +78,7 @@ class _SendRequest:
     platform: str
     channel: Optional[str]
     correlation_id: str
+    engagement: Optional[Mapping[str, float]]
 
 
 class Orchestrator:
@@ -113,6 +114,7 @@ class Orchestrator:
         platform: str,
         channel: Optional[str] = None,
         correlation_id: Optional[str] = None,
+        engagement: Optional[Mapping[str, float]] = None,
     ) -> str:
         if self._closed:
             raise RuntimeError("orchestrator is closed")
@@ -123,6 +125,7 @@ class Orchestrator:
             platform=platform,
             channel=channel,
             correlation_id=corr,
+            engagement=engagement,
         )
         await self._queue.put(request)
         return corr
@@ -171,11 +174,34 @@ class Orchestrator:
     async def _process(self, request: _SendRequest) -> None:
         decision = self._permit(request.platform, request.channel, request.job)
         job_name = decision.job or request.job
-        tags = {
+        engagement_recent: float | None = None
+        engagement_threshold: float | None = None
+        engagement_state = "unknown"
+        engagement_source = request.engagement
+        if engagement_source is not None:
+            try:
+                engagement_recent = float(engagement_source.get("recent", 0.0))
+            except (TypeError, ValueError):
+                engagement_recent = None
+            try:
+                engagement_threshold = float(engagement_source.get("threshold", 0.0))
+            except (TypeError, ValueError):
+                engagement_threshold = None
+            if (
+                engagement_recent is not None
+                and engagement_threshold is not None
+                and engagement_threshold > 0.0
+            ):
+                engagement_state = "low" if engagement_recent < engagement_threshold else "ok"
+            elif engagement_recent is not None:
+                engagement_state = "ok"
+
+        tags_base: MutableMapping[str, str] = {
             "job": job_name,
             "platform": request.platform,
             "channel": request.channel or "-",
         }
+        tags = {**tags_base, "engagement_state": engagement_state}
         if not decision.allowed:
             retryable_flag = "true" if decision.retryable else "false"
             denied_tags = {**tags, "retryable": retryable_flag}
@@ -190,6 +216,22 @@ class Orchestrator:
                     "channel": request.channel,
                     "reason": decision.reason,
                     "retryable": decision.retryable,
+                },
+            )
+            return
+
+        if engagement_state == "low":
+            self._metrics.increment("send.suppressed", tags)
+            self._logger.info(
+                "engagement_suppressed",
+                extra={
+                    "event": "send_engagement_suppressed",
+                    "correlation_id": request.correlation_id,
+                    "job": job_name,
+                    "platform": request.platform,
+                    "channel": request.channel,
+                    "engagement_recent": engagement_recent,
+                    "engagement_threshold": engagement_threshold,
                 },
             )
             return
@@ -245,5 +287,7 @@ class Orchestrator:
                 "platform": request.platform,
                 "channel": request.channel,
                 "duration_sec": duration,
+                "engagement_recent": engagement_recent,
+                "engagement_threshold": engagement_threshold,
             },
         )

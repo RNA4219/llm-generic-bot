@@ -5,6 +5,7 @@ from __future__ import annotations
 # - [ ] ジョブ登録ロジックを宣言的なテーブル定義へ移設
 
 import datetime as dt
+from dataclasses import replace
 from functools import wraps
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Mapping, Optional, cast
@@ -27,6 +28,7 @@ from ..core.scheduler import Scheduler
 from ..features.dm_digest import build_dm_digest
 from ..features.news import build_news_post
 from ..features.omikuji import build_omikuji_post
+from ..features.report import WeeklyReportTemplate, generate_weekly_summary
 from ..features.weather import build_weather_post
 from ..infra import metrics as metrics_module
 from ..infra.metrics import MetricsService
@@ -144,6 +146,37 @@ def _register_job(
             channel=job.channel,
             priority=job.priority,
         )
+
+
+_WEEKDAY_INDEX = {name: idx for idx, name in enumerate(("mon", "tue", "wed", "thu", "fri", "sat", "sun"))}
+
+
+def _parse_weekday_schedule(value: str) -> tuple[Optional[frozenset[int]], str]:
+    tokens = value.strip().split()
+    if not tokens:
+        return None, "09:00"
+    hhmm = tokens[-1]
+    weekday = None
+    if len(tokens) > 1:
+        weekday = _WEEKDAY_INDEX.get(tokens[0].rstrip(",")[:3].lower())
+    return (frozenset({weekday}), hhmm) if weekday is not None else (None, hhmm)
+
+
+def _wrap_weekday_job(
+    job: Callable[[], Awaitable[Optional[str]]],
+    *,
+    weekdays: Optional[frozenset[int]],
+    scheduler: Scheduler,
+) -> Callable[[], Awaitable[Optional[str]]]:
+    if not weekdays:
+        return job
+
+    async def _wrapped() -> Optional[str]:
+        now = getattr(scheduler, "_test_now", None)
+        current = now if isinstance(now, dt.datetime) else dt.datetime.now(scheduler.tz)
+        return await job() if current.weekday() in weekdays else None
+
+    return _wrapped
 
 
 def setup_runtime(
@@ -273,10 +306,7 @@ def setup_runtime(
         permit_overrides[job_name] = (permit_platform, permit_channel, permit_job)
 
         raw_schedules = collect_schedules(report_cfg, default="09:00")
-        schedules = tuple(
-            (value.rsplit(" ", 1)[-1].strip() or "09:00") if value else "09:00"
-            for value in raw_schedules
-        )
+        parsed_schedules = tuple(_parse_weekday_schedule(value) for value in raw_schedules)
 
         async def job_weekly_report() -> Optional[str]:
             snapshot = await orchestrator.weekly_snapshot()
@@ -309,24 +339,44 @@ def setup_runtime(
                 total = sum(entry.count for series in snapshot.counters.values() for entry in series.values())
                 if total:
                     lines.append(line_template.format(metric="events", value=str(total)))
-            if not lines:
-                return None
-            message_parts = [title_template.format(week_range=week_range)]
+            locale = optional_str(report_cfg.get("locale")) or "default"
+            fallback = optional_str(report_cfg.get("fallback")) or ""
+            payload = generate_weekly_summary(
+                replace(snapshot, start=start_local, end=end_local),
+                locale=locale,
+                fallback=fallback,
+                failure_threshold=get_float(report_cfg.get("failure_threshold"), 0.5),
+                templates={
+                    locale: WeeklyReportTemplate(
+                        header=title_template.format(week_range="{start} – {end}"),
+                        summary="",
+                        channels="",
+                        failures="",
+                    )
+                },
+            )
+            message_parts = [line for line in payload.body.splitlines() if line]
             message_parts.extend(lines)
+            if not message_parts:
+                return None
+            if not payload.body:
+                message_parts.insert(0, title_template.format(week_range=week_range))
             if footer_template:
                 message_parts.append(footer_template)
             return "\n".join(message_parts)
 
-        _register_job(
-            scheduler,
-            jobs,
-            ScheduledJob(
-                name=job_name,
-                func=job_weekly_report,
-                schedules=schedules,
+        jobs[job_name] = job_weekly_report
+        for weekdays, hhmm in parsed_schedules:
+            wrapped = cast(
+                Callable[[], Awaitable[Optional[str]]],
+                _wrap_weekday_job(job_weekly_report, weekdays=weekdays, scheduler=scheduler),
+            )
+            scheduler.every_day(
+                job_name,
+                hhmm,
+                wrapped,  # type: ignore[arg-type]
                 channel=job_channel,
                 priority=job_priority,
-            ),
-        )
+            )
 
     return scheduler, orchestrator, jobs

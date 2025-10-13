@@ -12,7 +12,7 @@ from llm_generic_bot.infra import metrics as metrics_facade
 
 from .cooldown import CooldownGate
 from .dedupe import NearDuplicateFilter
-from ..infra.metrics import MetricsService, WeeklyMetricsSnapshot, collect_weekly_snapshot, make_metrics_recorder
+from ..infra.metrics import MetricsFacade, WeeklySnapshotPayload, collect_weekly_snapshot, make_metrics_recorder
 
 
 class Sender(Protocol):
@@ -105,7 +105,7 @@ class Orchestrator:
         cooldown: CooldownGate,
         dedupe: NearDuplicateFilter,
         permit: PermitEvaluator,
-        metrics: MetricsService | MetricsRecorder | None = None,
+        metrics: MetricsFacade | MetricsRecorder | None = None,
         logger: Optional[logging.Logger] = None,
         queue_size: int = 128,
         platform: str = "-",
@@ -114,7 +114,7 @@ class Orchestrator:
         self._cooldown = cooldown
         self._dedupe = dedupe
         self._permit = permit
-        if isinstance(metrics, MetricsService):
+        if isinstance(metrics, MetricsFacade):
             self._metrics_service = metrics
             self._metrics = make_metrics_recorder(metrics)
         else:
@@ -165,7 +165,7 @@ class Orchestrator:
         if self._worker:
             await self._worker
 
-    async def weekly_snapshot(self) -> WeeklyMetricsSnapshot:
+    async def weekly_snapshot(self) -> WeeklySnapshotPayload:
         return await collect_weekly_snapshot(self._metrics_service)
 
     def _start_worker(self) -> None:

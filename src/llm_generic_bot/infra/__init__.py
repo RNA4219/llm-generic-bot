@@ -3,12 +3,29 @@ from __future__ import annotations
 import sys as _sys
 from typing import Any, Mapping, Protocol, runtime_checkable
 
+from .metrics import (
+    CounterSnapshot,
+    MetricsService,
+    ObservationSnapshot,
+    WeeklyMetricsSnapshot,
+)
 
-WeeklyMetricsSnapshot = Mapping[str, Any]
+__all__ = [
+    "CounterSnapshot",
+    "MetricsService",
+    "ObservationSnapshot",
+    "WeeklyMetricsSnapshot",
+    "MetricsFacade",
+    "WeeklySnapshotPayload",
+    "make_metrics_recorder",
+    "collect_weekly_snapshot",
+]
+
+WeeklySnapshotPayload = Mapping[str, Any]
 
 
 @runtime_checkable
-class MetricsService(Protocol):
+class MetricsFacade(Protocol):
     def record_event(
         self,
         name: str,
@@ -19,14 +36,14 @@ class MetricsService(Protocol):
     ) -> None:
         ...
 
-    async def collect_weekly_snapshot(self) -> WeeklyMetricsSnapshot:
+    async def collect_weekly_snapshot(self) -> WeeklySnapshotPayload:
         ...
 
 
 class _MetricsRecorderAdapter:
     __slots__ = ("_service",)
 
-    def __init__(self, service: MetricsService) -> None:
+    def __init__(self, service: MetricsFacade) -> None:
         self._service = service
 
     def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
@@ -36,13 +53,13 @@ class _MetricsRecorderAdapter:
         self._service.record_event(name, tags=tags, measurements={"value": value})
 
 
-def make_metrics_recorder(service: MetricsService) -> _MetricsRecorderAdapter:
+def make_metrics_recorder(service: MetricsFacade) -> _MetricsRecorderAdapter:
     return _MetricsRecorderAdapter(service)
 
 
 async def collect_weekly_snapshot(
-    metrics: MetricsService | None,
-) -> WeeklyMetricsSnapshot:
+    metrics: MetricsFacade | None,
+) -> WeeklySnapshotPayload:
     if metrics is None:
         return {}
     return await metrics.collect_weekly_snapshot()

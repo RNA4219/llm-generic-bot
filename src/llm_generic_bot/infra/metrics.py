@@ -5,8 +5,6 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Callable, Dict, Iterable, List, Mapping, Tuple
 
-from llm_generic_bot.core.orchestrator import MetricsRecorder
-
 TagsKey = Tuple[Tuple[str, str], ...]
 MetricKind = str
 
@@ -52,7 +50,7 @@ class _MetricRecord:
     value: float
 
 
-class MetricsService(MetricsRecorder):
+class MetricsService:
     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self._clock = clock or _utcnow
         self._lock = Lock()

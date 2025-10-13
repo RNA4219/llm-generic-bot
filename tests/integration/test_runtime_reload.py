@@ -74,8 +74,9 @@ async def test_settings_reload_diff_logging(
 
     caplog.set_level("INFO", logger=_LOGGER_NAME)
     previous_data = json.loads(json.dumps(settings.data))
+    previous_mtime = os.stat(config_path).st_mtime
     _write_config(config_path, updated_config)
-    os.utime(config_path, None)
+    os.utime(config_path, (previous_mtime + 1.0, previous_mtime + 1.0))
     settings.reload()
 
     await log_settings_diff(

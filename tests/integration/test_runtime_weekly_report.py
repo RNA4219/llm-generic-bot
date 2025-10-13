@@ -65,7 +65,7 @@ async def test_weekly_report_respects_weekday_schedule(monkeypatch: pytest.Monke
         "report": {
             "enabled": True,
             "job": "weekly_report",
-            "schedule": "Mon 09:00",
+            "schedule": "Tue,Thu 09:00",
             "channel": "ops-weekly",
             "permit": {"platform": "discord", "channel": "ops-weekly", "job": "weekly_report"},
             "template": {"title": "title {week_range}", "line": "line {metric}: {value}"},
@@ -78,10 +78,14 @@ async def test_weekly_report_respects_weekday_schedule(monkeypatch: pytest.Monke
 
     scheduler._test_now = dt.datetime(2024, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
     await scheduler._run_due_jobs(scheduler._test_now)
-    assert summary_calls == 2
+    assert summary_calls == 1
 
     scheduler._test_now = dt.datetime(2024, 1, 2, 9, 0, tzinfo=dt.timezone.utc)
     await scheduler._run_due_jobs(scheduler._test_now)
     assert summary_calls == 2
+
+    scheduler._test_now = dt.datetime(2024, 1, 4, 9, 0, tzinfo=dt.timezone.utc)
+    await scheduler._run_due_jobs(scheduler._test_now)
+    assert summary_calls == 3
 
     del scheduler._test_now

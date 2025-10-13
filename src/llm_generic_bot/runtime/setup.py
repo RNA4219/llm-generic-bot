@@ -156,10 +156,19 @@ def _parse_weekday_schedule(value: str) -> tuple[Optional[frozenset[int]], str]:
     if not tokens:
         return None, "09:00"
     hhmm = tokens[-1]
-    weekday = None
-    if len(tokens) > 1:
-        weekday = _WEEKDAY_INDEX.get(tokens[0].rstrip(",")[:3].lower())
-    return (frozenset({weekday}), hhmm) if weekday is not None else (None, hhmm)
+    if len(tokens) == 1:
+        return None, hhmm
+    weekday_tokens = " ".join(tokens[:-1])
+    weekdays: set[int] = set()
+    for raw_token in weekday_tokens.replace(",", " ").split():
+        if not raw_token:
+            continue
+        index = _WEEKDAY_INDEX.get(raw_token[:3].lower())
+        if index is None:
+            weekdays.clear()
+            break
+        weekdays.add(index)
+    return (frozenset(weekdays), hhmm) if weekdays else (None, hhmm)
 
 
 def _wrap_weekday_job(
@@ -299,6 +308,13 @@ def setup_runtime(
         title_template = str(template_cfg.get("title", "{week_range}"))
         line_template = str(template_cfg.get("line", "{metric}: {value}"))
         footer_template = optional_str(template_cfg.get("footer"))
+        summary_title_template = title_template.replace("{week_range}", "{start} – {end}")
+        summary_line_template = line_template.replace("{metric}", "{label}")
+        summary_footer_template = (
+            footer_template.replace("{week_range}", "{start} – {end}")
+            if footer_template
+            else None
+        )
         permit_cfg = as_mapping(report_cfg.get("permit"))
         permit_platform = str(permit_cfg.get("platform", platform))
         permit_channel = optional_str(permit_cfg.get("channel")) or job_channel
@@ -319,7 +335,6 @@ def setup_runtime(
                 end_dt = end_dt.replace(tzinfo=dt.timezone.utc)
             start_local = start_dt.astimezone(scheduler.tz)
             end_local = end_dt.astimezone(scheduler.tz)
-            week_range = f"{start_local:%Y-%m-%d} – {end_local:%Y-%m-%d}"
             success_rate = metrics_data.get("success_rate")
             lines: list[str] = []
             if isinstance(success_rate, Mapping):
@@ -336,7 +351,9 @@ def setup_runtime(
                         )
                     )
             if not lines:
-                total = sum(entry.count for series in snapshot.counters.values() for entry in series.values())
+                total = sum(
+                    entry.count for series in snapshot.counters.values() for entry in series.values()
+                )
                 if total:
                     lines.append(line_template.format(metric="events", value=str(total)))
             locale = optional_str(report_cfg.get("locale")) or "default"
@@ -354,6 +371,7 @@ def setup_runtime(
                     )
                 },
             )
+            severity = payload.tags.get("severity") if isinstance(payload.tags, Mapping) else None
             message_parts = [line for line in payload.body.splitlines() if line]
             footer_line: str | None = None
             if footer_template:

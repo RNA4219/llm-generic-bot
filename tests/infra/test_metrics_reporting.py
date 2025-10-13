@@ -134,6 +134,84 @@ async def test_metrics_weekly_snapshot_latency_boundaries() -> None:
 
 
 @pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_ignores_events_older_than_seven_days() -> None:
+    recorder = RecordingMetrics()
+    metrics.configure_backend(recorder)
+
+    with freeze_time("2025-02-02T12:00:00+00:00"):
+        await metrics.report_send_success(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=0.2,
+            permit_tags={"decision": "allow"},
+        )
+        await metrics.report_send_failure(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=2.5,
+            error_type="timeout",
+        )
+        metrics.report_permit_denied(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            reason="old_quota",
+            permit_tags={"rule": "legacy"},
+        )
+
+    with freeze_time("2025-02-04T12:00:00+00:00"):
+        await metrics.report_send_success(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=0.7,
+            permit_tags={"decision": "allow"},
+        )
+
+    with freeze_time("2025-02-08T12:00:00+00:00"):
+        await metrics.report_send_failure(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=3.5,
+            error_type="timeout",
+        )
+        metrics.report_permit_denied(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            reason="fresh_quota",
+            permit_tags={"rule": "current"},
+        )
+
+    with freeze_time("2025-02-10T12:00:00+00:00"):
+        snapshot = metrics.weekly_snapshot()
+
+    assert snapshot["generated_at"] == "2025-02-10T12:00:00+00:00"
+    assert snapshot["success_rate"] == {
+        "weather": {
+            "success": 1,
+            "failure": 1,
+            "ratio": pytest.approx(0.5),
+        }
+    }
+    assert snapshot["latency_histogram_seconds"] == {
+        "weather": {"1s": 1, ">3s": 1}
+    }
+    assert snapshot["permit_denials"] == [
+        {
+            "job": "weather",
+            "platform": "discord",
+            "channel": "alerts",
+            "reason": "fresh_quota",
+            "rule": "current",
+        }
+    ]
+
+
+@pytest.mark.anyio("asyncio")
 async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
     current = {"value": datetime(2025, 2, 10, tzinfo=timezone.utc)}
 

@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Awaitable, Callable, Mapping, Optional, cast
+from typing import Any, Awaitable, Callable, Mapping, Optional, Protocol, cast
 
 from ...core.cooldown import CooldownGate
 from ...core.scheduler import Scheduler
-from ...features.weather import ReactionHistoryProvider, build_weather_post
+from ...features.weather import ReactionHistoryProvider, build_weather_post as _default_weather_builder
 from .helpers import resolve_history_provider
 
 WeatherJob = Callable[[], Awaitable[Optional[str]]]
+
+
+class WeatherPostBuilder(Protocol):
+    async def __call__(self, cfg: Mapping[str, Any], **kwargs: Any) -> Optional[str]:
+        ...
 
 
 def _to_float(value: Any, default: float) -> float:
@@ -29,7 +34,7 @@ def register_weather_job(
 ) -> tuple[str, WeatherJob]:
     schedule_value = config.get("schedule")
     schedule = schedule_value if isinstance(schedule_value, str) else "21:00"
-    weather_params = inspect.signature(build_weather_post).parameters
+    weather_params = inspect.signature(_default_weather_builder).parameters
     engagement_cfg = config.get("engagement")
     engagement = engagement_cfg if isinstance(engagement_cfg, Mapping) else {}
     history_provider: Optional[ReactionHistoryProvider] = None
@@ -37,6 +42,16 @@ def register_weather_job(
         history_provider = resolve_history_provider(engagement.get("history_provider"))
 
     settings_payload = cast(dict[str, Any], global_config)
+
+    def _resolve_builder() -> WeatherPostBuilder:
+        try:
+            from .. import setup as runtime_setup  # type: ignore[import-not-found]
+        except Exception:
+            return cast(WeatherPostBuilder, _default_weather_builder)
+        builder = getattr(runtime_setup, "build_weather_post", None)
+        if builder is None:
+            return cast(WeatherPostBuilder, _default_weather_builder)
+        return cast(WeatherPostBuilder, builder)
 
     async def job_weather() -> Optional[str]:
         call_kwargs: dict[str, Any] = {}
@@ -53,7 +68,8 @@ def register_weather_job(
                 call_kwargs["channel"] = default_channel
             if "job" in weather_params:
                 call_kwargs["job"] = "weather"
-        return await build_weather_post(settings_payload, **call_kwargs)
+        builder = _resolve_builder()
+        return await builder(settings_payload, **call_kwargs)
 
     priority_raw = config.get("priority")
     priority = int(_to_float(priority_raw, 5.0)) if priority_raw is not None else 5

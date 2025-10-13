@@ -83,6 +83,7 @@ async def test_metrics_records_expected_labels_and_snapshot() -> None:
 
 @pytest.mark.anyio("asyncio")
 async def test_metrics_null_backend_falls_back_to_noop() -> None:
+    metrics.configure_backend(None)
     with freeze_time("2025-01-06T09:00:00+00:00"):
         await metrics.report_send_success(job="weather", platform="discord", channel="alerts", duration_seconds=0.5, permit_tags={"decision": "allow"})
         snapshot = metrics.weekly_snapshot()

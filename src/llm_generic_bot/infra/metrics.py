@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import inspect
+import time
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Protocol, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Protocol, Tuple
 
 TagsKey = Tuple[Tuple[str, str], ...]
 MetricKind = str
@@ -90,7 +92,9 @@ class MetricsService(MetricsRecorder):
             return
         self.increment(name, tags=tags)
 
-    def collect_weekly_snapshot(self, now: datetime | None = None) -> WeeklyMetricsSnapshot:
+    def collect_weekly_snapshot(
+        self, now: datetime | None = None
+    ) -> WeeklyMetricsSnapshot | Awaitable[WeeklyMetricsSnapshot]:
         reference = now or self._clock()
         start = reference - timedelta(days=7)
         with self._lock:
@@ -140,6 +144,16 @@ class MetricsService(MetricsRecorder):
             self._records.append(record)
 
 
+class InMemoryMetricsService(MetricsService):
+    async def collect_weekly_snapshot(
+        self, now: datetime | None = None
+    ) -> WeeklyMetricsSnapshot:
+        result = super().collect_weekly_snapshot(now)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+
 class _MetricsRecorderAdapter:
     __slots__ = ("_service",)
 
@@ -171,17 +185,197 @@ def _materialize_counters(
     data: Mapping[str, Mapping[TagsKey, int]]
 ) -> Dict[str, Dict[TagsKey, CounterSnapshot]]:
     return {
-        "generated_at": generated,
+        name: {tags: CounterSnapshot(count=value) for tags, value in entries.items()}
+        for name, entries in data.items()
+    }
+
+
+def _materialize_observations(
+    data: Mapping[str, Mapping[TagsKey, List[float]]]
+) -> Dict[str, Dict[TagsKey, ObservationSnapshot]]:
+    result: Dict[str, Dict[TagsKey, ObservationSnapshot]] = {}
+    for name, entries in data.items():
+        snapshots = {}
+        for tags, values in entries.items():
+            if not values:
+                continue
+            total = sum(values)
+            count = len(values)
+            snapshots[tags] = ObservationSnapshot(
+                count=count,
+                minimum=min(values),
+                maximum=max(values),
+                total=total,
+                average=total / count,
+            )
+        if snapshots:
+            result[name] = snapshots
+    return result
+
+
+class NullMetricsRecorder(MetricsRecorder):
+    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
+        return None
+
+    def observe(
+        self, name: str, value: float, tags: Mapping[str, str] | None = None
+    ) -> None:
+        return None
+
+
+_lock = Lock()
+_NULL_BACKEND = NullMetricsRecorder()
+_backend: MetricsRecorder = _NULL_BACKEND
+_totals: defaultdict[str, Counter[str]] = defaultdict(Counter)
+_histogram: defaultdict[str, Counter[str]] = defaultdict(Counter)
+_denials: List[Dict[str, str]] = []
+
+_LATENCY_BUCKETS: tuple[tuple[float, str], ...] = (
+    (1.0, "1s"),
+    (3.0, "3s"),
+    (10.0, "10s"),
+    (30.0, "30s"),
+    (float("inf"), ">30s"),
+)
+
+
+def configure_backend(recorder: MetricsRecorder) -> None:
+    global _backend
+    with _lock:
+        _backend = recorder
+
+
+def _bucket_latency(value: float) -> str:
+    for threshold, label in _LATENCY_BUCKETS:
+        if value <= threshold:
+            return label
+    return ">30s"
+
+
+def _now(now: datetime | None = None) -> datetime:
+    return now or datetime.fromtimestamp(time.time(), tz=timezone.utc)
+
+
+def _base_tags(
+    job: str, platform: str, channel: str | None, extra: Mapping[str, str] | None = None
+) -> Dict[str, str]:
+    tags: Dict[str, str] = {
+        "job": job,
+        "platform": platform,
+        "channel": channel or "-",
+    }
+    if extra:
+        tags.update(extra)
+    return tags
+
+
+def _record_outcome(job: str, outcome: str, duration: float) -> None:
+    if _backend is _NULL_BACKEND:
+        return
+    with _lock:
+        _totals[job][outcome] += 1
+        _histogram[job][_bucket_latency(duration)] += 1
+
+
+def _record_send(
+    outcome: str,
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    duration_seconds: float,
+    extra_tags: Mapping[str, str] | None,
+) -> None:
+    base = _base_tags(job, platform, channel, None)
+    tags = dict(base)
+    if extra_tags:
+        tags.update(extra_tags)
+    metric = "send.success" if outcome == "success" else "send.failure"
+    _backend.increment(metric, tags=tags)
+    _backend.observe("send.duration", duration_seconds, tags={**base, "unit": "seconds"})
+    _record_outcome(job, outcome, duration_seconds)
+
+
+async def report_send_success(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    duration_seconds: float,
+    permit_tags: Mapping[str, str] | None = None,
+) -> None:
+    _record_send(
+        "success",
+        job=job,
+        platform=platform,
+        channel=channel,
+        duration_seconds=duration_seconds,
+        extra_tags=permit_tags,
+    )
+
+
+async def report_send_failure(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    duration_seconds: float,
+    error_type: str,
+) -> None:
+    _record_send(
+        "failure",
+        job=job,
+        platform=platform,
+        channel=channel,
+        duration_seconds=duration_seconds,
+        extra_tags={"error": error_type},
+    )
+
+
+def report_permit_denied(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    reason: str,
+    permit_tags: Mapping[str, str] | None = None,
+) -> None:
+    tags = _base_tags(job, platform, channel, {"reason": reason, **(permit_tags or {})})
+    _backend.increment("send.denied", tags=tags)
+    if _backend is _NULL_BACKEND:
+        return
+    with _lock:
+        _denials.append(dict(tags))
+
+
+def weekly_snapshot(*, now: datetime | None = None) -> Dict[str, Any]:
+    reference = _now(now)
+    with _lock:
+        totals = {job: Counter(counter) for job, counter in _totals.items()}
+        histogram = {job: dict(counter) for job, counter in _histogram.items()}
+        denials = [dict(item) for item in _denials]
+    success_rate = {
+        job: {
+            "success": counts.get("success", 0),
+            "failure": counts.get("failure", 0),
+            "ratio": (counts.get("success", 0) / total)
+            if (total := counts.get("success", 0) + counts.get("failure", 0))
+            else 0.0,
+        }
+        for job, counts in totals.items()
+    }
+    return {
+        "generated_at": reference.isoformat(),
         "success_rate": success_rate,
-        "latency_histogram_seconds": latency,
+        "latency_histogram_seconds": histogram,
         "permit_denials": denials,
     }
 
 
 def reset_for_test() -> None:
-    global _backend, _backend_configured
+    global _backend
     with _lock:
-        _backend = NullMetricsRecorder()
-        _backend_configured = False
-        for store in (_success, _failure, _histogram, _denials):
-            store.clear()
+        _backend = _NULL_BACKEND
+        _totals.clear()
+        _histogram.clear()
+        _denials.clear()

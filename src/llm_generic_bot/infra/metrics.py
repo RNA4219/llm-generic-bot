@@ -96,6 +96,7 @@ class NullMetricsRecorder(MetricsRecorder):
 
 
 _NOOP_BACKEND = NullMetricsRecorder()
+_DEFAULT_RETENTION_DAYS = 7
 
 
 class MetricsService(MetricsRecorder):
@@ -103,7 +104,7 @@ class MetricsService(MetricsRecorder):
         self,
         *,
         clock: Callable[[], datetime] | None = None,
-        retention_days: int = 7,
+        retention_days: int = _DEFAULT_RETENTION_DAYS,
     ) -> None:
         self._clock = clock or _utcnow
         self._lock = Lock()
@@ -236,12 +237,18 @@ class _GlobalMetricsAggregator:
     backend_configured: bool = False
     _send_events: list[_SendEventRecord] = field(default_factory=list)
     _permit_denials: list[_PermitDenialRecord] = field(default_factory=list)
+    retention_days: int = _DEFAULT_RETENTION_DAYS
 
     def configure_backend(self, recorder: MetricsRecorder | None) -> None:
         backend, configured = self._resolve_backend(recorder)
         with self.lock:
             self.backend = backend
             self.backend_configured = configured
+
+    def set_retention_days(self, retention_days: int | None) -> None:
+        value = _DEFAULT_RETENTION_DAYS if retention_days is None else max(1, retention_days)
+        with self.lock:
+            self.retention_days = value
 
     def report_send_success(
         self,
@@ -327,7 +334,9 @@ class _GlobalMetricsAggregator:
 
     def weekly_snapshot(self) -> dict[str, object]:
         generated_at = _utcnow()
-        cutoff = generated_at - timedelta(days=7)
+        with self.lock:
+            retention_days = self.retention_days
+        cutoff = generated_at - timedelta(days=retention_days)
         with self.lock:
             send_events = [
                 record
@@ -377,6 +386,7 @@ class _GlobalMetricsAggregator:
             self.backend_configured = False
             self._send_events.clear()
             self._permit_denials.clear()
+            self.retention_days = _DEFAULT_RETENTION_DAYS
 
     @staticmethod
     def _resolve_backend(
@@ -394,6 +404,10 @@ _AGGREGATOR = _GlobalMetricsAggregator()
 
 def configure_backend(recorder: MetricsRecorder | None) -> None:
     _AGGREGATOR.configure_backend(recorder)
+
+
+def set_retention_days(retention_days: int | None) -> None:
+    _AGGREGATOR.set_retention_days(retention_days)
 
 
 async def report_send_success(

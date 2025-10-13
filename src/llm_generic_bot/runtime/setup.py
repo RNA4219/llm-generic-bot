@@ -214,6 +214,7 @@ def setup_runtime(
 
     metrics_cfg = as_mapping(cfg.get("metrics"))
     metrics_service: Optional[MetricsService] = None
+    metrics_module.set_retention_days(None)
     if metrics_cfg.get("backend", "memory") == "memory":
         retention_days = None
         retention_value = metrics_cfg.get("retention_days")
@@ -221,9 +222,12 @@ def setup_runtime(
             retention_candidate = int(get_float(retention_value, 7.0))
             retention_days = max(1, retention_candidate)
         if retention_days is not None:
+            metrics_module.set_retention_days(retention_days)
             metrics_service = MetricsService(retention_days=retention_days)
         else:
             metrics_service = MetricsService()
+    else:
+        metrics_module.set_retention_days(None)
 
     orchestrator = Orchestrator(
         sender=active_sender,

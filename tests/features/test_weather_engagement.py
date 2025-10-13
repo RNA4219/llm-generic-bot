@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Mapping, MutableMapping, Optional, Sequence
+from typing import Iterable, List, Mapping, MutableMapping, Optional, Sequence, cast
 
 import pytest
 
@@ -124,6 +124,39 @@ async def test_weather_engagement_table_driven(
     assert cooldown.calls[0]["engagement_recent"] == pytest.approx(0.0)
     assert cooldown.calls[0]["time_band_factor"] == pytest.approx(1.2)
     assert cooldown.calls[1]["engagement_recent"] == pytest.approx(1.0)
+
+
+async def test_weather_engagement_ignores_none_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_path = tmp_path / "weather_engagement_cache.json"
+    monkeypatch.setattr(weather, "CACHE", cache_path)
+
+    provider = _ReactionProvider(
+        (cast(Sequence[int], (None, None)),)
+    )
+
+    cfg = {
+        "openweather": {"units": "metric", "lang": "ja"},
+        "weather": {
+            "cities": {"Test": ["Tokyo"]},
+            "engagement": {
+                "target_reactions": 5,
+                "history_limit": 3,
+            },
+        },
+    }
+
+    post = await weather.build_weather_post(
+        cfg,
+        reaction_history_provider=provider,
+        platform="discord",
+        channel="general",
+        job="weather",
+    )
+
+    assert isinstance(post, weather.WeatherPost)
+    assert post.engagement_score == pytest.approx(0.0)
 
 
 class _SenderStub:

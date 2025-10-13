@@ -1,18 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
-from typing import Any, Iterable, Mapping, Protocol
+from datetime import datetime
+from typing import Any, Iterable, Mapping
 
-
-class WeeklyMetricsSnapshot(Protocol):
-    """週次メトリクス集計が満たすべきインターフェイス."""
-
-    period_start: object
-    period_end: object
-    totals: Mapping[str, object]
-    breakdowns: Mapping[str, object]
-    metadata: Mapping[str, object]
+from ..infra.metrics import CounterSnapshot, WeeklyMetricsSnapshot
 
 
 @dataclass(frozen=True)
@@ -24,55 +16,61 @@ class ReportPayload:
     tags: Mapping[str, str]
 
 
-_TEMPLATES: Mapping[str, Mapping[str, str]] = {
-    "ja": {
-        "header": "📊 運用サマリ {start}〜{end}",
-        "summary": "総ジョブ: {total}件 / 成功: {success}件 / 失敗: {failure}件 (成功率 {success_rate:.1f}%)",
-        "channels": "活発チャンネル: {channels}",
-        "failures": "主要エラー: {failures}",
-    }
-}
+@dataclass(frozen=True)
+class WeeklyReportTemplate:
+    """各ロケールのメッセージテンプレート."""
+
+    header: str
+    summary: str
+    channels: str
+    failures: str
 
 
 def generate_weekly_summary(
-    metrics: WeeklyMetricsSnapshot,
+    snapshot: WeeklyMetricsSnapshot,
     *,
     locale: str,
     fallback: str,
+    failure_threshold: float,
+    templates: Mapping[str, WeeklyReportTemplate],
 ) -> ReportPayload:
-    """週次メトリクスをテンプレートへ整形し通知ペイロードを生成する."""
+    """週次メトリクスをテンプレートへ整形し通知ペイロードを生成する.
 
-    totals = _as_mapping(getattr(metrics, "totals", {}))
-    processed, succeeded, failed = (
-        _as_int(totals.get(name)) for name in ("jobs_processed", "jobs_succeeded", "jobs_failed")
-    )
-    breakdowns = _as_mapping(getattr(metrics, "breakdowns", {}))
-    channel_counts = _as_mapping(breakdowns.get("channels", {}))
-    metadata = _as_mapping(getattr(metrics, "metadata", {}))
-    channel = _resolve_channel(metadata, channel_counts)
+    Args:
+        snapshot: 7日間のメトリクススナップショット。
+        locale: 使用するテンプレートのロケール識別子。
+        fallback: 集計不能時に返す本文。
+        failure_threshold: 失敗率しきい値 (0.0-1.0)。
+        templates: ロケールごとの本文テンプレート集合。
+    """
+
     tags: dict[str, str] = {"locale": locale}
-    start = _format_date(getattr(metrics, "period_start", None))
-    end = _format_date(getattr(metrics, "period_end", None))
+    start = _format_date(snapshot.start)
+    end = _format_date(snapshot.end)
     if start and end:
         tags["period"] = f"{start}/{end}"
+    succeeded, failed = _totals(snapshot)
+    processed = succeeded + failed
+    channel_counts = _aggregate_channel_counts(snapshot)
+    failure_tags = _aggregate_failure_tags(snapshot)
     top_channel = _top_ranked_item(channel_counts)
+    channel = top_channel[0] if top_channel else "-"
     if top_channel:
         tags["top_channel"] = top_channel[0]
-    if processed is None or succeeded is None or failed is None or processed <= 0:
+    if processed <= 0:
         tags["severity"] = "degraded"
         return ReportPayload(fallback, channel, tags)
-    failure_rate = failed / processed
-    threshold = _as_float(metadata.get("failure_rate_alert")) or 0.3
-    if failure_rate >= threshold:
+    failure_rate = failed / processed if processed else 0.0
+    if failure_rate >= failure_threshold:
         tags["severity"] = "high"
         tags["failure_rate"] = f"{failure_rate * 100.0:.1f}%"
         return ReportPayload(fallback, channel, tags)
-    template = _TEMPLATES.get(locale) or _TEMPLATES.get("ja")
-    if not template:
+    template = templates.get(locale)
+    if template is None:
         tags["severity"] = "degraded"
         return ReportPayload(fallback, channel, tags)
-    header = template["header"].format(start=start or "-", end=end or "-")
-    summary = template["summary"].format(
+    header = template.header.format(start=start or "-", end=end or "-")
+    summary = template.summary.format(
         total=processed,
         success=succeeded,
         failure=failed,
@@ -81,47 +79,49 @@ def generate_weekly_summary(
     lines = [header, summary]
     channels_line = _format_top_items(channel_counts)
     if channels_line:
-        lines.append(template["channels"].format(channels=channels_line))
-    failure_line = _format_top_items(_as_mapping(breakdowns.get("failure_tags", {})))
+        lines.append(template.channels.format(channels=channels_line))
+    failure_line = _format_top_items(failure_tags)
     if failure_line:
-        lines.append(template["failures"].format(failures=failure_line))
+        lines.append(template.failures.format(failures=failure_line))
     tags["severity"] = "normal"
     tags["failure_rate"] = f"{failure_rate * 100.0:.1f}%"
     return ReportPayload("\n".join(lines), channel, tags)
 
 
-def _as_mapping(value: object) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
-
-
-def _as_int(value: object) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return int(value)
+def _format_date(value: datetime) -> str | None:
+    if isinstance(value, datetime):
+        return value.date().isoformat()
     return None
 
 
-def _as_float(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    return None
+def _totals(snapshot: WeeklyMetricsSnapshot) -> tuple[int, int]:
+    success_total = _sum_counters(snapshot.counters.get("send.success", {}))
+    failure_total = _sum_counters(snapshot.counters.get("send.failure", {}))
+    return success_total, failure_total
 
 
-def _format_date(value: object) -> str | None:
-    return value.isoformat() if isinstance(value, date) else None
+def _sum_counters(counters: Mapping[tuple[tuple[str, str], ...], CounterSnapshot]) -> int:
+    return sum(snapshot.count for snapshot in counters.values())
 
 
-def _resolve_channel(metadata: Mapping[str, Any], channels: Mapping[str, Any]) -> str:
-    channel = metadata.get("preferred_channel")
-    if isinstance(channel, str) and channel:
-        return channel
-    top_channel = _top_ranked_item(channels)
-    if top_channel:
-        return top_channel[0]
-    return "-"
+def _aggregate_channel_counts(
+    snapshot: WeeklyMetricsSnapshot,
+) -> Mapping[str, int]:
+    counts: dict[str, int] = {}
+    for metric in ("send.success", "send.failure"):
+        for tags_key, counter in snapshot.counters.get(metric, {}).items():
+            channel = _lookup_tag(tags_key, "channel")
+            if channel:
+                counts[channel] = counts.get(channel, 0) + counter.count
+    return counts
+
+
+def _aggregate_failure_tags(snapshot: WeeklyMetricsSnapshot) -> Mapping[str, int]:
+    counts: dict[str, int] = {}
+    for tags_key, counter in snapshot.counters.get("send.failure", {}).items():
+        label = _lookup_tag(tags_key, "error") or "unknown"
+        counts[label] = counts.get(label, 0) + counter.count
+    return counts
 
 
 def _format_top_items(items: Mapping[str, Any], limit: int = 3) -> str:
@@ -130,11 +130,19 @@ def _format_top_items(items: Mapping[str, Any], limit: int = 3) -> str:
 
 
 def _top_ranked_items(items: Mapping[str, Any], limit: int) -> list[tuple[str, int]]:
-    pairs: Iterable[tuple[str, int]] = (
-        (name, count)
-        for name, count in ((k, _as_int(v) or 0) for k, v in items.items() if isinstance(k, str))
-        if count > 0
-    )
+    pairs: list[tuple[str, int]] = []
+    for name, raw in items.items():
+        if not isinstance(name, str):
+            continue
+        if isinstance(raw, bool):
+            continue
+        if isinstance(raw, (int, float)):
+            count = int(raw)
+        else:
+            continue
+        if count <= 0:
+            continue
+        pairs.append((name, count))
     return sorted(pairs, key=lambda item: (-item[1], item[0]))[:limit]
 
 
@@ -143,4 +151,11 @@ def _top_ranked_item(items: Mapping[str, Any]) -> tuple[str, int] | None:
     return ordered[0] if ordered else None
 
 
-__all__ = ["ReportPayload", "generate_weekly_summary"]
+def _lookup_tag(tags: Iterable[tuple[str, str]], key: str) -> str | None:
+    for name, value in tags:
+        if name == key and value:
+            return value
+    return None
+
+
+__all__ = ["ReportPayload", "WeeklyReportTemplate", "generate_weekly_summary"]

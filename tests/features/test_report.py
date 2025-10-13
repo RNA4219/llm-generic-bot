@@ -2,72 +2,88 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
-from typing import Mapping
+from datetime import datetime, timezone
 
 import pytest
 
-from llm_generic_bot.features.report import ReportPayload, generate_weekly_summary
+from llm_generic_bot.features.report import (
+    ReportPayload,
+    WeeklyReportTemplate,
+    generate_weekly_summary,
+)
+from llm_generic_bot.infra.metrics import CounterSnapshot, WeeklyMetricsSnapshot
 
 
-@dataclass(frozen=True)
-class FakeWeeklyMetricsSnapshot:
-    period_start: date
-    period_end: date
-    totals: Mapping[str, int]
-    breakdowns: Mapping[str, Mapping[str, int]]
-    metadata: Mapping[str, object]
+def _tags(**items: str) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted(items.items()))
 
 
-def test_weekly_report_happy_path() -> None:
-    snapshot = FakeWeeklyMetricsSnapshot(
-        period_start=date(2024, 4, 1),
-        period_end=date(2024, 4, 7),
-        totals={
-            "jobs_processed": 120,
-            "jobs_succeeded": 114,
-            "jobs_failed": 6,
+TEMPLATES = {
+    "ja": WeeklyReportTemplate(
+        header="📊 運用サマリ {start}〜{end}",
+        summary="総ジョブ: {total}件 / 成功: {success}件 / 失敗: {failure}件 (成功率 {success_rate:.1f}%)",
+        channels="活発チャンネル: {channels}",
+        failures="主要エラー: {failures}",
+    )
+}
+
+
+def test_weekly_report_formats_real_snapshot() -> None:
+    snapshot = WeeklyMetricsSnapshot(
+        start=datetime(2024, 4, 1, tzinfo=timezone.utc),
+        end=datetime(2024, 4, 7, tzinfo=timezone.utc),
+        counters={
+            "send.success": {
+                _tags(job="weather", platform="slack", channel="#alerts"): CounterSnapshot(count=72),
+                _tags(job="alert", platform="slack", channel="#ops"): CounterSnapshot(count=42),
+            },
+            "send.failure": {
+                _tags(job="alert", platform="slack", channel="#alerts", error="timeout"): CounterSnapshot(count=3),
+                _tags(job="alert", platform="slack", channel="#alerts", error="quota"): CounterSnapshot(count=1),
+            },
         },
-        breakdowns={
-            "channels": {"#ops": 72, "#alerts": 48},
-            "failure_tags": {"timeout": 4, "quota": 2},
-        },
-        metadata={
-            "preferred_channel": "#ops",
-            "failure_rate_alert": 0.25,
-        },
+        observations={},
     )
 
-    payload = generate_weekly_summary(snapshot, locale="ja", fallback="fallback")
+    payload = generate_weekly_summary(
+        snapshot,
+        locale="ja",
+        fallback="fallback",
+        failure_threshold=0.3,
+        templates=TEMPLATES,
+    )
 
     assert isinstance(payload, ReportPayload)
-    assert payload.channel == "#ops"
-    assert "2024-04-01" in payload.body
-    assert "114" in payload.body and "6" in payload.body
+    assert payload.channel == "#alerts"
+    assert "📊 運用サマリ" in payload.body
+    assert "114" in payload.body and "4" in payload.body
     assert "timeout" in payload.body and "quota" in payload.body
     assert payload.tags["severity"] == "normal"
     assert payload.tags["locale"] == "ja"
     assert payload.tags["period"] == "2024-04-01/2024-04-07"
+    assert payload.tags["failure_rate"] == "3.4%"
 
 
-@pytest.mark.parametrize(
-    "totals",
-    [
-        {},
-        {"jobs_processed": 10, "jobs_succeeded": 2, "jobs_failed": 8},
-    ],
-)
-def test_weekly_report_handles_missing_metrics(totals: Mapping[str, int]) -> None:
-    snapshot = FakeWeeklyMetricsSnapshot(
-        period_start=date(2024, 4, 8),
-        period_end=date(2024, 4, 14),
-        totals=totals,
-        breakdowns={"channels": {}, "failure_tags": {}},
-        metadata={"preferred_channel": "#ops", "failure_rate_alert": 0.3},
+@pytest.mark.parametrize("failure_threshold", [0.1, 0.5])
+def test_weekly_report_handles_threshold_and_fallback(failure_threshold: float) -> None:
+    snapshot = WeeklyMetricsSnapshot(
+        start=datetime(2024, 4, 8, tzinfo=timezone.utc),
+        end=datetime(2024, 4, 14, tzinfo=timezone.utc),
+        counters={
+            "send.failure": {
+                _tags(job="weather", platform="slack", channel="#ops", error="timeout"): CounterSnapshot(count=5),
+            }
+        },
+        observations={},
     )
 
-    payload = generate_weekly_summary(snapshot, locale="ja", fallback="fallback body")
+    payload = generate_weekly_summary(
+        snapshot,
+        locale="ja",
+        fallback="fallback body",
+        failure_threshold=failure_threshold,
+        templates=TEMPLATES,
+    )
 
     assert payload.body == "fallback body"
     assert payload.channel == "#ops"
@@ -75,23 +91,44 @@ def test_weekly_report_handles_missing_metrics(totals: Mapping[str, int]) -> Non
     assert payload.tags["locale"] == "ja"
 
 
-def test_weekly_report_uses_top_channel_when_preference_missing() -> None:
-    snapshot = FakeWeeklyMetricsSnapshot(
-        period_start=date(2024, 4, 15),
-        period_end=date(2024, 4, 21),
-        totals={
-            "jobs_processed": 90,
-            "jobs_succeeded": 84,
-            "jobs_failed": 6,
+def test_weekly_report_prefers_configured_template_locale() -> None:
+    templates = {
+        "en": WeeklyReportTemplate(
+            header="Weekly summary {start} to {end}",
+            summary="Processed {total} / Success {success} / Failure {failure} ({success_rate:.1f}%)",
+            channels="Channels: {channels}",
+            failures="Failures: {failures}",
+        ),
+        "ja": WeeklyReportTemplate(
+            header="📈 サマリ {start}〜{end}",
+            summary="処理数 {total} 成功 {success} 失敗 {failure} (成功率 {success_rate:.1f}%)",
+            channels="活発チャンネル: {channels}",
+            failures="主要エラー: {failures}",
+        ),
+    }
+    snapshot = WeeklyMetricsSnapshot(
+        start=datetime(2024, 4, 15, tzinfo=timezone.utc),
+        end=datetime(2024, 4, 21, tzinfo=timezone.utc),
+        counters={
+            "send.success": {
+                _tags(job="weather", platform="slack", channel="#alerts"): CounterSnapshot(count=50),
+            },
+            "send.failure": {
+                _tags(job="weather", platform="slack", channel="#ops", error="timeout"): CounterSnapshot(count=5),
+            },
         },
-        breakdowns={
-            "channels": {"#alerts": 50, "#ops": 40},
-            "failure_tags": {"timeout": 3},
-        },
-        metadata={"failure_rate_alert": 0.3},
+        observations={},
     )
 
-    payload = generate_weekly_summary(snapshot, locale="ja", fallback="fallback")
+    payload = generate_weekly_summary(
+        snapshot,
+        locale="en",
+        fallback="fallback",
+        failure_threshold=0.2,
+        templates=templates,
+    )
 
     assert payload.channel == "#alerts"
     assert payload.tags["top_channel"] == "#alerts"
+    assert payload.tags["locale"] == "en"
+    assert payload.body.startswith("Weekly summary")

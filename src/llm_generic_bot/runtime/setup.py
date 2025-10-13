@@ -21,8 +21,17 @@ from ..core.orchestrator import (
 )
 from ..core.queue import CoalesceQueue
 from ..core.scheduler import Scheduler
-from ..features.dm_digest import build_dm_digest
-from ..features.news import FeedProvider, SummaryProvider, build_news_post
+from ..features.dm_digest import (
+    DMSender,
+    LogCollector,
+    SummaryProvider as DigestSummaryProvider,
+    build_dm_digest,
+)
+from ..features.news import (
+    FeedProvider,
+    SummaryProvider as NewsSummaryProvider,
+    build_news_post,
+)
 from ..features.omikuji import build_omikuji_post
 from ..features.weather import ReactionHistoryProvider, build_weather_post
 
@@ -81,6 +90,17 @@ def _resolve_object(value: str) -> object:
     for attr in attr_path.split("."):
         obj = getattr(obj, attr)
     return obj
+
+
+def _resolve_configured_object(value: object, *, context: str) -> object | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            return _resolve_object(value)
+        except Exception as exc:
+            raise ValueError(f"{context}: failed to resolve '{value}'") from exc
+    return value
 
 
 def _resolve_history_provider(value: object) -> Optional[ReactionHistoryProvider]:
@@ -244,9 +264,15 @@ def setup_runtime(
 
     news_cfg = _as_mapping(cfg.get("news"))
     if news_cfg and _is_enabled(news_cfg):
-        feed_provider = news_cfg.get("feed_provider")
-        summary_provider = news_cfg.get("summary_provider")
-        if feed_provider and summary_provider:
+        news_feed_provider = _resolve_configured_object(
+            news_cfg.get("feed_provider"),
+            context="news.feed_provider",
+        )
+        news_summary_provider = _resolve_configured_object(
+            news_cfg.get("summary_provider"),
+            context="news.summary_provider",
+        )
+        if news_feed_provider is not None and news_summary_provider is not None:
             job_name = str(news_cfg.get("job", "news"))
             news_priority = max(int(_num(news_cfg.get("priority"), 5.0)), 0)
             news_channel = _optional_str(news_cfg.get("channel")) or default_channel
@@ -284,8 +310,8 @@ def setup_runtime(
 
                 return await build_news_post(
                     news_cfg,
-                    feed_provider=cast(FeedProvider, feed_provider),
-                    summary_provider=cast(SummaryProvider, summary_provider),
+                    feed_provider=cast(FeedProvider, news_feed_provider),
+                    summary_provider=cast(NewsSummaryProvider, news_summary_provider),
                     permit=_permit_hook,
                     cooldown=_cooldown_check,
                 )
@@ -323,10 +349,23 @@ def setup_runtime(
 
     dm_cfg = _as_mapping(cfg.get("dm_digest"))
     if dm_cfg and _is_enabled(dm_cfg):
-        log_provider = dm_cfg.get("log_provider")
-        summary_provider = dm_cfg.get("summary_provider") or dm_cfg.get("summarizer")
-        dm_sender = dm_cfg.get("sender")
-        if log_provider and summary_provider and dm_sender:
+        dm_log_provider = _resolve_configured_object(
+            dm_cfg.get("log_provider"),
+            context="dm_digest.log_provider",
+        )
+        dm_summary_provider = _resolve_configured_object(
+            dm_cfg.get("summary_provider") or dm_cfg.get("summarizer"),
+            context="dm_digest.summary_provider",
+        )
+        dm_sender = _resolve_configured_object(
+            dm_cfg.get("sender"),
+            context="dm_digest.sender",
+        )
+        if (
+            dm_log_provider is not None
+            and dm_summary_provider is not None
+            and dm_sender is not None
+        ):
             job_name = str(dm_cfg.get("job", "dm_digest"))
             dm_priority = max(int(_num(dm_cfg.get("priority"), 5.0)), 0)
             dm_channel = _optional_str(dm_cfg.get("channel"))
@@ -334,9 +373,9 @@ def setup_runtime(
             async def job_dm_digest() -> Optional[str]:
                 await build_dm_digest(
                     dm_cfg,
-                    log_provider=log_provider,
-                    summarizer=summary_provider,
-                    sender=dm_sender,
+                    log_provider=cast(LogCollector, dm_log_provider),
+                    summarizer=cast(DigestSummaryProvider, dm_summary_provider),
+                    sender=cast(DMSender, dm_sender),
                     permit=permit,
                 )
                 return None

@@ -36,7 +36,7 @@
     },
     "engagement": {
       "_history_provider_usage": "ドット区切り（module.attr もしくは module:path）で ReactionHistoryProvider を指定する",
-      "history_provider": "llm_generic_bot.main.REACTION_PROVIDER",
+      "history_provider": "llm_generic_bot.runtime.history.SAMPLE_REACTION_HISTORY",
       "history_limit": 5,
       "target_reactions": 5,
       "min_score": 0.2,

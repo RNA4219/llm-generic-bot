@@ -43,7 +43,7 @@ class SequencedWeather:
     def __init__(self, values: Deque[str]) -> None:
         self.values = values
 
-    async def __call__(self, _: Mapping[str, object]) -> str:
+    async def __call__(self, _: Mapping[str, object], **__: object) -> str:
         return self.values.popleft()
 
 

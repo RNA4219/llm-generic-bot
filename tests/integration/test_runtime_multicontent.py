@@ -48,8 +48,8 @@ async def test_setup_runtime_registers_all_jobs(monkeypatch: pytest.MonkeyPatch)
     omikuji_calls: List[Dict[str, Any]] = []
     dm_calls: List[Dict[str, Any]] = []
 
-    async def fake_weather(cfg: Dict[str, Any]) -> str:
-        weather_calls.append(cfg)
+    async def fake_weather(cfg: Dict[str, Any], **kwargs: Any) -> str:
+        weather_calls.append({"cfg": cfg, **kwargs})
         return "weather-post"
 
     async def fake_news(cfg: Dict[str, Any], **kwargs: Any) -> str:

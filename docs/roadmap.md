@@ -62,3 +62,5 @@
 
 ### 参照タスク
 - Sprint 1 詳細: [`docs/tasks/sprint1.md`](tasks/sprint1.md)
+- Sprint 2 詳細: [`docs/tasks/sprint2.md`](tasks/sprint2.md)
+- Sprint 3 詳細: [`docs/tasks/sprint3.md`](tasks/sprint3.md)

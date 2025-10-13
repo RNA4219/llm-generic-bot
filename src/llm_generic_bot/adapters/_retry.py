@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Awaitable, Callable, NoReturn
+from typing import NoReturn
 
 import httpx
 

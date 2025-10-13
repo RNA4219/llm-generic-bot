@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ import pytest
 from llm_generic_bot import main as main_module
 from llm_generic_bot.core.queue import CoalesceQueue
 from llm_generic_bot.features import weather as weather_module
+from llm_generic_bot.runtime import history as history_module
 
 
 pytestmark = pytest.mark.anyio("asyncio")
@@ -185,6 +187,59 @@ async def test_weather_runtime_engagement_controls_dispatch(
     assert send_calls[0]["text"] == enqueue_calls[0]["text"]
 
     await orchestrator.close()
+
+
+async def test_setup_runtime_resolves_sample_history_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings_path = Path(__file__).resolve().parents[2] / "config" / "settings.example.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+
+    stub = _ReactionHistoryProviderStub(((1, 2, 3),))
+    monkeypatch.setattr(history_module, "SAMPLE_REACTION_HISTORY", stub, raising=False)
+
+    history_cfg = (
+        settings.get("weather", {}).get("engagement", {}) if isinstance(settings, dict) else {}
+    )
+    assert (
+        history_cfg.get("history_provider")
+        == "llm_generic_bot.runtime.history.SAMPLE_REACTION_HISTORY"
+    )
+
+    called = False
+
+    async def fake_build_weather_post(
+        cfg: Dict[str, Any],
+        *,
+        reaction_history_provider: weather_module.ReactionHistoryProvider,
+        platform: Optional[str] = None,
+        channel: Optional[str] = None,
+        job: str = "weather",
+        cooldown: Optional[Any] = None,
+    ) -> Optional[str]:
+        nonlocal called
+        called = True
+        del cfg, cooldown
+        assert reaction_history_provider is stub
+        history = await reaction_history_provider(
+            job=job,
+            limit=int(history_cfg.get("history_limit", 1)),
+            platform=platform,
+            channel=channel,
+        )
+        assert tuple(history) == (1, 2, 3)
+        return None
+
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    monkeypatch.setattr(main_module, "build_weather_post", fake_build_weather_post)
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    try:
+        await jobs["weather"]()
+    finally:
+        await orchestrator.close()
+
+    assert called
 
 
 async def test_runtime_weather_engagement_flow(

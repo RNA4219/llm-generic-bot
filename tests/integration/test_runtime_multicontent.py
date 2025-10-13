@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import zoneinfo
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
-
-import zoneinfo
 
 import pytest
 

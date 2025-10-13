@@ -10,7 +10,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 TagsKey = tuple[tuple[str, str], ...]
 MetricKind = str
@@ -63,6 +63,20 @@ class _MetricRecord:
     tags: TagsKey
     kind: MetricKind
     value: float
+
+
+@dataclass(frozen=True)
+class _SendEventRecord:
+    recorded_at: datetime
+    job: str
+    outcome: Literal["success", "failure"]
+    duration: float
+
+
+@dataclass(frozen=True)
+class _PermitDenialRecord:
+    recorded_at: datetime
+    payload: dict[str, str]
 
 
 class MetricsRecorder(Protocol):
@@ -214,10 +228,8 @@ class _GlobalMetricsAggregator:
     lock: Lock = field(default_factory=Lock)
     backend: MetricsRecorder = field(default_factory=lambda: _NOOP_BACKEND)
     backend_configured: bool = False
-    success: dict[str, int] = field(default_factory=dict)
-    failure: dict[str, int] = field(default_factory=dict)
-    histogram: dict[str, dict[str, int]] = field(default_factory=dict)
-    denials: list[dict[str, str]] = field(default_factory=list)
+    _send_events: list[_SendEventRecord] = field(default_factory=list)
+    _permit_denials: list[_PermitDenialRecord] = field(default_factory=list)
 
     def configure_backend(self, recorder: MetricsRecorder | None) -> None:
         backend, configured = self._resolve_backend(recorder)
@@ -241,8 +253,14 @@ class _GlobalMetricsAggregator:
             backend = self.backend
             configured = self.backend_configured
             if configured:
-                self.success[job] = self.success.get(job, 0) + 1
-                self._record_latency(job, duration_seconds)
+                self._send_events.append(
+                    _SendEventRecord(
+                        recorded_at=_utcnow(),
+                        job=job,
+                        outcome="success",
+                        duration=float(duration_seconds),
+                    )
+                )
         backend.increment("send.success", tags=tags)
         backend.observe(
             "send.duration", duration_seconds, tags=duration_tags
@@ -265,8 +283,14 @@ class _GlobalMetricsAggregator:
             backend = self.backend
             configured = self.backend_configured
             if configured:
-                self.failure[job] = self.failure.get(job, 0) + 1
-                self._record_latency(job, duration_seconds)
+                self._send_events.append(
+                    _SendEventRecord(
+                        recorded_at=_utcnow(),
+                        job=job,
+                        outcome="failure",
+                        duration=float(duration_seconds),
+                    )
+                )
         backend.increment("send.failure", tags=increment_tags)
         backend.observe(
             "send.duration", duration_seconds, tags=duration_tags
@@ -288,18 +312,40 @@ class _GlobalMetricsAggregator:
             backend = self.backend
             configured = self.backend_configured
             if configured:
-                self.denials.append(dict(tags))
+                self._permit_denials.append(
+                    _PermitDenialRecord(
+                        recorded_at=_utcnow(), payload=dict(tags)
+                    )
+                )
         backend.increment("send.denied", tags=tags)
 
     def weekly_snapshot(self) -> dict[str, object]:
-        generated_at = _utcnow().isoformat()
+        generated_at = _utcnow()
+        cutoff = generated_at - timedelta(days=7)
         with self.lock:
-            success = dict(self.success)
-            failure = dict(self.failure)
-            histogram = {
-                job: dict(buckets) for job, buckets in self.histogram.items()
-            }
-            denials = [dict(item) for item in self.denials]
+            send_events = [
+                record
+                for record in self._send_events
+                if record.recorded_at >= cutoff
+            ]
+            permit_denials = [
+                record
+                for record in self._permit_denials
+                if record.recorded_at >= cutoff
+            ]
+            self._send_events = send_events
+            self._permit_denials = permit_denials
+        success: dict[str, int] = {}
+        failure: dict[str, int] = {}
+        histogram: dict[str, dict[str, int]] = {}
+        for record in send_events:
+            buckets = histogram.setdefault(record.job, {})
+            bucket = _select_bucket(record.duration)
+            buckets[bucket] = buckets.get(bucket, 0) + 1
+            if record.outcome == "success":
+                success[record.job] = success.get(record.job, 0) + 1
+            else:
+                failure[record.job] = failure.get(record.job, 0) + 1
         success_rate: dict[str, dict[str, float | int]] = {}
         for job in sorted(set(success) | set(failure)):
             success_count = success.get(job, 0)
@@ -313,25 +359,18 @@ class _GlobalMetricsAggregator:
                 "ratio": success_count / total,
             }
         return {
-            "generated_at": generated_at,
+            "generated_at": generated_at.isoformat(),
             "success_rate": success_rate,
             "latency_histogram_seconds": histogram,
-            "permit_denials": denials,
+            "permit_denials": [dict(record.payload) for record in permit_denials],
         }
 
     def reset(self) -> None:
         with self.lock:
             self.backend = _NOOP_BACKEND
             self.backend_configured = False
-            self.success.clear()
-            self.failure.clear()
-            self.histogram.clear()
-            self.denials.clear()
-
-    def _record_latency(self, job: str, value: float) -> None:
-        bucket = _select_bucket(value)
-        job_hist = self.histogram.setdefault(job, {})
-        job_hist[bucket] = job_hist.get(bucket, 0) + 1
+            self._send_events.clear()
+            self._permit_denials.clear()
 
     @staticmethod
     def _resolve_backend(

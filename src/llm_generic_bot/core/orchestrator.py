@@ -29,23 +29,22 @@ class PermitDecisionLike(Protocol):
     job: Optional[str]
 
 
-@dataclass(frozen=True)
-class _PermitDecision:
-    allowed: bool
-    reason: Optional[str] = None
-    retryable: bool = True
-    job: Optional[str] = None
+class PermitDecision:
+    def __init__(
+        self,
+        allowed: bool,
+        reason: Optional[str] = None,
+        retryable: bool = True,
+        job: Optional[str] = None,
+    ) -> None:
+        self.allowed = allowed
+        self.reason = reason
+        self.retryable = retryable
+        self.job = job
 
     @classmethod
-    def allowed(cls, job: Optional[str] = None) -> "PermitDecisionLike":
+    def allow(cls, job: Optional[str] = None) -> "PermitDecision":
         return cls(True, None, True, job)
-
-    @classmethod
-    def allow(cls, job: Optional[str] = None) -> "PermitDecisionLike":
-        return cls.allowed(job)
-
-
-PermitDecision = _PermitDecision
 
 
 class PermitEvaluator(Protocol):

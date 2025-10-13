@@ -334,10 +334,13 @@ class Orchestrator:
         measurements: Mapping[str, float] | None = None,
         metadata: Mapping[str, object] | None = None,
     ) -> None:
-        if self._metrics_service is not None:
-            self._metrics_service.record_event(
-                name,
-                tags=tags,
-                measurements=measurements,
-                metadata=metadata,
-            )
+        if self._metrics_service is None:
+            return
+        if not measurements:
+            return
+        self._metrics_service.record_event(
+            name,
+            tags=tags,
+            measurements=measurements,
+            metadata=metadata,
+        )

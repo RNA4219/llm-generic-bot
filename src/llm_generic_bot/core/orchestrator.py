@@ -78,6 +78,13 @@ class _SendRequest:
     platform: str
     channel: Optional[str]
     correlation_id: str
+    engagement_score: Optional[float] = None
+
+
+def _format_metric_value(value: float) -> str:
+    formatted = f"{value:.3f}"
+    trimmed = formatted.rstrip("0").rstrip(".")
+    return trimmed or "0"
 
 
 class Orchestrator:
@@ -117,12 +124,17 @@ class Orchestrator:
         if self._closed:
             raise RuntimeError("orchestrator is closed")
         corr = correlation_id or uuid.uuid4().hex
+        engagement_score: Optional[float] = None
+        raw_engagement = getattr(text, "engagement_score", None)
+        if isinstance(raw_engagement, (int, float)):
+            engagement_score = float(raw_engagement)
         request = _SendRequest(
-            text=text,
+            text=str(text),
             job=job,
             platform=platform,
             channel=channel,
             correlation_id=corr,
+            engagement_score=engagement_score,
         )
         await self._queue.put(request)
         return corr
@@ -233,17 +245,22 @@ class Orchestrator:
             return
 
         duration = time.perf_counter() - start
-        self._metrics.increment("send.success", tags)
-        self._metrics.observe("send.duration", duration, tags)
+        success_tags = dict(tags)
+        log_extra = {
+            "event": "send_success",
+            "correlation_id": request.correlation_id,
+            "job": job_name,
+            "platform": request.platform,
+            "channel": request.channel,
+            "duration_sec": duration,
+        }
+        if request.engagement_score is not None:
+            success_tags["engagement_score"] = _format_metric_value(request.engagement_score)
+            log_extra["engagement_score"] = request.engagement_score
+        self._metrics.increment("send.success", success_tags)
+        self._metrics.observe("send.duration", duration, success_tags)
         self._cooldown.note_post(request.platform, request.channel or "-", job_name)
         self._logger.info(
             "send_success",
-            extra={
-                "event": "send_success",
-                "correlation_id": request.correlation_id,
-                "job": job_name,
-                "platform": request.platform,
-                "channel": request.channel,
-                "duration_sec": duration,
-            },
+            extra=log_extra,
         )

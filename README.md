@@ -6,6 +6,9 @@
 - ジョブ優先度・衝突回避アービタ
 - 近傍重複デデュープ
 - 天気要約（30℃/35℃しきい値アイコン、前日比 ΔT アラート）
+- ニュース自動配信
+- おみくじ生成
+- DM ダイジェスト編纂
 
 ## Quick start
 
@@ -34,8 +37,9 @@ src/llm_generic_bot/
     openweather.py        # OpenWeather fetch
   features/
     weather.py            # 天気機能
-    news.py               # (stub)
-    omikuji.py            # (stub)
+    news.py               # ニュース配信
+    omikuji.py            # おみくじ
+    dm_digest.py          # DM ダイジェスト
   config/
     loader.py             # 設定ロード/ホットリロード
 tests/

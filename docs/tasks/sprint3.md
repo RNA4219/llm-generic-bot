@@ -9,7 +9,7 @@ known_issues: []
 
 | 状態 | ID | 要約 | 対象モジュール | 完了条件 | 備考 | 確認テスト |
 |:----:|:---|:-----|:---------------|:---------|:-----|:-------------|
-| [ ] | OPS-02 | 週次サマリ生成と通知 | `src/llm_generic_bot/core/orchestrator.py`<br>`src/llm_generic_bot/features/report.py` | オーケストレータから週次メトリクスを収集し、Report Feature が通知フォーマットを生成。Permit/送信層に影響しない。 | 週次ジョブ用 Permit 設定と通知チャンネルを config サンプルへ反映。 | `tests/features/test_report.py`: 週次集計・通知整形の正常系/欠損フォールバック |
+| [ ] | OPS-02 | 週次サマリ生成と通知 | `src/llm_generic_bot/core/orchestrator.py`<br>`src/llm_generic_bot/features/report.py`<br>`src/llm_generic_bot/runtime/setup.py` | オーケストレータから週次メトリクスを収集し、runtime/setup で週次ジョブ登録と Permit 設定を確定。Report Feature が通知フォーマットを生成し、Permit/送信層に影響しない。 | runtime/setup でジョブ登録/Permit 設定を実行しつつ、週次ジョブ用通知チャンネルを config サンプルへ反映。 | `tests/features/test_report.py`: 週次集計・通知整形の正常系/欠損フォールバック<br>`tests/integration/test_runtime_weekly_report.py`: runtime/setup の週次ジョブ登録経路 |
 | [ ] | OPS-03 | 設定再読込ログ強化 | `src/llm_generic_bot/runtime/setup.py`<br>`config/` | 設定リロード時に差分検出を行い、監査ログへ差分サマリを構造化出力。 | 既存 CLI/API に互換な JSON ログを維持しつつ、差分イベントを追加。 | `tests/integration/test_runtime_reload.py`: リロード時の差分検出とロギング |
 | [ ] | OPS-04 | ランタイムメトリクス導入 | `src/llm_generic_bot/infra/metrics.py`<br>`src/llm_generic_bot/core/orchestrator.py` | Scheduler 遅延/送信成功率など主要メトリクスを集計し、既存ロガーと連携。 | 既存メトリクス API を汚染しないファサードを用意し、Permit ゲートと整合。 | `tests/infra/test_metrics_reporting.py`: メトリクス収集・ラベル整合のスナップショット |
 

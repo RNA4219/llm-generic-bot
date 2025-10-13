@@ -1,99 +1,97 @@
-"""Sprint 3: 週次サマリ機能の TDD 仕様テスト."""
+"""Sprint 3: 週次サマリ機能の期待仕様."""
 
 from __future__ import annotations
 
-import sys
-from datetime import datetime, timedelta, timezone
-from types import ModuleType, SimpleNamespace
-from typing import Any, Dict, Tuple
+from dataclasses import dataclass
+from datetime import date
+from typing import Mapping
 
 import pytest
 
-from llm_generic_bot.core.cooldown import CooldownGate
-from llm_generic_bot.core.dedupe import NearDuplicateFilter
-from llm_generic_bot.core.orchestrator import Orchestrator, PermitDecision
+from llm_generic_bot.features.report import ReportPayload, generate_weekly_summary
 
 
-class _DummySender:
-    async def send(self, text: str, channel: str | None = None, *, job: str | None = None) -> None:
-        return None
+@dataclass(frozen=True)
+class FakeWeeklyMetricsSnapshot:
+    period_start: date
+    period_end: date
+    totals: Mapping[str, int]
+    breakdowns: Mapping[str, Mapping[str, int]]
+    metadata: Mapping[str, object]
 
 
-NOW = datetime(2024, 3, 4, tzinfo=timezone.utc)
-
-
-def _snapshot(count: int | None) -> SimpleNamespace:
-    counters = {"bot.messages": {(): SimpleNamespace(count=count)}} if count is not None else {}
-    return SimpleNamespace(
-        start=NOW - timedelta(days=7),
-        end=NOW,
-        counters=counters,
-        observations={},
+def test_weekly_report_happy_path() -> None:
+    snapshot = FakeWeeklyMetricsSnapshot(
+        period_start=date(2024, 4, 1),
+        period_end=date(2024, 4, 7),
+        totals={
+            "jobs_processed": 120,
+            "jobs_succeeded": 114,
+            "jobs_failed": 6,
+        },
+        breakdowns={
+            "channels": {"#ops": 72, "#alerts": 48},
+            "failure_tags": {"timeout": 4, "quota": 2},
+        },
+        metadata={
+            "preferred_channel": "#ops",
+            "failure_rate_alert": 0.25,
+        },
     )
 
+    payload = generate_weekly_summary(snapshot, locale="ja", fallback="fallback")
 
-CASES: Tuple[Dict[str, Any], ...] = (
-    {"id": "happy_path", "snapshot": _snapshot(42), "expected": {
-        "body": "📊 運用サマリ (02/26-03/03)\n・総投稿: 42 件",
-        "channel": "ops-weekly",
-        "tags": ("weekly_report", "ops"),
-    }},
-    {"id": "missing_metrics", "snapshot": _snapshot(None), "expected": {
-        "body": "📊 運用サマリ: 今週のメトリクスは未取得です",
-        "channel": "ops-weekly",
-        "tags": ("weekly_report", "fallback"),
-    }},
+    assert isinstance(payload, ReportPayload)
+    assert payload.channel == "#ops"
+    assert "2024-04-01" in payload.body
+    assert "114" in payload.body and "6" in payload.body
+    assert "timeout" in payload.body and "quota" in payload.body
+    assert payload.tags["severity"] == "normal"
+    assert payload.tags["locale"] == "ja"
+    assert payload.tags["period"] == "2024-04-01/2024-04-07"
+
+
+@pytest.mark.parametrize(
+    "totals",
+    [
+        {},
+        {"jobs_processed": 10, "jobs_succeeded": 2, "jobs_failed": 8},
+    ],
 )
-
-
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
-
-
-@pytest.mark.anyio("asyncio")
-@pytest.mark.parametrize("case", CASES, ids=lambda case: case["id"])
-async def test_weekly_report_generation_spec(
-    case: Dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module = ModuleType("llm_generic_bot.features.report")
-    monkeypatch.setitem(sys.modules, module.__name__, module)
-    collected: list[Any] = []
-    summaries: list[SimpleNamespace] = []
-
-    async def fake_collect(metrics: Any) -> SimpleNamespace:
-        collected.append(metrics)
-        return case["snapshot"]
-
-    async def fake_summary(snapshot: SimpleNamespace) -> Dict[str, Any]:
-        summaries.append(snapshot)
-        return case["expected"]
-
-    monkeypatch.setattr(module, "generate_weekly_summary", fake_summary, raising=False)
-    monkeypatch.setattr(
-        "llm_generic_bot.core.orchestrator.collect_weekly_snapshot",
-        fake_collect,
+def test_weekly_report_handles_missing_metrics(totals: Mapping[str, int]) -> None:
+    snapshot = FakeWeeklyMetricsSnapshot(
+        period_start=date(2024, 4, 8),
+        period_end=date(2024, 4, 14),
+        totals=totals,
+        breakdowns={"channels": {}, "failure_tags": {}},
+        metadata={"preferred_channel": "#ops", "failure_rate_alert": 0.3},
     )
 
-    orchestrator = Orchestrator(
-        sender=_DummySender(),
-        cooldown=CooldownGate(60, 1.0, 2.0, 0.1, 0.1, 0.1),
-        dedupe=NearDuplicateFilter(),
-        permit=lambda platform, channel, job: PermitDecision.allowed(job),
-        metrics=None,
-        platform="discord",
+    payload = generate_weekly_summary(snapshot, locale="ja", fallback="fallback body")
+
+    assert payload.body == "fallback body"
+    assert payload.channel == "#ops"
+    assert payload.tags["severity"] in {"degraded", "high"}
+    assert payload.tags["locale"] == "ja"
+
+
+def test_weekly_report_uses_top_channel_when_preference_missing() -> None:
+    snapshot = FakeWeeklyMetricsSnapshot(
+        period_start=date(2024, 4, 15),
+        period_end=date(2024, 4, 21),
+        totals={
+            "jobs_processed": 90,
+            "jobs_succeeded": 84,
+            "jobs_failed": 6,
+        },
+        breakdowns={
+            "channels": {"#alerts": 50, "#ops": 40},
+            "failure_tags": {"timeout": 3},
+        },
+        metadata={"failure_rate_alert": 0.3},
     )
 
-    try:
-        result = await orchestrator.weekly_snapshot()
-    finally:
-        await orchestrator.close()
+    payload = generate_weekly_summary(snapshot, locale="ja", fallback="fallback")
 
-    assert collected == [None], "メトリクススナップショット取得が呼ばれていない"
-    assert summaries == [case["snapshot"]], "週次サマリ生成が未呼び出し"
-    assert isinstance(result, dict), "Orchestrator.weekly_snapshot は dict を返すべき"
-    assert result == case["expected"]
-    assert "weekly_report" in result["tags"], "タグに週次識別子が含まれる必要がある"
-    if case["id"] == "missing_metrics":
-        assert "未取得" in result["body"]
+    assert payload.channel == "#alerts"
+    assert payload.tags["top_channel"] == "#alerts"

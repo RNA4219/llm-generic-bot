@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
+from importlib import import_module
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Mapping, Optional, cast
 
@@ -18,7 +20,7 @@ from .core.scheduler import Scheduler
 from .features.dm_digest import build_dm_digest
 from .features.news import build_news_post
 from .features.omikuji import build_omikuji_post
-from .features.weather import build_weather_post
+from .features.weather import ReactionHistoryProvider, build_weather_post
 
 def _as_mapping(value: object) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
@@ -59,6 +61,28 @@ def _optional_str(value: object) -> Optional[str]:
     if isinstance(value, str) and value:
         return value
     return None
+
+
+def _resolve_reference(value: str) -> object:
+    module_path, sep, attr_path = value.partition(":")
+    if not sep:
+        module_path, _, attr_path = value.rpartition(".")
+    if not module_path or not attr_path:
+        raise ValueError(f"invalid reference: {value}")
+    module = import_module(module_path)
+    obj: object = module
+    for attr in attr_path.split("."):
+        obj = getattr(obj, attr)
+    return obj
+
+
+def _resolve_history_provider(value: object) -> Optional[ReactionHistoryProvider]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        resolved = _resolve_reference(value)
+        return cast(Optional[ReactionHistoryProvider], resolved)
+    return cast(Optional[ReactionHistoryProvider], value)
 
 
 def setup_runtime(
@@ -148,8 +172,24 @@ def setup_runtime(
     weather_cfg = _as_mapping(cfg.get("weather"))
     schedule_value = weather_cfg.get("schedule")
     schedule = schedule_value if isinstance(schedule_value, str) else "21:00"
+    engagement_cfg = _as_mapping(weather_cfg.get("engagement"))
+    history_provider = _resolve_history_provider(engagement_cfg.get("history_provider"))
+
+    weather_params = inspect.signature(build_weather_post).parameters
+
     async def job_weather() -> Optional[str]:
-        return await build_weather_post(cfg)
+        call_kwargs: dict[str, object] = {}
+        if "cooldown" in weather_params:
+            call_kwargs["cooldown"] = cooldown
+        if "reaction_history_provider" in weather_params:
+            call_kwargs["reaction_history_provider"] = history_provider
+        if "platform" in weather_params:
+            call_kwargs["platform"] = platform
+        if "channel" in weather_params:
+            call_kwargs["channel"] = default_channel
+        if "job" in weather_params:
+            call_kwargs["job"] = "weather"
+        return await build_weather_post(cfg, **call_kwargs)
 
     weather_priority_raw = weather_cfg.get("priority")
     weather_priority = int(_num(weather_priority_raw, 5.0)) if weather_priority_raw is not None else 5

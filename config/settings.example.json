@@ -33,6 +33,14 @@
       "header": "🗓️ 今夜の各地の天気",
       "line": "{city}: {temp:.1f}℃ {desc} {hot_icon}{delta_tag}",
       "footer_warn": "— 注意喚起 —\n{bullets}"
+    },
+    "engagement": {
+      "history_provider": "your.module.path:provider_factory",
+      "history_limit": 5,
+      "target_reactions": 5,
+      "min_score": 0.2,
+      "resume_score": 0.5,
+      "time_band_factor": 1.0
     }
   },
   "profiles": {

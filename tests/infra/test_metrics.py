@@ -7,8 +7,10 @@ from typing import Callable, Iterator, Mapping
 from llm_generic_bot.infra import collect_weekly_snapshot
 from llm_generic_bot.infra.metrics import (
     CounterSnapshot,
+    InMemoryMetricsService,
     ObservationSnapshot,
     WeeklyMetricsSnapshot,
+    make_metrics_recorder,
 )
 
 

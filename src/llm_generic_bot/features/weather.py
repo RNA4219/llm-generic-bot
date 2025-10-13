@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Protocol, Sequence, cast
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, cast
 import json
 import os
 import time
@@ -32,7 +32,8 @@ class WeatherPost(str):
 CACHE = Path("weather_cache.json")
 
 def _read_cache() -> Dict[str, Any]:
-    if not CACHE.exists(): return {}
+    if not CACHE.exists():
+        return {}
     try:
         return json.loads(CACHE.read_text(encoding="utf-8"))
     except Exception:
@@ -40,6 +41,32 @@ def _read_cache() -> Dict[str, Any]:
 
 def _write_cache(data: Dict[str, Any]) -> None:
     CACHE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    if isinstance(value, bytes):
+        try:
+            return float(value.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            return None
+    return None
+
+
+def _coerce_positive_int(value: Any, *, default: int, minimum: int = 1) -> int:
+    candidate = _coerce_float(value)
+    if candidate is None:
+        return max(minimum, default)
+    integer = int(candidate)
+    if integer < minimum:
+        return minimum
+    return integer
 
 async def build_weather_post(
     cfg: Dict[str, Any],
@@ -71,17 +98,24 @@ async def build_weather_post(
 
     engagement_raw = wc.get("engagement", {})
     engagement_cfg: Dict[str, Any] = engagement_raw if isinstance(engagement_raw, dict) else {}
-    history_limit = int(engagement_cfg.get("history_limit", 5))
-    if history_limit <= 0:
-        history_limit = 1
-    target_reactions = float(engagement_cfg.get("target_reactions", 5.0))
-    if target_reactions <= 0:
+    history_limit = _coerce_positive_int(
+        engagement_cfg.get("history_limit"), default=5, minimum=1
+    )
+    target_raw = _coerce_float(engagement_cfg.get("target_reactions"))
+    if target_raw is None:
+        target_reactions = 5.0
+    elif target_raw <= 0:
         target_reactions = 1.0
-    min_score = float(engagement_cfg.get("min_score", 0.0))
-    resume_score = float(engagement_cfg.get("resume_score", min_score))
+    else:
+        target_reactions = target_raw
+    min_raw = _coerce_float(engagement_cfg.get("min_score"))
+    min_score = min_raw if min_raw is not None else 0.0
+    resume_raw = _coerce_float(engagement_cfg.get("resume_score"))
+    resume_score = resume_raw if resume_raw is not None else min_score
     if resume_score < min_score:
         resume_score = min_score
-    time_band_factor = float(engagement_cfg.get("time_band_factor", 1.0))
+    tbf_raw = _coerce_float(engagement_cfg.get("time_band_factor"))
+    time_band_factor = tbf_raw if tbf_raw is not None else 1.0
 
     engagement_score = 1.0
     if reaction_history_provider is not None:
@@ -92,9 +126,14 @@ async def build_weather_post(
             channel=channel,
         )
         recent = list(history)[-history_limit:]
-        if recent:
-            total = sum(float(value) for value in recent)
-            average = total / len(recent)
+        valid_reactions: List[float] = []
+        for value in recent:
+            coerced = _coerce_float(value)
+            if coerced is not None:
+                valid_reactions.append(coerced)
+        if valid_reactions:
+            total = sum(valid_reactions)
+            average = total / len(valid_reactions)
             normalized = average / target_reactions if target_reactions > 0 else average
             engagement_score = max(0.0, min(1.0, normalized))
         else:
@@ -145,8 +184,24 @@ async def build_weather_post(
         for city in cities:
             try:
                 raw = await fetch_current_city(city, api_key=api_key, units=units, lang=lang)
-                temp = float((raw.get("main") or {}).get("temp"))
-                desc = (raw.get("weather") or [{}])[0].get("description", "")
+                if not isinstance(raw, Mapping):
+                    raise TypeError("unexpected weather payload")
+                main_data = raw.get("main")
+                temp_value: Any = None
+                if isinstance(main_data, Mapping):
+                    temp_value = main_data.get("temp")
+                temp = _coerce_float(temp_value)
+                if temp is None:
+                    raise ValueError("temperature missing")
+                weather_items = raw.get("weather")
+                desc = ""
+                if isinstance(weather_items, Sequence):
+                    for item in weather_items:
+                        if isinstance(item, Mapping):
+                            desc_value = item.get("description")
+                            if isinstance(desc_value, str):
+                                desc = desc_value
+                                break
                 hot_icon = ""
                 if temp > hot35:
                     hot_icon = icons.get("hot_35", "🔥")
@@ -154,8 +209,11 @@ async def build_weather_post(
                     hot_icon = icons.get("hot_30", "🌡️")
                 delta_tag = ""
                 y = (yesterday or {}).get(city)
-                if y is not None and "temp" in y:
-                    delta = temp - float(y["temp"])
+                delta_source: Optional[float] = None
+                if isinstance(y, Mapping):
+                    delta_source = _coerce_float(y.get("temp"))
+                if delta_source is not None:
+                    delta = temp - delta_source
                     if abs(delta) >= dstrong:
                         delta_tag = (
                             f"{icons.get('warn','⚠️')} "

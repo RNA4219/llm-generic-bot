@@ -35,14 +35,6 @@ namespace_packages = true
 warn_unused_configs = true
 show_error_codes = true
 
-[[tool.mypy.overrides]]
-module = [
-    "llm_generic_bot.core.orchestrator",
-    "llm_generic_bot.features.weather",
-    "llm_generic_bot.main",
-]
-ignore_errors = true
-
 [tool.ruff]
 line-length = 120
 target-version = "py311"

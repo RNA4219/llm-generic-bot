@@ -125,6 +125,108 @@ async def test_weather_engagement_table_driven(
     assert cooldown.calls[1]["engagement_recent"] == pytest.approx(1.0)
 
 
+async def test_weather_engagement_ignores_invalid_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_path = tmp_path / "weather_engagement_cache.json"
+    monkeypatch.setattr(weather, "CACHE", cache_path)
+
+    async def fake_fetch_current_city(*_: object, **__: object) -> Mapping[str, object]:
+        return {
+            "main": {"temp": 31.5},
+            "weather": [{"description": "sunny"}],
+        }
+
+    monkeypatch.setattr(weather, "fetch_current_city", fake_fetch_current_city)
+
+    cooldown = _CooldownStub(values=[1.0], calls=[])
+    provider = _ReactionProvider([[5, 5, 5]])
+
+    cfg = {
+        "openweather": {"units": "metric", "lang": "ja"},
+        "weather": {
+            "cities": {"Test": ["Tokyo"]},
+            "engagement": {
+                "target_reactions": None,
+                "history_limit": None,
+                "min_score": "0.2",
+                "resume_score": "not-a-number",
+                "time_band_factor": {},
+            },
+        },
+    }
+
+    post = await weather.build_weather_post(
+        cfg,
+        cooldown=cooldown,  # type: ignore[arg-type]
+        reaction_history_provider=provider,
+        platform="discord",
+        channel="general",
+        job="weather",
+    )
+
+    assert isinstance(post, weather.WeatherPost)
+    assert post.engagement_score == pytest.approx(1.0)
+    assert cooldown.calls[0]["time_band_factor"] == pytest.approx(1.0)
+
+
+async def test_weather_engagement_skips_non_numeric_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_path = tmp_path / "weather_engagement_cache.json"
+    monkeypatch.setattr(weather, "CACHE", cache_path)
+
+    async def fake_fetch_current_city(*_: object, **__: object) -> Mapping[str, object]:
+        return {
+            "main": {"temp": 29.0},
+            "weather": [{"description": "clear"}],
+        }
+
+    monkeypatch.setattr(weather, "fetch_current_city", fake_fetch_current_city)
+
+    class _MessyHistoryProvider:
+        def __init__(self, sample: Sequence[object]) -> None:
+            self._sample = sample
+
+        async def __call__(
+            self,
+            *,
+            job: str,
+            limit: int,
+            platform: Optional[str],
+            channel: Optional[str],
+        ) -> Sequence[object]:
+            del job, limit, platform, channel
+            return self._sample
+
+    provider = _MessyHistoryProvider(sample=[None, "7", {}, 6])
+
+    cfg = {
+        "openweather": {"units": "metric", "lang": "ja"},
+        "weather": {
+            "cities": {"Test": ["Tokyo"]},
+            "engagement": {
+                "target_reactions": 5,
+                "history_limit": 4,
+                "min_score": 0.5,
+                "resume_score": 0.5,
+            },
+        },
+    }
+
+    post = await weather.build_weather_post(
+        cfg,
+        cooldown=None,
+        reaction_history_provider=provider,  # type: ignore[arg-type]
+        platform="discord",
+        channel="general",
+        job="weather",
+    )
+
+    assert isinstance(post, weather.WeatherPost)
+    assert post.engagement_score == pytest.approx(1.0)
+
+
 class _SenderStub:
     def __init__(self) -> None:
         self.sent: List[str] = []

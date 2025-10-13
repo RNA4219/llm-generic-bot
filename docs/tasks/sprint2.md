@@ -2,6 +2,7 @@
 sprint: 2
 status: done
 updated: 2025-10-24
+known_issues: []
 ---
 
 # Sprint 2 タスクリスト
@@ -21,6 +22,6 @@ updated: 2025-10-24
 5. 完了後にチェックボックスを更新し、Sprint 1 と差分をレビュー用に比較して引継ぎ事項を整理する。
 
 ## 完了確認メモ
-- UX-02: `build_news_post` がクールダウン判定・Permit 呼び出し・要約リトライとフォールバックを実装し、`tests/features/test_news.py` で成功・再試行・抑止ケースをカバー済み。`tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers` で文字列指定プロバイダ経由のニュース配信とサンプルプロバイダ実装の維持を確認し、関連テストが継続して緑であることを追補記録した。
+- UX-02: `build_news_post` がクールダウン判定・Permit 呼び出し・要約リトライとフォールバックを実装し、`tests/features/test_news.py` で成功・再試行・抑止ケースをカバー済み。`tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers` で文字列指定プロバイダ経由のニュース配信とサンプルプロバイダ実装が継続して動作していることを確認し、関連テストが継続して緑であることを追記した。
 - UX-03: `build_omikuji_post` がテンプレ回転とユーザー別シード、ロケール Fallback を実装し、`tests/features/test_omikuji.py` で各条件を固定。
-- UX-04: `build_dm_digest` が PermitGate 判定・DM 送信リトライ・失敗ログ記録を提供し、`tests/features/test_dm_digest.py` でリトライ・空データ・失敗動作を検証済み。`tests/runtime/test_providers.py` で DM ダイジェスト用サンプルプロバイダ群の読み込みと文字列参照解決を追補し、関連テストが継続して緑であることを記録した。
+- UX-04: `build_dm_digest` が PermitGate 判定・DM 送信リトライ・失敗ログ記録を提供し、`tests/features/test_dm_digest.py` でリトライ・空データ・失敗動作を検証済み。`tests/runtime/test_providers.py` で DM ダイジェスト用サンプルプロバイダ群の読み込みと文字列参照解決が継続して動作していることを確認し、関連テストが継続して緑であることを記録した。

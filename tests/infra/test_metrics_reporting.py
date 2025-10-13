@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Mapping
 
 import pytest
@@ -130,3 +131,36 @@ async def test_metrics_weekly_snapshot_latency_boundaries() -> None:
         "edge": {"1s": 1, "3s": 1, ">3s": 1}
     }
     assert snapshot["permit_denials"] == []
+
+
+@pytest.mark.anyio("asyncio")
+async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
+    current = {"value": datetime(2025, 2, 10, tzinfo=timezone.utc)}
+
+    def clock() -> datetime:
+        return current["value"]
+
+    service = metrics.MetricsService(clock=clock)
+
+    current["value"] = current["value"] - timedelta(days=8)
+    service.increment("events", tags={"bucket": "too_old"})
+
+    current["value"] = current["value"] + timedelta(days=1)
+    service.increment("events", tags={"bucket": "boundary"})
+
+    current["value"] = current["value"] + timedelta(days=6)
+    service.increment("events", tags={"bucket": "fresh"})
+
+    current["value"] = datetime(2025, 2, 10, tzinfo=timezone.utc)
+    snapshot = await metrics.collect_weekly_snapshot(service)
+
+    boundary_tags = tuple(sorted({"bucket": "boundary"}.items()))
+    fresh_tags = tuple(sorted({"bucket": "fresh"}.items()))
+
+    assert snapshot.start == datetime(2025, 2, 3, tzinfo=timezone.utc)
+    assert snapshot.end == datetime(2025, 2, 10, tzinfo=timezone.utc)
+    assert "events" in snapshot.counters
+    counters = snapshot.counters["events"]
+    assert counters.get(boundary_tags) == metrics.CounterSnapshot(count=1)
+    assert counters.get(fresh_tags) == metrics.CounterSnapshot(count=1)
+    assert tuple(sorted({"bucket": "too_old"}.items())) not in counters

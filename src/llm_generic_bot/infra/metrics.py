@@ -171,28 +171,17 @@ def _materialize_counters(
     data: Mapping[str, Mapping[TagsKey, int]]
 ) -> Dict[str, Dict[TagsKey, CounterSnapshot]]:
     return {
-        name: {tags: CounterSnapshot(count=count) for tags, count in per_tags.items()}
-        for name, per_tags in data.items()
+        "generated_at": generated,
+        "success_rate": success_rate,
+        "latency_histogram_seconds": latency,
+        "permit_denials": denials,
     }
 
 
-def _materialize_observations(
-    data: Mapping[str, Mapping[TagsKey, Iterable[float]]]
-) -> Dict[str, Dict[TagsKey, ObservationSnapshot]]:
-    result: Dict[str, Dict[TagsKey, ObservationSnapshot]] = {}
-    for name, per_tags in data.items():
-        result[name] = {}
-        for tags, values in per_tags.items():
-            value_list = list(values)
-            total = sum(value_list)
-            count = len(value_list)
-            minimum = min(value_list)
-            maximum = max(value_list)
-            result[name][tags] = ObservationSnapshot(
-                count=count,
-                minimum=minimum,
-                maximum=maximum,
-                total=total,
-                average=total / count,
-            )
-    return result
+def reset_for_test() -> None:
+    global _backend, _backend_configured
+    with _lock:
+        _backend = NullMetricsRecorder()
+        _backend_configured = False
+        for store in (_success, _failure, _histogram, _denials):
+            store.clear()

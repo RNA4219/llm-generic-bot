@@ -4,17 +4,15 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Iterable, Mapping, Protocol
 
-try:  # pragma: no cover - optional依存
-    from llm_generic_bot.infra.metrics import WeeklyMetricsSnapshot  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - until infra.metrics 実装
-    class _WeeklyMetricsSnapshot(Protocol):
-        period_start: Any
-        period_end: Any
-        totals: Mapping[str, Any]
-        breakdowns: Mapping[str, Any]
-        metadata: Mapping[str, Any]
 
-    WeeklyMetricsSnapshot = _WeeklyMetricsSnapshot
+class WeeklyMetricsSnapshot(Protocol):
+    """週次メトリクス集計が満たすべきインターフェイス."""
+
+    period_start: object
+    period_end: object
+    totals: Mapping[str, object]
+    breakdowns: Mapping[str, object]
+    metadata: Mapping[str, object]
 
 
 @dataclass(frozen=True)

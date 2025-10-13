@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable, Mapping
 
@@ -16,13 +16,61 @@ class ReportPayload:
     tags: Mapping[str, str]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class WeeklyReportTemplate:
     """各ロケールのメッセージテンプレート."""
 
     title: str
     line: str
     footer: str | None = None
+    line_auto: bool = field(init=False, repr=False, compare=False)
+
+    def __init__(
+        self,
+        *,
+        title: str | None = None,
+        line: str | None = None,
+        footer: str | None = None,
+        header: str | None = None,
+        summary: str | None = None,
+        channels: str | None = None,
+        failures: str | None = None,
+    ) -> None:
+        resolved_title = title if isinstance(title, str) else None
+        if resolved_title is None and isinstance(header, str):
+            resolved_title = header
+        resolved_line = line if isinstance(line, str) else None
+        auto_line = False
+        if resolved_line is None:
+            for candidate in (summary, channels, failures):
+                if isinstance(candidate, str) and candidate:
+                    resolved_line = candidate
+                    break
+        if resolved_line is None:
+            resolved_line = "{metric}: {value}"
+            auto_line = True
+        if resolved_title is None:
+            raise ValueError("weekly report template requires title and line")
+        resolved_footer = footer if isinstance(footer, str) else None
+        object.__setattr__(self, "title", resolved_title)
+        object.__setattr__(self, "line", resolved_line)
+        object.__setattr__(self, "footer", resolved_footer)
+        object.__setattr__(self, "line_auto", auto_line)
+
+    def format_title(self, **context: Any) -> str:
+        return self.title.format(**context)
+
+    def format_line(self, *, metric: str, value: str, **context: Any) -> str:
+        render_context = dict(context)
+        render_context.setdefault("metric", metric)
+        render_context.setdefault("label", metric)
+        render_context.setdefault("value", value)
+        return self.line.format(**render_context)
+
+    def format_footer(self, **context: Any) -> str | None:
+        if self.footer is None:
+            return None
+        return self.footer.format(**context)
 
 
 TemplateLike = WeeklyReportTemplate | Mapping[str, object]
@@ -85,22 +133,32 @@ def generate_weekly_summary(
         "failure_rate": failure_rate_pct,
         "top_channel": top_channel[0] if top_channel else "-",
     }
-    header = template.title.format(**base_context)
+    header = template.format_title(**base_context)
     lines = [header]
     summary_value = (
         f"{processed}件 (成功 {succeeded}件 / 失敗 {failed}件, 成功率 {success_rate_pct:.1f}%)"
     )
-    lines.append(template.line.format(label="総ジョブ", value=summary_value, **base_context))
-    channels_line = _format_top_items(channel_counts)
-    if channels_line:
+    if not template.line_auto:
         lines.append(
-            template.line.format(label="活発チャンネル", value=channels_line, **base_context)
+            template.format_line(metric="総ジョブ", value=summary_value, **base_context)
         )
-    failure_line = _format_top_items(failure_tags)
-    if failure_line:
-        lines.append(template.line.format(label="主要エラー", value=failure_line, **base_context))
-    if template.footer:
-        lines.append(template.footer.format(**base_context))
+        channels_line = _format_top_items(channel_counts)
+        if channels_line:
+            lines.append(
+                template.format_line(
+                    metric="活発チャンネル", value=channels_line, **base_context
+                )
+            )
+        failure_line = _format_top_items(failure_tags)
+        if failure_line:
+            lines.append(
+                template.format_line(
+                    metric="主要エラー", value=failure_line, **base_context
+                )
+            )
+    footer_text = template.format_footer(**base_context)
+    if footer_text:
+        lines.append(footer_text)
     tags["severity"] = "normal"
     tags["failure_rate"] = f"{failure_rate_pct:.1f}%"
     return ReportPayload("\n".join(lines), channel, tags)

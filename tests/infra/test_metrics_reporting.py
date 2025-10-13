@@ -164,3 +164,52 @@ async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
     assert counters.get(boundary_tags) == metrics.CounterSnapshot(count=1)
     assert counters.get(fresh_tags) == metrics.CounterSnapshot(count=1)
     assert tuple(sorted({"bucket": "too_old"}.items())) not in counters
+
+
+@pytest.mark.anyio("asyncio")
+async def test_collect_weekly_snapshot_none_returns_empty_snapshot() -> None:
+    with freeze_time("2025-03-01T15:00:00+00:00"):
+        snapshot = await metrics.collect_weekly_snapshot(None)
+
+    assert snapshot.start == datetime(2025, 3, 1, 15, 0, tzinfo=timezone.utc)
+    assert snapshot.end == datetime(2025, 3, 1, 15, 0, tzinfo=timezone.utc)
+    assert snapshot.counters == {}
+    assert snapshot.observations == {}
+
+
+@pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_success_rate_handles_zero_failures() -> None:
+    recorder = RecordingMetrics()
+    metrics.configure_backend(recorder)
+
+    with freeze_time("2025-04-10T08:30:00+00:00"):
+        await metrics.report_send_success(
+            job="status",
+            platform="slack",
+            channel=None,
+            duration_seconds=0.75,
+            permit_tags=None,
+        )
+        snapshot = metrics.weekly_snapshot()
+
+    assert recorder.increment_calls == [
+        (
+            "send.success",
+            {"job": "status", "platform": "slack", "channel": "-"},
+        )
+    ]
+    assert recorder.observe_calls == [
+        (
+            "send.duration",
+            pytest.approx(0.75),
+            {"job": "status", "platform": "slack", "channel": "-", "unit": "seconds"},
+        )
+    ]
+    assert snapshot == {
+        "generated_at": "2025-04-10T08:30:00+00:00",
+        "success_rate": {
+            "status": {"success": 1, "failure": 0, "ratio": pytest.approx(1.0)}
+        },
+        "latency_histogram_seconds": {"status": {"1s": 1}},
+        "permit_denials": [],
+    }

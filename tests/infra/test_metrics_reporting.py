@@ -93,3 +93,40 @@ async def test_metrics_null_backend_falls_back_to_noop() -> None:
         "latency_histogram_seconds": {},
         "permit_denials": [],
     }
+
+
+@pytest.mark.anyio("asyncio")
+async def test_metrics_weekly_snapshot_latency_boundaries() -> None:
+    recorder = RecordingMetrics()
+    metrics.configure_backend(recorder)
+    with freeze_time("2025-02-03T00:00:00+00:00"):
+        await metrics.report_send_success(
+            job="edge",
+            platform="web",
+            channel="status",
+            duration_seconds=1.0,
+            permit_tags=None,
+        )
+        await metrics.report_send_success(
+            job="edge",
+            platform="web",
+            channel="status",
+            duration_seconds=1.01,
+            permit_tags=None,
+        )
+        await metrics.report_send_failure(
+            job="edge",
+            platform="web",
+            channel="status",
+            duration_seconds=3.5,
+            error_type="timeout",
+        )
+        snapshot = metrics.weekly_snapshot()
+
+    assert snapshot["success_rate"] == {
+        "edge": {"success": 2, "failure": 1, "ratio": pytest.approx(2 / 3)}
+    }
+    assert snapshot["latency_histogram_seconds"] == {
+        "edge": {"1s": 1, "3s": 1, ">3s": 1}
+    }
+    assert snapshot["permit_denials"] == []

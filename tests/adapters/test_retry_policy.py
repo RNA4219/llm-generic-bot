@@ -54,6 +54,42 @@ def anyio_backend() -> str:
     ],
 )
 @pytest.mark.anyio("asyncio")
+async def test_retry_logging_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    sender_factory: Callable[[], Any],
+    adapter: str,
+) -> None:
+    responses: list[Any] = [
+        _make_response(429, headers={"Retry-After": "1"}),
+        _make_response(200),
+    ]
+    _install_fake_client(monkeypatch, responses)
+
+    monkeypatch.setattr("uuid.uuid4", lambda: UUID(int=0))
+    caplog.set_level("INFO")
+
+    await sender_factory().send("payload")
+
+    events = {"retry_scheduled", "send_success"}
+    required_keys = {"event", "adapter", "correlation_id", "status_code", "attempt", "max_attempts", "target"}
+
+    for record in caplog.records:
+        payload = json.loads(record.msg)
+        assert set(payload) >= required_keys
+        assert payload["adapter"] == adapter
+        assert payload["correlation_id"] == str(UUID(int=0))
+        assert payload["event"] in events
+
+
+@pytest.mark.parametrize(
+    ("sender_factory", "adapter"),
+    [
+        (lambda: DiscordSender(token="t", channel_id="c"), "discord"),
+        (lambda: MisskeySender(instance="misskey.test", token="t"), "misskey"),
+    ],
+)
+@pytest.mark.anyio("asyncio")
 async def test_retry_after_header(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

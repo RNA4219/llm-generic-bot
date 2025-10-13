@@ -106,3 +106,29 @@ def test_collect_weekly_snapshot_materializes_full_statistics() -> None:
             ),
         }
     }
+
+
+def test_collect_weekly_snapshot_respects_custom_retention_days() -> None:
+    base = datetime(2024, 1, 20, tzinfo=timezone.utc)
+    clock_values = iter(
+        [
+            base - timedelta(days=5),
+            base - timedelta(days=2),
+            base - timedelta(days=1),
+        ]
+    )
+    service = InMemoryMetricsService(
+        clock=_clock_from(clock_values),
+        retention_days=3,
+    )
+    recorder = make_metrics_recorder(service)
+
+    recorder.increment("send.success")
+    recorder.increment("send.success")
+    recorder.increment("send.success")
+
+    snapshot = asyncio.run(service.collect_weekly_snapshot(now=base))
+
+    assert snapshot.counters == {
+        "send.success": {(): CounterSnapshot(count=2)}
+    }

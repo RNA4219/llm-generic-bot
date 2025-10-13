@@ -99,10 +99,16 @@ _NOOP_BACKEND = NullMetricsRecorder()
 
 
 class MetricsService(MetricsRecorder):
-    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], datetime] | None = None,
+        retention_days: int = 7,
+    ) -> None:
         self._clock = clock or _utcnow
         self._lock = Lock()
         self._records: list[_MetricRecord] = []
+        self._retention_days = max(1, retention_days)
 
     def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
         self._store(name, 1.0, tags, "increment")
@@ -129,7 +135,7 @@ class MetricsService(MetricsRecorder):
         self, now: datetime | None = None
     ) -> SnapshotResult:
         reference = now or self._clock()
-        start = reference - timedelta(days=7)
+        start = reference - timedelta(days=self._retention_days)
         with self._lock:
             relevant = [
                 record

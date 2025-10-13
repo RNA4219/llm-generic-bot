@@ -14,11 +14,16 @@ from .config.quotas import QuotaSettings, load_quota_settings
 from .core.arbiter import PermitGate
 from .core.cooldown import CooldownGate
 from .core.dedupe import NearDuplicateFilter
-from .core.orchestrator import Orchestrator, PermitDecision, PermitDecisionLike, Sender
+from .core.orchestrator import (
+    Orchestrator,
+    PermitDecision,
+    PermitEvaluator,
+    Sender,
+)
 from .core.queue import CoalesceQueue
 from .core.scheduler import Scheduler
 from .features.dm_digest import build_dm_digest
-from .features.news import build_news_post
+from .features.news import FeedProvider, SummaryProvider, build_news_post
 from .features.omikuji import build_omikuji_post
 from .features.weather import ReactionHistoryProvider, build_weather_post
 
@@ -88,6 +93,47 @@ def _resolve_history_provider(value: object) -> Optional[ReactionHistoryProvider
 _resolve_reference = _resolve_object
 
 
+def _build_permit_evaluator(gate: PermitGate | None) -> PermitEvaluator:
+    if gate is None:
+        def _permit_passthrough(
+            _platform: str, _channel: Optional[str], job: str
+        ) -> PermitDecision:
+            return PermitDecision.allow(job)
+
+        return cast(PermitEvaluator, _permit_passthrough)
+
+    def _permit_with_gate(platform: str, channel: Optional[str], job: str) -> PermitDecision:
+        decision = gate.permit(platform, channel, job)
+        if decision.allowed:
+            return PermitDecision.allow(decision.job or job)
+        return PermitDecision(
+            allowed=False,
+            reason=decision.reason,
+            retryable=decision.retryable,
+            job=decision.job or job,
+        )
+
+    return cast(PermitEvaluator, _permit_with_gate)
+
+
+def _as_feed_provider(value: object) -> Optional[FeedProvider]:
+    if value is None:
+        return None
+    fetch = getattr(value, "fetch", None)
+    if callable(fetch):
+        return cast(FeedProvider, value)
+    return None
+
+
+def _as_summary_provider(value: object) -> Optional[SummaryProvider]:
+    if value is None:
+        return None
+    summarize = getattr(value, "summarize", None)
+    if callable(summarize):
+        return cast(SummaryProvider, value)
+    return None
+
+
 def setup_runtime(
     settings: Mapping[str, Any],
     *,
@@ -116,25 +162,7 @@ def setup_runtime(
     quota: QuotaSettings = load_quota_settings(cfg)
     gate = permit_gate or (PermitGate(per_channel=quota.per_channel) if quota.per_channel else None)
 
-    permit: Callable[[str, Optional[str], str], PermitDecisionLike]
-    if gate is None:
-        def permit(
-            _platform: str, _channel: Optional[str], job: str
-        ) -> PermitDecisionLike:
-            return PermitDecision.allowed(job)
-    else:
-        def permit(
-            platform: str, channel: Optional[str], job: str
-        ) -> PermitDecisionLike:
-            decision = gate.permit(platform, channel, job)
-            if decision.allowed:
-                return PermitDecision.allowed(decision.job or job)
-            return PermitDecision(
-                allowed=False,
-                reason=decision.reason,
-                retryable=decision.retryable,
-                job=decision.job or job,
-            )
+    permit: PermitEvaluator = _build_permit_evaluator(gate)
 
     profiles = _as_mapping(cfg.get("profiles"))
     discord_cfg = _as_mapping(profiles.get("discord"))
@@ -184,7 +212,7 @@ def setup_runtime(
         )
 
     async def job_weather() -> Optional[str]:
-        call_kwargs: dict[str, object] = {}
+        call_kwargs: dict[str, Any] = {}
         if (
             history_provider is not None
             and "reaction_history_provider" in weather_params
@@ -214,9 +242,9 @@ def setup_runtime(
 
     news_cfg = _as_mapping(cfg.get("news"))
     if news_cfg and _is_enabled(news_cfg):
-        feed_provider = news_cfg.get("feed_provider")
-        summary_provider = news_cfg.get("summary_provider")
-        if feed_provider and summary_provider:
+        feed_provider_obj = _as_feed_provider(news_cfg.get("feed_provider"))
+        summary_provider_obj = _as_summary_provider(news_cfg.get("summary_provider"))
+        if feed_provider_obj is not None and summary_provider_obj is not None:
             job_name = str(news_cfg.get("job", "news"))
             news_priority = max(int(_num(news_cfg.get("priority"), 5.0)), 0)
             news_channel = _optional_str(news_cfg.get("channel")) or default_channel
@@ -254,8 +282,8 @@ def setup_runtime(
 
                 return await build_news_post(
                     news_cfg,
-                    feed_provider=feed_provider,
-                    summary_provider=summary_provider,
+                    feed_provider=feed_provider_obj,
+                    summary_provider=summary_provider_obj,
                     permit=_permit_hook,
                     cooldown=_cooldown_check,
                 )

@@ -31,7 +31,7 @@ class Scenario:
 
 
 def _allowed(*_: object) -> PermitDecision:
-    return PermitDecision.allowed("dm_digest")
+    return PermitDecision.allow("dm_digest")
 
 
 SCENARIOS = (
@@ -50,7 +50,7 @@ SCENARIOS = (
         ],
         summary="まとめ",
         expected="Daily Digest\nまとめ",
-        permit_return=lambda platform, channel, job: PermitDecision.allowed(job),
+        permit_return=lambda platform, channel, job: PermitDecision.allow(job),
         expect_retry=True,
     ),
     Scenario(
@@ -204,7 +204,7 @@ async def test_build_dm_digest_logs_failure(caplog: pytest.LogCaptureFixture) ->
             log_provider=SimpleNamespace(collect=collect),
             summarizer=SimpleNamespace(summarize=summarize),
             sender=SimpleNamespace(send=send),
-            permit=lambda *_: PermitDecision.allowed(cfg["job"]),
+            permit=lambda *_: PermitDecision.allow(cfg["job"]),
             logger=logging.getLogger("test.dm_digest.failure"),
         )
 

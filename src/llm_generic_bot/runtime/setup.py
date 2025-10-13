@@ -348,21 +348,25 @@ def setup_runtime(
                 failure_threshold=get_float(report_cfg.get("failure_threshold"), 0.5),
                 templates={
                     locale: WeeklyReportTemplate(
-                        header=title_template.format(week_range="{start} – {end}"),
-                        summary="",
-                        channels="",
-                        failures="",
+                        title=title_template.format(week_range="{start} – {end}"),
+                        line="",
+                        footer="",
                     )
                 },
             )
             message_parts = [line for line in payload.body.splitlines() if line]
+            footer_line: str | None = None
+            if footer_template:
+                footer_line = footer_template
+                if message_parts and message_parts[-1] == footer_line:
+                    message_parts.pop()
             message_parts.extend(lines)
             if not message_parts:
                 return None
             if not payload.body:
                 message_parts.insert(0, title_template.format(week_range=week_range))
-            if footer_template:
-                message_parts.append(footer_template)
+            if footer_line:
+                message_parts.append(footer_line)
             return "\n".join(message_parts)
 
         jobs[job_name] = job_weekly_report

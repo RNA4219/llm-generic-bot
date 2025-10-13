@@ -16,7 +16,12 @@
 - `tests/integration/test_runtime_multicontent.py`: `setup_runtime` が Weather/News/おみくじ/DM ダイジェストの 4 ジョブを登録し、
   - Weather/News/おみくじは設定どおりのチャンネルへエンキューされることを確認。
   - DM ダイジェストはスケジューラのキューを増やさずに sender が直接 DM を送ることを、DM ジョブ実行後もエンキュー件数が変化しない挙動で検証。
-  - `tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers`: サンプル設定 `config/settings.example.json` に含まれる Provider 参照文字列（例: `llm_generic_bot.runtime.providers.SAMPLE_NEWS_FEED` / `SAMPLE_NEWS_SUMMARY` / `SAMPLE_DM_LOG` / `SAMPLE_DM_SUMMARY` / `SAMPLE_DM_SENDER`）が `_resolve_configured_object` により実体化され、コロン／ドット参照形式の指定どおりに `llm_generic_bot.runtime.providers` の実装へ接続されることを検証。
+  - `tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers`: サンプル設定 `config/settings.example.json` に含まれる Provider 参照文字列が `_resolve_configured_object` により実体化され、コロン／ドット参照形式の指定どおりに `llm_generic_bot.runtime.providers` の実装へ接続されることを検証。
+    - `llm_generic_bot.runtime.providers.SAMPLE_NEWS_FEED`: ニュースフィード取得を担うダミー実装。
+    - `llm_generic_bot.runtime.providers.SAMPLE_NEWS_SUMMARY`: ニュース要約のサンプル実装。
+    - `llm_generic_bot.runtime.providers.SAMPLE_DM_LOG`: DM ログ収集のサンプル実装。
+    - `llm_generic_bot.runtime.providers.SAMPLE_DM_SUMMARY`: DM 要約生成のサンプル実装。
+    - `llm_generic_bot.runtime.providers.SAMPLE_DM_SENDER`: DM 送信のサンプル実装。
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
 - 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、News/おみくじ/DM ダイジェスト経路の異常系（Permit 拒否・クールダウン解除後再送）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
 

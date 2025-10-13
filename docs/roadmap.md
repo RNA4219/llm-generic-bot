@@ -8,8 +8,12 @@
   - `src/llm_generic_bot/main.py` の `setup_runtime` は `PermitGate.permit` の結果を `PermitDecision` に包み直し、許可時はジョブ名を差し替えつつ `Orchestrator.enqueue` へ渡す。
   - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 判定前のメッセージ束を保持する。`Scheduler.queue.push` で積まれたバッチは `dispatch_ready_batches` を経て `sender.send` で `Orchestrator.enqueue` に載せられ、内部ワーカー `_process` が Permit を評価する。不許可時は `send.denied` を記録してバッチを破棄する。
   - ジッタは `core/scheduler.py` の `Scheduler` で既定有効となり、Permit 判定前のバッチに対して `next_slot` が遅延を決定してからオーケストレータへ渡す。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
-- integration テストは `tests/integration/test_main_pipeline.py` と `tests/integration/test_permit_bridge.py` の 2 本で最新経路を検証し、前者が Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡し、後者が `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証している。追加機能に備えた News/おみくじ経路の結合テストは未着手。
-- 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、新規コンテンツ（News/おみくじ等）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
+- integration テストは以下で運用経路をカバーしている:
+  - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
+  - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
+  - `tests/integration/test_runtime_multicontent.py`: Weather/News/おみくじ/DM ダイジェストの 4 ジョブが `setup_runtime` 経由でスケジュール登録され、各ジョブが想定チャンネルへエンキューされることを確認。
+  - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン発動時に送信を抑止し、Permit 呼び出しがスキップされることを検証。
+- 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、News/おみくじ/DM ダイジェスト経路の異常系（Permit 拒否・クールダウン解除後再送）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ
 - [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）: 429/5xx を指数バックオフ付きで再送し、上限回数で失敗をロギング。

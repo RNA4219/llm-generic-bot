@@ -1,14 +1,30 @@
 from __future__ import annotations
+from datetime import datetime, timezone
+from importlib import import_module
+from typing import TYPE_CHECKING, Any, Mapping, Protocol, runtime_checkable
 
-import sys as _sys
-from typing import Any, Mapping, Protocol, runtime_checkable
+if TYPE_CHECKING:
+    from .metrics import (
+        CounterSnapshot,
+        MetricsService,
+        ObservationSnapshot,
+        WeeklyMetricsSnapshot,
+    )
 
 
-WeeklyMetricsSnapshot = Mapping[str, Any]
+__all__ = [
+    "CounterSnapshot",
+    "MetricsBackend",
+    "MetricsService",
+    "ObservationSnapshot",
+    "WeeklyMetricsSnapshot",
+    "collect_weekly_snapshot",
+    "make_metrics_recorder",
+]
 
 
 @runtime_checkable
-class MetricsService(Protocol):
+class MetricsBackend(Protocol):
     def record_event(
         self,
         name: str,
@@ -26,7 +42,7 @@ class MetricsService(Protocol):
 class _MetricsRecorderAdapter:
     __slots__ = ("_service",)
 
-    def __init__(self, service: MetricsService) -> None:
+    def __init__(self, service: MetricsBackend) -> None:
         self._service = service
 
     def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
@@ -36,16 +52,35 @@ class _MetricsRecorderAdapter:
         self._service.record_event(name, tags=tags, measurements={"value": value})
 
 
-def make_metrics_recorder(service: MetricsService) -> _MetricsRecorderAdapter:
+def make_metrics_recorder(service: MetricsBackend) -> _MetricsRecorderAdapter:
     return _MetricsRecorderAdapter(service)
 
 
 async def collect_weekly_snapshot(
-    metrics: MetricsService | None,
+    metrics: MetricsBackend | None,
 ) -> WeeklyMetricsSnapshot:
     if metrics is None:
-        return {}
+        return _empty_weekly_snapshot()
     return await metrics.collect_weekly_snapshot()
 
 
-_sys.modules[__name__ + ".metrics"] = _sys.modules[__name__]
+def __getattr__(name: str) -> Any:
+    if name in {"CounterSnapshot", "MetricsService", "ObservationSnapshot", "WeeklyMetricsSnapshot"}:
+        module = import_module(__name__ + ".metrics")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(name)
+
+
+def _empty_weekly_snapshot() -> "WeeklyMetricsSnapshot":
+    module = import_module(__name__ + ".metrics")
+    now = datetime.now(timezone.utc)
+    return module.WeeklyMetricsSnapshot(
+        start=now,
+        end=now,
+        counters={},
+        observations={},
+    )
+
+

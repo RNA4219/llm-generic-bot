@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import datetime as dt
+import time
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
@@ -90,6 +90,14 @@ async def test_news_job_resumes_after_cooldown_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    base_time = 1_700_000_000.0
+    current_time = base_time
+
+    def fake_time() -> float:
+        return current_time
+
+    monkeypatch.setattr(time, "time", fake_time)
+
     permit_args: List[Dict[str, Any]] = []
     cooldown_results: List[bool] = []
     enqueue_calls: List[Dict[str, Any]] = []
@@ -102,8 +110,6 @@ async def test_news_job_resumes_after_cooldown_window(
         permit: Any,
         cooldown: Any,
     ) -> Optional[str]:
-        assert callable(permit)
-        assert callable(cooldown)
         job_name = str(cfg.get("job", "news"))
         cooldown_active = await cooldown(
             job=job_name,
@@ -119,15 +125,6 @@ async def test_news_job_resumes_after_cooldown_window(
 
     monkeypatch.setattr(main_module, "build_news_post", fake_build_news_post)
 
-    base_ts = 1_000_000.0
-    clock = {"now": base_ts}
-
-    def fake_time() -> float:
-        return clock["now"]
-
-    monkeypatch.setattr(main_module.time, "time", fake_time)
-    monkeypatch.setattr("llm_generic_bot.core.cooldown.time.time", fake_time)
-
     async def dummy_fetch(_url: str, *, limit: int | None = None) -> list[str]:  # noqa: ARG001
         return []
 
@@ -137,37 +134,73 @@ async def test_news_job_resumes_after_cooldown_window(
     settings: Dict[str, Any] = {
         "timezone": "UTC",
         "profiles": {"discord": {"enabled": True, "channel": "general"}},
-        "cooldown": {"window_sec": 3600},
+        "cooldown": {"window_sec": 60},
         "news": {
             "schedule": "00:00",
+            "priority": 5,
+            "job": "news",
             "channel": "news",
             "feed_provider": SimpleNamespace(fetch=dummy_fetch),
             "summary_provider": SimpleNamespace(summarize=dummy_summarize),
         },
     }
 
-    scheduler, orchestrator, _ = main_module.setup_runtime(settings, queue=queue)
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
 
-    async def fake_enqueue(*args: Any, **kwargs: Any) -> str:
-        enqueue_calls.append({"args": args, "kwargs": kwargs})
-        return "cid"
+    async def fake_enqueue(
+        text: str,
+        *,
+        job: str,
+        platform: str,
+        channel: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+    ) -> str:
+        enqueue_calls.append(
+            {
+                "text": text,
+                "job": job,
+                "platform": platform,
+                "channel": channel,
+                "correlation_id": correlation_id,
+            }
+        )
+        return "corr"
 
     monkeypatch.setattr(orchestrator, "enqueue", fake_enqueue)
 
-    clock["now"] = base_ts
+    scheduler.jitter_enabled = False
+
+    async def immediate_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(scheduler, "_sleep", immediate_sleep)
+
     orchestrator._cooldown.note_post("discord", "news", "news")
 
-    clock["now"] = base_ts + 10.0
-    now_dt = dt.datetime(2020, 1, 1, 0, 0, tzinfo=scheduler.tz)
-    await scheduler._run_due_jobs(now_dt)
-    await scheduler.dispatch_ready_batches(clock["now"])
+    result_first = await jobs["news"]()
+    assert result_first is None
+    await scheduler.dispatch_ready_batches(current_time)
 
+    assert cooldown_results == [True]
+    assert permit_args == []
     assert enqueue_calls == []
 
-    clock["now"] = base_ts + orchestrator._cooldown.window + 10.0
-    await scheduler._run_due_jobs(now_dt)
-    await scheduler.dispatch_ready_batches(clock["now"])
+    current_time = base_time + settings["cooldown"]["window_sec"] + 1
+
+    result_second = await jobs["news"]()
+    assert result_second == "ok"
+
+    scheduler.queue.push(
+        result_second,
+        priority=settings["news"]["priority"],
+        job=settings["news"].get("job", "news"),
+        created_at=current_time,
+        channel=settings["news"]["channel"],
+    )
+
+    await scheduler.dispatch_ready_batches(current_time)
 
     assert cooldown_results == [True, False]
     assert permit_args == [{"job": "news", "suppress_cooldown": False}]
     assert len(enqueue_calls) == 1
+    assert enqueue_calls[0]["job"] == "news"

@@ -39,8 +39,8 @@
 
 ## テストロードマップ
 - 現状認識:
-  - リトライ: `tests/adapters/test_retry_policy.py` で Discord/Misskey の 429/Retry-After、指数バックオフ、非リトライ判定までカバー済み。残課題は `_structured_log` が吐き出す JSON フィールド（`llm_generic_bot.adapters._retry`）をスナップショット化し、リトライ限界到達時の監査属性欠落を防ぐこと。
-  - 併合: `tests/core/test_coalesce_queue.py` で窓内併合、閾値即時フラッシュ、単発バッチを検証済み。残課題は `CoalesceQueue` の優先度逆転ガードや、`llm_generic_bot.core.queue` のマルチチャンネル分離・`pop_ready` ソート安定性をテーブル駆動で追加すること。
+  - リトライ: `tests/adapters/test_retry_policy.py` で Discord/Misskey の 429/Retry-After、指数バックオフ、非リトライ判定までカバー済み。残課題だった `_structured_log` の JSON フィールド（`llm_generic_bot.adapters._retry`）スナップショットは `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` で完了し、リトライ限界到達時の監査属性欠落を防止済み。
+  - 併合: `tests/core/test_coalesce_queue.py` で窓内併合、閾値即時フラッシュ、単発バッチを検証済み。残課題だった `CoalesceQueue` の優先度逆転ガードは `tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` で完了し、`llm_generic_bot.core.queue` のマルチチャンネル分離・`pop_ready` ソート安定性もテーブル駆動で確認済み。
   - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無と `next_slot` 呼び出しを制御できている。残課題は `llm_generic_bot.core.scheduler` におけるジッタ範囲最小/最大境界と、Permit 後バッチ遅延との連携をプロパティベースで検証すること。
   - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否のログイベントとメトリクス更新を確認済み。残課題は `Orchestrator` の重複スキップ経路（`send_duplicate_skip`）や `send.duration` メトリクス単位（秒）を追加検証し、ログとメトリクスの整合性を固定すること。
 - Sprint 1: `tests/adapters/test_retry_policy.py` に JSON ログのスナップショットケースを追加し、`tests/core/test_coalesce_queue.py` へ優先度逆転ガードの境界ケースを拡張する。同時に `tests/core/test_quota_gate.py` では Permit 拒否理由の種類ごとに `llm_generic_bot.core.arbiter` のタグ付けを検証し、構造化ログ側と整合させる。

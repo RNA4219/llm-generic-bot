@@ -26,6 +26,38 @@ def test_settings_preserves_previous_data_when_reload_fails(tmp_path, caplog):
     assert any("Failed to reload settings" in message for message in caplog.messages)
 
 
+def test_settings_reload_emits_structured_diff(tmp_path, caplog):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"foo": {"bar": 1}, "removed": "value"}),
+        encoding="utf-8",
+    )
+
+    settings = Settings(str(config_path))
+    assert settings.data == {"foo": {"bar": 1}, "removed": "value"}
+
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        config_path.write_text(
+            json.dumps({"foo": {"bar": 2}, "added": True}),
+            encoding="utf-8",
+        )
+        os.utime(config_path, (time.time() + 1, time.time() + 1))
+        settings.reload()
+
+    records = [record for record in caplog.records if record.message == "settings_reload"]
+    assert len(records) == 1
+    record = records[0]
+
+    assert record.previous == {"foo": {"bar": 1}, "removed": "value"}
+    assert record.current == {"foo": {"bar": 2}, "added": True}
+    assert record.diff == {
+        "foo.bar": {"old": 1, "new": 2},
+        "removed": {"old": "value", "new": None},
+        "added": {"old": None, "new": True},
+    }
+
+
 def test_settings_example_contains_report_and_metrics_blocks() -> None:
     settings_path = Path(__file__).resolve().parents[2] / "config" / "settings.example.json"
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
@@ -43,6 +75,12 @@ def test_settings_example_contains_report_and_metrics_blocks() -> None:
     assert permit_cfg.get("channel") == "ops-weekly"
     assert permit_cfg.get("platform") == "discord"
 
+    template_cfg = report.get("template") if isinstance(report, dict) else None
+    assert isinstance(template_cfg, dict)
+    assert template_cfg.get("title") == "📊 運用サマリ ({week_range})"
+    assert template_cfg.get("line") == "・{metric}: {value}"
+    assert template_cfg.get("footer") == "詳細は運用ダッシュボードを参照"
+
     metrics_cfg = settings.get("metrics")
     assert isinstance(metrics_cfg, dict)
     assert metrics_cfg.get("_usage", "").startswith("ランタイムメトリクス")
@@ -53,3 +91,4 @@ def test_settings_example_contains_report_and_metrics_blocks() -> None:
     assert isinstance(export_cfg, dict)
     assert export_cfg.get("enabled") is False
     assert export_cfg.get("destination") == "stdout"
+    assert export_cfg.get("_usage", "").startswith("メトリクスのエクスポート")

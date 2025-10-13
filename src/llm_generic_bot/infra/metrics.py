@@ -3,9 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Callable, Dict, Iterable, List, Mapping, Tuple
-
-from llm_generic_bot.core.orchestrator import MetricsRecorder
+from typing import Callable, Dict, Iterable, List, Mapping, Protocol, Tuple
 
 TagsKey = Tuple[Tuple[str, str], ...]
 MetricKind = str
@@ -50,6 +48,16 @@ class _MetricRecord:
     tags: TagsKey
     kind: MetricKind
     value: float
+
+
+class MetricsRecorder(Protocol):
+    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
+        ...
+
+    def observe(
+        self, name: str, value: float, tags: Mapping[str, str] | None = None
+    ) -> None:
+        ...
 
 
 class MetricsService(MetricsRecorder):

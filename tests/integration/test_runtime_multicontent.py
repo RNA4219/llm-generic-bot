@@ -355,6 +355,76 @@ async def test_setup_runtime_uses_custom_weather_job_name(
         await orchestrator.close()
 
 
+async def test_weather_job_uses_weather_channel_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+
+    recorded_channels: List[Optional[str]] = []
+
+    async def fake_weather_post(
+        settings: Dict[str, Any],
+        *,
+        platform: Optional[str] = None,
+        channel: Optional[str] = None,
+    ) -> str:
+        del settings, platform
+        recorded_channels.append(channel)
+        return "weather-text"
+
+    monkeypatch.setattr(main_module, "build_weather_post", fake_weather_post)
+
+    settings: Dict[str, Any] = {
+        "timezone": "UTC",
+        "profiles": {"discord": {"enabled": True, "channel": "general"}},
+        "weather": {"schedule": "00:00", "channel": "weather-override"},
+    }
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    scheduler.jitter_enabled = False
+
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    scheduler._sleep = no_sleep  # type: ignore[assignment]
+
+    enqueue_calls: List[Dict[str, Any]] = []
+
+    async def fake_enqueue(
+        text: str,
+        *,
+        job: str,
+        platform: str,
+        channel: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+    ) -> str:
+        enqueue_calls.append(
+            {
+                "text": text,
+                "job": job,
+                "platform": platform,
+                "channel": channel,
+                "correlation_id": correlation_id,
+            }
+        )
+        return "corr"
+
+    monkeypatch.setattr(orchestrator, "enqueue", fake_enqueue)
+
+    try:
+        assert set(jobs) == {"weather"}
+
+        tz = zoneinfo.ZoneInfo("UTC")
+        now = dt.datetime(2024, 1, 1, 0, 0, tzinfo=tz)
+        await scheduler._run_due_jobs(now)
+        await scheduler.dispatch_ready_batches(now.timestamp())
+
+        assert recorded_channels == ["weather-override"]
+        assert [call["channel"] for call in enqueue_calls] == ["weather-override"]
+    finally:
+        await orchestrator.close()
+
+
 async def test_weekly_report_job_uses_metrics_and_template(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

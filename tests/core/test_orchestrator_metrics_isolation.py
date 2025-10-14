@@ -1,0 +1,76 @@
+import pytest
+
+from llm_generic_bot.core.orchestrator import Orchestrator, PermitDecision
+from llm_generic_bot.infra import metrics as metrics_module
+from llm_generic_bot.infra.metrics import MetricsService
+
+
+class StubSender:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str | None, str]] = []
+
+    async def send(self, text: str, channel: str | None, *, job: str) -> None:
+        self.calls.append((text, channel, job))
+
+
+class StubCooldownGate:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str]] = []
+
+    def note_post(self, platform: str, channel: str, job: str) -> None:
+        self.calls.append((platform, channel, job))
+
+
+class StubNearDuplicateFilter:
+    def __init__(self) -> None:
+        self.requests: list[str] = []
+
+    def permit(self, text: str) -> bool:
+        self.requests.append(text)
+        return True
+
+
+@pytest.mark.asyncio
+async def test_weekly_snapshot_is_isolated_between_instances() -> None:
+    metrics_module.reset_for_test()
+    sender_a = StubSender()
+    sender_b = StubSender()
+    cooldown = StubCooldownGate()
+    dedupe = StubNearDuplicateFilter()
+
+    def permit(_: str, __: str | None, job: str) -> PermitDecision:
+        return PermitDecision.allow(job=job)
+
+    orchestrator_a = Orchestrator(
+        sender=sender_a,
+        cooldown=cooldown,
+        dedupe=dedupe,
+        permit=permit,
+        metrics=MetricsService(),
+        platform="test-platform",
+    )
+    orchestrator_b = Orchestrator(
+        sender=sender_b,
+        cooldown=cooldown,
+        dedupe=dedupe,
+        permit=permit,
+        metrics=None,
+        platform="test-platform",
+    )
+
+    await orchestrator_a.send("hello", job="job-a")
+    await orchestrator_b.send("world", job="job-b")
+
+    snapshot = await orchestrator_a.weekly_snapshot()
+
+    try:
+        success_counters = snapshot.counters.get("send.success", {})
+        assert success_counters, "expected at least one send.success counter"
+        recorded_jobs = {
+            dict(tags).get("job")
+            for tags in success_counters
+        }
+        assert recorded_jobs == {"job-a"}
+    finally:
+        await orchestrator_a.close()
+        await orchestrator_b.close()

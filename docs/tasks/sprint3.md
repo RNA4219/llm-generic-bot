@@ -1,7 +1,7 @@
 ---
 sprint: 3
-status: in-progress
-updated: 2025-10-14
+status: completed
+updated: 2025-10-15
 known_issues: []
 ---
 
@@ -12,7 +12,7 @@ known_issues: []
 | [x] | OPS-02 | 週次サマリ生成と通知 | `src/llm_generic_bot/core/orchestrator.py`<br>`src/llm_generic_bot/features/report.py`<br>`src/llm_generic_bot/runtime/setup.py` | オーケストレータから週次メトリクスを収集し、runtime/setup で週次ジョブ登録と Permit 設定を確定。検証: `tests/features/test_report.py::test_weekly_report_formats_real_snapshot`, `tests/integration/test_runtime_weekly_report.py::test_weekly_report_respects_weekday_schedule` | runtime/setup でジョブ登録/Permit 設定を実行しつつ、週次ジョブ用通知チャンネルを config サンプルへ反映。 | `tests/features/test_report.py`: 週次集計・通知整形の正常系/欠損フォールバック<br>`tests/integration/test_runtime_weekly_report.py`: runtime/setup の週次ジョブ登録経路 |
 | [x] | OPS-03 | 設定再読込ログ強化 | `src/llm_generic_bot/runtime/setup.py`<br>`config/` | 設定リロード時に差分検出を行い、監査ログへ差分サマリを構造化出力。検証: `tests/integration/test_runtime_reload.py::test_settings_reload_logs_diff`, `tests/integration/test_runtime_reload.py::test_settings_reload_skips_log_when_no_diff` | 既存 CLI/API に互換な JSON ログを維持しつつ、差分イベントを追加。 | `tests/integration/test_runtime_reload.py`: リロード時の差分検出とロギング |
 | [x] | OPS-04 | ランタイムメトリクス導入 | `src/llm_generic_bot/infra/metrics.py`<br>`src/llm_generic_bot/core/orchestrator.py` | Scheduler 遅延/送信成功率など主要メトリクスを集計し、既存ロガーと連携。検証: `tests/infra/test_metrics_reporting.py::test_metrics_records_expected_labels_and_snapshot`, `tests/infra/test_metrics_reporting.py::test_metrics_weekly_snapshot_latency_boundaries` | 既存メトリクス API を汚染しないファサードを用意し、Permit ゲートと整合。 | `tests/infra/test_metrics_reporting.py`: メトリクス収集・ラベル整合のスナップショット |
-| [ ] | OPS-07 | Weather ジョブの複数スケジュール対応 | `src/llm_generic_bot/runtime/jobs/weather.py` | `weather.schedule` / `weather.schedules` の複数時刻指定を解釈し、設定どおりにジョブ登録されるようにする。 | `collect_schedules` を利用して既存 API と整合させ、チャネル/優先度の既存挙動を維持する。 | `tests/runtime/test_weather_jobs.py`: 配列・タプル指定で 2 件の `ScheduledJob` 登録を確認 |
+| [x] | OPS-07 | Weather ジョブの複数スケジュール対応 | `src/llm_generic_bot/runtime/jobs/weather.py` | ScheduledJob.schedules に複数時刻が入ることを検証する。 | `collect_schedules` 実装済みであり、配列・タプル指定時のスケジュール展開がテスト手順と一致する。 | ScheduledJob.schedules に複数時刻が入ることを検証する。 |
 
 ## 進行手順
 1. ✅ 完了済み: `tests/` に対応テストファイルのスケルトンを追加し、計測対象とログフォーマットを固定済み。

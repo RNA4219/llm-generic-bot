@@ -102,13 +102,12 @@ async def test_scheduler_passes_jitter_range_and_job(monkeypatch: pytest.MonkeyP
 
     jitter_calls: List[tuple[int, int]] = []
     clash_flags: deque[bool] = deque()
-    boundaries = deque(["min", "max"])
+    jitter_values = deque([0.0, 5.0, 10.0])
 
     def fake_next_slot(ts: float, clash: bool, *, jitter_range: tuple[int, int]) -> float:
         jitter_calls.append(jitter_range)
         clash_flags.append(clash)
-        boundary = boundaries.popleft()
-        offset = float(jitter_range[0] if boundary == "min" else jitter_range[1])
+        offset = jitter_values.popleft()
         return ts + offset
 
     monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", fake_next_slot)
@@ -123,16 +122,17 @@ async def test_scheduler_passes_jitter_range_and_job(monkeypatch: pytest.MonkeyP
     )
 
     base = 2000.0
-    scheduler._last_dispatch_ts = base + 1.0
-
-    queue.push("first", priority=2, job="job-a", created_at=base)
+    queue.push("min", priority=1, job="daily", created_at=base)
     await scheduler.dispatch_ready_batches(base)
 
-    queue.push("second", priority=2, job="job-b", created_at=base)
+    queue.push("first", priority=2, job="job-a", created_at=base, channel="permit")
     await scheduler.dispatch_ready_batches(base)
 
-    assert list(delays) == [5.0, 10.0]
-    assert jitter_calls == [(5, 10), (5, 10)]
-    assert list(clash_flags) == [True, True]
-    assert sender.sent == ["first", "second"]
-    assert sender.jobs == ["job-a", "job-b"]
+    queue.push("second", priority=2, job="job-b", created_at=base, channel="permit")
+    await scheduler.dispatch_ready_batches(base)
+
+    assert list(delays) == [0.0, 5.0, 10.0]
+    assert jitter_calls == [(5, 10), (5, 10), (5, 10)]
+    assert list(clash_flags) == [False, True, True]
+    assert sender.sent == ["min", "permit:first", "permit:second"]
+    assert sender.jobs == ["daily", "job-a", "job-b"]

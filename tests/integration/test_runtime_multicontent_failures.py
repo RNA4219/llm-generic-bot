@@ -1,179 +1,153 @@
 from __future__ import annotations
 
 import json
-from collections import deque
-from datetime import datetime, timezone
+import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Dict, Iterable
 
 import pytest
 
 from llm_generic_bot import main as main_module
-from llm_generic_bot.core.arbiter import PermitDecision
+from llm_generic_bot.core.orchestrator import PermitDecision
 from llm_generic_bot.core.queue import CoalesceQueue
-from llm_generic_bot.features.dm_digest import DigestLogEntry
 from llm_generic_bot.features.news import NewsFeedItem, SummaryError
+from llm_generic_bot.infra import metrics
 
 pytestmark = pytest.mark.anyio("asyncio")
 
 
-class StubPermitGate:
-    def __init__(self) -> None:
-        self.allowed = False
-        self.calls: list[tuple[str, str | None, str | None]] = []
-
-    def permit(self, platform: str, channel: str | None, job: str | None = None) -> PermitDecision:
-        job_name = job or "job"
-        self.calls.append((platform, channel, job_name))
-        if job_name == "dm_digest" and not self.allowed:
-            return PermitDecision(allowed=False, reason="denied", retryable=True, job=job_name)
-        return PermitDecision(allowed=True, reason=None, retryable=True, job=job_name)
-
-
-class FlakyNewsSummary:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    async def summarize(self, item: NewsFeedItem, *, language: str = "ja") -> str:
-        del language
-        self.calls += 1
-        if self.calls == 1:
-            raise SummaryError("temporary", retryable=True)
-        if self.calls == 2:
-            raise SummaryError("fallback", retryable=False)
-        return f"summary:{item.title}"
+def _settings() -> Dict[str, Any]:
+    settings: Dict[str, Any] = json.loads(Path("config/settings.example.json").read_text(encoding="utf-8"))
+    for key in ("weather", "omikuji", "dm_digest", "report"):
+        cfg = settings.get(key)
+        if isinstance(cfg, dict):
+            cfg["enabled"] = False
+    news = settings["news"]
+    news["schedule"] = "00:00"
+    news["priority"] = 5
+    settings["cooldown"]["window_sec"] = 60
+    settings["profiles"]["discord"]["channel"] = "discord-news"
+    return settings
 
 
-class StaticLogProvider:
-    def __init__(self, entries: list[DigestLogEntry]) -> None:
-        self.entries = entries
-        self.calls = 0
-
-    async def collect(self, channel: str, *, limit: int) -> list[DigestLogEntry]:
-        del channel
-        self.calls += 1
-        assert limit >= len(self.entries)
-        return self.entries
+def _run_dispatch(scheduler: Any, text: str, *, created_at: float) -> None:
+    job = scheduler._jobs[0]
+    scheduler.queue.push(text, priority=job.priority, job=job.name, created_at=created_at, channel=job.channel)
 
 
-class EchoSummary:
-    async def summarize(self, text: str, *, max_events: int | None = None) -> str:
-        del max_events
-        return f"digest:{len(text.splitlines())}"
+def _providers(items: Iterable[NewsFeedItem], summarize: Any) -> tuple[Any, Any]:
+    async def _fetch(_url: str, *, limit: int | None = None) -> Iterable[NewsFeedItem]:
+        del _url, limit
+        return list(items)
+
+    return SimpleNamespace(fetch=_fetch), SimpleNamespace(summarize=summarize)
 
 
-class FlakySender:
-    def __init__(self) -> None:
-        self.attempts: list[dict[str, Any]] = []
-        self.fail_next = True
-
-    async def send(
-        self,
-        text: str,
-        channel: str | None = None,
-        *,
-        correlation_id: str | None = None,
-        job: str | None = None,
-        recipient_id: str | None = None,
-    ) -> None:
-        self.attempts.append(
-            {
-                "text": text,
-                "channel": channel,
-                "correlation_id": correlation_id,
-                "job": job,
-                "recipient": recipient_id,
-            }
-        )
-        if self.fail_next:
-            self.fail_next = False
-            raise RuntimeError("temporary failure")
-
-
-def _load_settings() -> dict[str, Any]:
-    data = json.loads(Path("config/settings.example.json").read_text(encoding="utf-8"))
-    data["weather"]["enabled"] = False
-    data["omikuji"]["enabled"] = False
-    return data
-
-
-@pytest.fixture()
+@pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
 
 
-@pytest.mark.usefixtures("anyio_backend")
-async def test_runtime_handles_permit_cooldown_and_provider_failures(monkeypatch: pytest.MonkeyPatch) -> None:
-    del monkeypatch
-    settings = _load_settings()
-    news_summary = FlakyNewsSummary()
-    flaky_sender = FlakySender()
-    log_provider = StaticLogProvider(
-        [
-            DigestLogEntry(datetime(2024, 1, 1, tzinfo=timezone.utc), "INFO", "start"),
-            DigestLogEntry(datetime(2024, 1, 1, 1, tzinfo=timezone.utc), "WARN", "warned"),
-        ]
-    )
-
-    async def fake_feed(_url: str, *, limit: int | None = None) -> list[NewsFeedItem]:
-        del limit
-        return [NewsFeedItem(title="headline", link="https://example.com", summary="prefill")]
-
-    settings["news"].update(
-        {
-            "max_items": 1,
-            "feed_provider": SimpleNamespace(fetch=fake_feed),
-            "summary_provider": SimpleNamespace(summarize=news_summary.summarize),
-            "suppress_cooldown": False,
-        }
-    )
-    settings["dm_digest"].update(
-        {
-            "log_provider": log_provider,
-            "summary_provider": EchoSummary(),
-            "sender": flaky_sender,
-            "max_attempts": 2,
-        }
-    )
-
+async def test_permit_denied_records_metrics(caplog: pytest.LogCaptureFixture) -> None:
+    metrics.reset_for_test()
+    settings = _settings()
     queue = CoalesceQueue(window_seconds=0.0, threshold=1)
-    gate = StubPermitGate()
-    scheduler, orchestrator, jobs = main_module.setup_runtime(
-        settings,
-        queue=queue,
-        permit_gate=gate,
-    )
-    del scheduler
 
-    news_job = jobs["news"]
-    platform = orchestrator._default_platform  # type: ignore[attr-defined]
-    channel = settings["news"].get("channel")
-    job_name = settings["news"].get("job", "news")
-    orchestrator._cooldown.note_post(platform, channel, job_name)
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
 
-    result_blocked = await news_job()
-    assert result_blocked is None
-    assert news_summary.calls == 0
+    fetcher, summarizer = _providers([NewsFeedItem("t", "https://example.com")], _summarize)
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
 
-    key = (platform or "-", channel or "-", job_name or "-")
-    history = orchestrator._cooldown.history.setdefault(key, deque())
-    history.clear()
+    class _Deny:
+        def permit(self, platform: str, channel: str | None, job: str) -> PermitDecision:
+            del platform, channel
+            return PermitDecision(allowed=False, reason="quota", retryable=False, job=f"{job}-denied")
 
-    result_ready = await news_job()
-    assert result_ready is not None
-    assert "prefill" in result_ready
-    assert news_summary.calls == 2
+    caplog.set_level("INFO", logger="llm_generic_bot.core.orchestrator")
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue, permit_gate=_Deny())
+    scheduler.jitter_enabled = False
 
-    dm_job = jobs["dm_digest"]
-    gate.allowed = False
-    await dm_job()
-    assert not flaky_sender.attempts
+    text = await jobs["news"]()
+    assert text
+    _run_dispatch(scheduler, text, created_at=0.0)
+    await scheduler.dispatch_ready_batches()
+    await orchestrator.flush()
 
-    gate.allowed = True
-    flaky_sender.fail_next = True
-    await dm_job()
-    assert len(flaky_sender.attempts) == 2
-    assert {attempt["job"] for attempt in flaky_sender.attempts} == {
-        settings["dm_digest"].get("job", "dm_digest")
-    }
+    denied = [record for record in caplog.records if record.message == "permit_denied"]
+    assert denied and denied[0].job == "news-denied"
+    assert metrics._AGGREGATOR.weekly_snapshot()["permit_denials"] == [
+        {"job": "news-denied", "platform": "discord", "channel": "discord-news", "reason": "quota", "retryable": "false"}
+    ]
+    await orchestrator.close()
+
+
+async def test_cooldown_resume_allows_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    metrics.reset_for_test()
+    settings = _settings()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+
+    current = 1_000_000.0
+    monkeypatch.setattr(time, "time", lambda: current)
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        return f"summary-{language}"
+
+    fetcher, summarizer = _providers([NewsFeedItem("title", "https://example.com", None)], _summarize)
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    scheduler.jitter_enabled = False
+    orchestrator._cooldown.note_post("discord", "discord-news", "news")
+
+    assert await jobs["news"]() is None
+    current += settings["cooldown"]["window_sec"] + 1
+    text = await jobs["news"]()
+    assert text
+    _run_dispatch(scheduler, text, created_at=current)
+    await scheduler.dispatch_ready_batches(current)
+    await orchestrator.flush()
+
+    snapshot = metrics._AGGREGATOR.weekly_snapshot()
+    assert snapshot["success_rate"]["news"]["success"] == 1
+    await orchestrator.close()
+
+
+async def test_summary_provider_retry_and_fallback(caplog: pytest.LogCaptureFixture) -> None:
+    metrics.reset_for_test()
+    settings = _settings()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+
+    attempts = {"value": 0}
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del language
+        attempts["value"] += 1
+        if attempts["value"] == 1:
+            raise SummaryError("temporary", retryable=True)
+        raise SummaryError("fatal", retryable=False)
+
+    fetcher, summarizer = _providers([NewsFeedItem("fallback", "https://example.com", None)], _summarize)
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+    caplog.set_level("WARNING", logger="llm_generic_bot.features.news")
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    scheduler.jitter_enabled = False
+
+    text = await jobs["news"]()
+    assert text
+    _run_dispatch(scheduler, text, created_at=0.0)
+    await scheduler.dispatch_ready_batches()
+    await orchestrator.flush()
+
+    retry = [r for r in caplog.records if r.message == "news_summary_retry"]
+    fallback = [r for r in caplog.records if r.message == "news_summary_fallback"]
+    assert len(retry) == 1 and retry[0].attempt == 1
+    assert len(fallback) == 1 and fallback[0].reason == "fatal"
+    assert metrics._AGGREGATOR.weekly_snapshot()["success_rate"]["news"]["success"] == 1
+    await orchestrator.close()

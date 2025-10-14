@@ -8,12 +8,14 @@ from .reporting import (
     reset_for_test,
     set_retention_days,
     weekly_snapshot,
+    _AGGREGATOR,
 )
 from .service import (
     CounterSnapshot,
     InMemoryMetricsService,
     MetricsRecorder,
     MetricsService,
+    NullMetricsRecorder,
     ObservationSnapshot,
     WeeklyMetricsSnapshot,
     collect_weekly_snapshot,
@@ -25,6 +27,7 @@ __all__ = [
     "InMemoryMetricsService",
     "MetricsRecorder",
     "MetricsService",
+    "NullMetricsRecorder",
     "ObservationSnapshot",
     "WeeklyMetricsSnapshot",
     "collect_weekly_snapshot",
@@ -36,4 +39,8 @@ __all__ = [
     "reset_for_test",
     "set_retention_days",
     "weekly_snapshot",
+    "_AGGREGATOR",
 ]
+
+# 後方互換のために内部実装も公開する
+__all__.sort()

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Mapping, Protocol, Sequence
 
+from ..infra import metrics as metrics_module
+
 
 @dataclass(frozen=True)
 class DigestLogEntry:
@@ -35,6 +37,7 @@ class DMSender(Protocol):
 
 class PermitDecisionLike(Protocol):
     allowed: bool
+    reason: str | None
     retryable: bool
     job: str | None
 
@@ -72,18 +75,26 @@ async def build_dm_digest(
     summary_text = await summarizer.summarize(summary_input, max_events=max_events)
 
     decision = permit("discord_dm", recipient_id, job)
+    job_name = decision.job or job
     if not decision.allowed:
+        retryable_flag = "true" if decision.retryable else "false"
+        metrics_module.report_permit_denied(
+            job=job_name,
+            platform="discord_dm",
+            channel=recipient_id,
+            reason=decision.reason or "unknown",
+            permit_tags={"retryable": retryable_flag},
+        )
         logger.info(
             "dm_digest_permit_denied",
             extra={
                 "event": "dm_digest_permit_denied",
-                "job": decision.job or job,
+                "job": job_name,
                 "recipient": recipient_id,
                 "retryable": decision.retryable,
             },
         )
         return None
-    job_name = decision.job or job
 
     body = f"{header}\n{summary_text}" if header else summary_text
     max_attempts = _positive_int(cfg.get("max_attempts"), default=2)

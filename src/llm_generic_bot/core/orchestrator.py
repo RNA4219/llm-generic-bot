@@ -221,7 +221,8 @@ class Orchestrator:
             return
 
         if not self._dedupe.permit(request.text):
-            self._metrics.increment("send.duplicate", tags)
+            duplicate_tags = {**tags, "status": "duplicate", "retryable": "false"}
+            self._metrics.increment("send.duplicate", duplicate_tags)
             self._logger.info(
                 "duplicate_skipped",
                 extra={
@@ -230,6 +231,8 @@ class Orchestrator:
                     "job": job_name,
                     "platform": request.platform,
                     "channel": request.channel,
+                    "status": "duplicate",
+                    "retryable": False,
                 },
             )
             return

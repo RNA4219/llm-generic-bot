@@ -40,6 +40,12 @@ class StubDedupe(NearDuplicateFilter):
         return True
 
 
+class RejectingDedupe(StubDedupe):
+    def permit(self, text: str) -> bool:  # type: ignore[override]
+        _ = text
+        return False
+
+
 class StubSender:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str | None]] = []
@@ -71,17 +77,22 @@ class MetricsStub(MetricsRecorder):
 
     def __init__(self) -> None:
         self.counts = {}
+        self.tag_history: MutableMapping[str, list[Mapping[str, str]]] = {}
 
     def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
         label = tags.get("job") if tags else "-"
         counter = self.counts.setdefault(name, Counter())
         counter[label] += 1
+        history = self.tag_history.setdefault(name, [])
+        history.append(dict(tags or {}))
 
     def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
         # durationsは今回のテストでは利用しない
         label = tags.get("job") if tags else "-"
         counter = self.counts.setdefault(name, Counter())
         counter[label] += 1
+        history = self.tag_history.setdefault(name, [])
+        history.append(dict(tags or {}))
 
 
 async def test_orchestrator_logs_success_with_correlation_id(caplog: pytest.LogCaptureFixture) -> None:
@@ -204,6 +215,55 @@ async def test_orchestrator_logs_permit_denial(caplog: pytest.LogCaptureFixture)
     assert denial_record.correlation_id == correlation_id
     assert denial_record.reason == "quota_exceeded"
     assert metrics.counts["send.denied"]["weather"] == 1
+
+
+async def test_orchestrator_logs_duplicate_skip_with_tags(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sender = StubSender()
+    cooldown = StubCooldown()
+    dedupe = RejectingDedupe()
+    metrics = MetricsStub()
+
+    def permit(_: str, __: str | None, ___: str) -> PermitDecision:
+        return PermitDecision.allow()
+
+    orchestrator = Orchestrator(
+        sender=sender,
+        cooldown=cooldown,
+        dedupe=dedupe,
+        permit=permit,
+        metrics=metrics,
+        logger=logging.getLogger("test.orchestrator"),
+        platform="discord",
+    )
+
+    caplog.set_level(logging.INFO)
+    correlation_id = await orchestrator.enqueue(
+        "Duplicate拒否を確認",
+        job="weather",
+        platform="discord",
+        channel="general",
+    )
+
+    await orchestrator.flush()
+    await orchestrator.close()
+
+    assert sender.sent == []
+
+    duplicate_record = next(
+        record for record in caplog.records if getattr(record, "event", "") == "send_duplicate_skip"
+    )
+    assert duplicate_record.correlation_id == correlation_id
+    assert duplicate_record.status == "duplicate"
+    assert duplicate_record.retryable is False
+    assert duplicate_record.job == "weather"
+
+    assert metrics.counts["send.duplicate"]["weather"] == 1
+    duplicate_tags = metrics.tag_history["send.duplicate"][-1]
+    assert duplicate_tags["job"] == "weather"
+    assert duplicate_tags["status"] == "duplicate"
+    assert duplicate_tags["retryable"] == "false"
 
 
 async def test_orchestrator_processes_multiple_queue_items() -> None:

@@ -13,9 +13,11 @@ pytestmark = pytest.mark.anyio("asyncio")
 class StubSender:
     def __init__(self) -> None:
         self.sent: List[str] = []
+        self.jobs: List[str] = []
 
     async def send(self, text: str, channel: str | None = None, *, job: str) -> None:
         self.sent.append(text if channel is None else f"{channel}:{text}")
+        self.jobs.append(job)
 
 
 @pytest.fixture
@@ -88,3 +90,49 @@ async def test_scheduler_immediate_when_jitter_disabled(monkeypatch: pytest.Monk
 
     assert list(delays) == [0.0]
     assert sender.sent == ["only"]
+
+
+async def test_scheduler_passes_jitter_range_and_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    sender = StubSender()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=5)
+    delays: deque[float] = deque()
+
+    async def fake_sleep(duration: float) -> None:
+        delays.append(duration)
+
+    jitter_calls: List[tuple[int, int]] = []
+    clash_flags: deque[bool] = deque()
+    boundaries = deque(["min", "max"])
+
+    def fake_next_slot(ts: float, clash: bool, *, jitter_range: tuple[int, int]) -> float:
+        jitter_calls.append(jitter_range)
+        clash_flags.append(clash)
+        boundary = boundaries.popleft()
+        offset = float(jitter_range[0] if boundary == "min" else jitter_range[1])
+        return ts + offset
+
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", fake_next_slot)
+
+    scheduler = Scheduler(
+        tz="UTC",
+        sender=sender,
+        queue=queue,
+        jitter_enabled=True,
+        jitter_range=(5, 10),
+        sleep=fake_sleep,
+    )
+
+    base = 2000.0
+    scheduler._last_dispatch_ts = base + 1.0
+
+    queue.push("first", priority=2, job="job-a", created_at=base)
+    await scheduler.dispatch_ready_batches(base)
+
+    queue.push("second", priority=2, job="job-b", created_at=base)
+    await scheduler.dispatch_ready_batches(base)
+
+    assert list(delays) == [5.0, 10.0]
+    assert jitter_calls == [(5, 10), (5, 10)]
+    assert list(clash_flags) == [True, True]
+    assert sender.sent == ["first", "second"]
+    assert sender.jobs == ["job-a", "job-b"]

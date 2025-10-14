@@ -3,7 +3,7 @@
 ## 現在の完成度
 - `main.py` はプロキシ兼エントリーポイントとして `runtime.setup.setup_runtime` を呼び出し、スケジューラ起動と終了時のオーケストレータ停止のみを担う。ランタイム構築ロジックは `src/llm_generic_bot/runtime/setup/__init__.py` を公開エントリーポイントとしつつ、`src/llm_generic_bot/runtime/setup/reports.py` や `src/llm_generic_bot/runtime/setup/runtime_helpers.py` などの補助モジュールへ分割済み。
 - `setup_runtime` は `JobContext` を経由して各ジョブファクトリへ依存を渡し、プロバイダ参照は `src/llm_generic_bot/runtime/jobs/common.py` の `resolve_object` に集約された文字列解決ロジックで `module:attr` / `module.attr` 形式からロードされる。これにより設定差し替えだけでダミー実装や本番実装を切り替えつつ、共通のセットアップフローを維持できる。
-- 天気機能は OpenWeather から都市ごとの現在値を取得し、30℃/35℃閾値や前日比ΔTをもとに注意枠を生成しつつ today/yesterday キャッシュをローテーションしている。
+- `build_weather_jobs` は OpenWeather からの都市別現在値を配信する Weather 投稿ジョブを構築し、設定で指定された単一/複数スケジュールを 1 件の `ScheduledJob` に束ねつつ today/yesterday キャッシュをローテーションし、30℃/35℃ 閾値や前日比 ΔT をもとに注意枠を生成している。
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
 - PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
   - `src/llm_generic_bot/runtime/setup/__init__.py` の `setup_runtime` は `src/llm_generic_bot/runtime/setup/runtime_helpers.py` を介して `PermitGate.permit` の結果を `PermitDecision` に包み直し、許可時はジョブ名を差し替えつつ `Orchestrator.enqueue` へ渡す。
@@ -48,8 +48,6 @@
 ## Sprint 3: 運用・可観測性
 - [OPS-02] 週次サマリ（`core/orchestrator.py`, `features/report.py`）: 成果・失敗を集計し運用向けに通知。
 - [OPS-03] 設定再読込ログ（`src/llm_generic_bot/config/loader.py`, `src/llm_generic_bot/runtime/setup/__init__.py`, `config/*`）: リロード時の差分検出と監査ログ。
-- [OPS-04] ランタイムメトリクス（`src/llm_generic_bot/infra/metrics/__init__.py` 新設、`src/llm_generic_bot/infra/metrics/reporting.py`/`src/llm_generic_bot/infra/metrics/service.py` 連携）: スケジューラ遅延や送信成功率を可視化。
-- [OPS-03] 設定再読込ログ（`src/llm_generic_bot/config/loader.py`, `src/llm_generic_bot/runtime/setup/__init__.py`）: リロード時の差分検出と監査ログ。
 - [OPS-04] ランタイムメトリクス（`src/llm_generic_bot/infra/metrics/__init__.py`, `src/llm_generic_bot/infra/metrics/reporting.py`, `src/llm_generic_bot/infra/metrics/service.py`）: スケジューラ遅延や送信成功率を可視化。
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。
 
@@ -62,7 +60,6 @@
 - Sprint 1: `tests/adapters/test_retry_policy.py` に JSON ログのスナップショットケースを追加し、`tests/core/test_coalesce_queue.py` へ優先度逆転ガードの境界ケースを拡張する。同時に `tests/core/test_quota_gate.py` では Permit 拒否理由の種類ごとに `llm_generic_bot.core.arbiter` のタグ付けを検証し、構造化ログ側と整合させる。
 - Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携はカバーしているため、`tests/core/test_scheduler_jitter.py` でのジッタ境界ケースと、Permit 拒否・クールダウン解除後再送を扱う結合テストを追補する。
 - Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`src/llm_generic_bot/infra/metrics/__init__.py`（新設予定）と `src/llm_generic_bot/infra/metrics/reporting.py`/`src/llm_generic_bot/infra/metrics/service.py` の連携、および設定再読込監査のログパス（`config` パッケージ想定）をスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
-- Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`src/llm_generic_bot/infra/metrics/__init__.py`（新設予定）と設定再読込監査のログパス（`config` パッケージ想定）をスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
 
 ### 参照タスク
 - Sprint 1 詳細: [`docs/tasks/sprint1.md`](tasks/sprint1.md)

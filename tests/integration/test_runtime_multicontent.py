@@ -225,6 +225,24 @@ async def test_setup_runtime_registers_all_jobs(monkeypatch: pytest.MonkeyPatch)
     await orchestrator.close()
 
 
+async def test_setup_runtime_skips_weather_job_when_disabled() -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+
+    settings: Dict[str, Any] = {
+        "timezone": "UTC",
+        "profiles": {"discord": {"enabled": True, "channel": "general"}},
+        "weather": {"enabled": False, "schedule": "00:00"},
+    }
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+
+    try:
+        assert "weather" not in jobs
+        assert all(job.name != "weather" for job in scheduler._jobs)
+    finally:
+        await orchestrator.close()
+
+
 async def test_weekly_report_job_uses_metrics_and_template(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

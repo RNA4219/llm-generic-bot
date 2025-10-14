@@ -5,7 +5,7 @@ from typing import Any, Optional, cast
 
 from ...features.weather import ReactionHistoryProvider
 from . import JobContext, ScheduledJob
-from .common import as_mapping, get_float, resolve_object
+from .common import as_mapping, get_float, is_enabled, resolve_object
 
 
 def _resolve_history_provider(value: object) -> Optional[ReactionHistoryProvider]:
@@ -19,6 +19,8 @@ def _resolve_history_provider(value: object) -> Optional[ReactionHistoryProvider
 
 def build_weather_jobs(context: JobContext) -> list[ScheduledJob]:
     weather_cfg = as_mapping(context.settings.get("weather"))
+    if not weather_cfg or not is_enabled(weather_cfg):
+        return []
 
     schedule_value = weather_cfg.get("schedule")
     schedule = schedule_value if isinstance(schedule_value, str) else "21:00"

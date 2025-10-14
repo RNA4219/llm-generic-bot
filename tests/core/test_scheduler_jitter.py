@@ -13,9 +13,11 @@ pytestmark = pytest.mark.anyio("asyncio")
 class StubSender:
     def __init__(self) -> None:
         self.sent: List[str] = []
+        self.jobs: List[str] = []
 
     async def send(self, text: str, channel: str | None = None, *, job: str) -> None:
         self.sent.append(text if channel is None else f"{channel}:{text}")
+        self.jobs.append(job)
 
 
 @pytest.fixture
@@ -88,3 +90,77 @@ async def test_scheduler_immediate_when_jitter_disabled(monkeypatch: pytest.Monk
 
     assert list(delays) == [0.0]
     assert sender.sent == ["only"]
+
+
+async def test_scheduler_jitter_respects_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    sender = StubSender()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=5)
+    delays: deque[float] = deque()
+
+    async def fake_sleep(duration: float) -> None:
+        delays.append(duration)
+
+    jitter_values = deque([10.0, 40.0])
+    observed_ranges: deque[tuple[int, int]] = deque()
+
+    def fake_next_slot(
+        ts: float,
+        clash: bool,
+        jitter_range: tuple[int, int] = (60, 180),
+    ) -> float:
+        observed_ranges.append(jitter_range)
+        delta = jitter_values.popleft()
+        return ts + delta
+
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", fake_next_slot)
+
+    scheduler = Scheduler(
+        tz="UTC",
+        sender=sender,
+        queue=queue,
+        jitter_enabled=True,
+        jitter_range=(10, 40),
+        sleep=fake_sleep,
+    )
+
+    base = 2000.0
+    queue.push("min", priority=1, job="daily", created_at=base)
+    await scheduler.dispatch_ready_batches(base)
+
+    queue.push("max", priority=1, job="daily", created_at=base)
+    await scheduler.dispatch_ready_batches(base)
+
+    assert list(observed_ranges) == [(10, 40), (10, 40)]
+    assert list(delays) == [10.0, 40.0]
+    assert sender.sent == ["min", "max"]
+
+
+async def test_scheduler_preserves_job_with_jitter(monkeypatch: pytest.MonkeyPatch) -> None:
+    sender = StubSender()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=5)
+    delays: deque[float] = deque()
+
+    async def fake_sleep(duration: float) -> None:
+        delays.append(duration)
+
+    def fake_next_slot(ts: float, clash: bool, jitter_range: tuple[int, int]) -> float:
+        return ts + 15.0
+
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", fake_next_slot)
+
+    scheduler = Scheduler(
+        tz="UTC",
+        sender=sender,
+        queue=queue,
+        jitter_enabled=True,
+        jitter_range=(10, 40),
+        sleep=fake_sleep,
+    )
+
+    base = 3000.0
+    queue.push("payload", priority=1, job="important", created_at=base)
+    await scheduler.dispatch_ready_batches(base)
+
+    assert list(delays) == [15.0]
+    assert sender.sent == ["payload"]
+    assert sender.jobs == ["important"]

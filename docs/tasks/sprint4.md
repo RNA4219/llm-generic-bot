@@ -1,17 +1,17 @@
 ---
 sprint: 4
-status: completed
+status: completed  # sprint closed
 updated: 2025-10-14
-known_issues: []
+known_issues: []  # 完了時点で未発生
 ---
 
 # Sprint 4 タスクリスト
 
 | 状態 | ID | 要約 | 対象モジュール | 完了条件 | 備考 | 先行着手テスト |
 |:----:|:---|:-----|:---------------|:---------|:-----|:----------------|
-| [x] | OPS-08 | ジッタ境界と Permit 連携テスト追加 | `tests/core/test_scheduler_jitter.py` | ジッタの最小/最大遅延と Permit 判定の相互作用をカバーするテストを先に追加し、必要なら `Scheduler.next_slot` の境界処理を補強する。 | テスト済み: `pytest tests/core/test_scheduler_jitter.py -q` | `pytest tests/core/test_scheduler_jitter.py -q` |
-| [x] | OPS-09 | `send_duplicate_skip` ログ/メトリクス検証 | `tests/core/test_structured_logging.py` | Orchestrator の重複スキップ経路で構造化ログとメトリクスタグが一致することをテストから固定し、必要なログ/メトリクス更新を実装する。 | テスト済み: `pytest tests/core/test_structured_logging.py -q` | `pytest tests/core/test_structured_logging.py -q` |
-| [x] | OPS-10 | News/おみくじ/DM 異常系結合テスト | `tests/integration/test_runtime_multicontent_failures.py` | Permit 拒否・クールダウン解除後再送・プロバイダ失敗時のリカバリを再現する結合テストを追加し、必要に応じて実装を調整する。 | テスト済み: `pytest tests/integration/test_runtime_multicontent_failures.py -q` | `pytest tests/integration/test_runtime_multicontent_failures.py -q` |
+| [x] | OPS-08 | ジッタ境界と Permit 連携テスト追加 | `tests/core/test_scheduler_jitter.py` | ジッタの最小/最大遅延と Permit 判定の相互作用をカバーするテストを先に追加し、必要なら `Scheduler.next_slot` の境界処理を補強する。 | テスト結果: ✅ `pytest tests/core/test_scheduler_jitter.py -q` | `pytest tests/core/test_scheduler_jitter.py -q` |
+| [x] | OPS-09 | `send_duplicate_skip` ログ/メトリクス検証 | `tests/core/test_structured_logging.py` | Orchestrator の重複スキップ経路で構造化ログとメトリクスタグが一致することをテストから固定し、必要なログ/メトリクス更新を実装する。 | テスト結果: ✅ `pytest tests/core/test_structured_logging.py -q` | `pytest tests/core/test_structured_logging.py -q` |
+| [x] | OPS-10 | News/おみくじ/DM 異常系結合テスト | `tests/integration/test_runtime_multicontent_failures.py` | Permit 拒否・クールダウン解除後再送・プロバイダ失敗時のリカバリを再現する結合テストを追加し、必要に応じて実装を調整する。 | テスト結果: ✅ `pytest tests/integration/test_runtime_multicontent_failures.py -q` | `pytest tests/integration/test_runtime_multicontent_failures.py -q` |
 
 ## 進行手順
 1. ✅ 完了済み: 各タスクのテストケースを追加し、`tests/core/test_scheduler_jitter.py`・`tests/core/test_structured_logging.py`・`tests/integration/test_runtime_multicontent_failures.py` で期待挙動を固定済み。

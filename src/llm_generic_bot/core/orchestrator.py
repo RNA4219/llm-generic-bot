@@ -281,6 +281,7 @@ class Orchestrator:
             finally:
                 if suppress_backend and original_backend is not None:
                     setattr(aggregator, "backend", original_backend)
+            self._metrics.observe("send.duration", duration, {**tags, "unit": "seconds"})
             self._metrics.increment("send.failure", failure_tags)
             failure_metadata = {
                 "correlation_id": request.correlation_id,

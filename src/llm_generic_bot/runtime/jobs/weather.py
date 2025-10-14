@@ -36,7 +36,12 @@ def build_weather_jobs(context: JobContext) -> list[ScheduledJob]:
     )
 
     engagement_cfg = as_mapping(weather_cfg.get("engagement"))
-    weather_params = inspect.signature(context.build_weather_post).parameters
+    target_callable = getattr(
+        context.build_weather_post,
+        "__wrapped__",
+        context.build_weather_post,
+    )
+    weather_params = inspect.signature(target_callable).parameters
     history_provider: Optional[ReactionHistoryProvider] = None
     if "reaction_history_provider" in weather_params:
         provider_value = engagement_cfg.get("history_provider")

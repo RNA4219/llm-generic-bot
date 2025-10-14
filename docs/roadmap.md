@@ -22,9 +22,12 @@
     - `llm_generic_bot.runtime.providers.SAMPLE_DM_LOG`: DM ログ収集のサンプル実装。
     - `llm_generic_bot.runtime.providers.SAMPLE_DM_SUMMARY`: DM 要約生成のサンプル実装。
     - `llm_generic_bot.runtime.providers.SAMPLE_DM_SENDER`: DM 送信のサンプル実装。
-- `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。
+- `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。→ 実装済み
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
-- 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整、Permit 失敗時の再評価フロー整備、Permit クォータの多段構成およびバッチ再送ガード強化など運用チューニングである。
+- 残課題は以下の運用チューニングに限定される:
+  - Permit/ジッタ/バッチ閾値のパラメータ調整。
+  - Permit 失敗時の再評価フロー整備。
+  - Permit クォータの多段構成設計とバッチ再送ガード強化。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ
 - [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）: 429/5xx を指数バックオフ付きで再送し、上限回数で失敗をロギング。

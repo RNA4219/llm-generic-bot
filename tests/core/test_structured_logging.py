@@ -75,24 +75,41 @@ class FailingSender(StubSender):
 
 @dataclass
 class MetricsStub(MetricsRecorder):
-    counts: MutableMapping[str, Counter[str]]
+    counts: MutableMapping[str, Counter[tuple[tuple[str, str], ...]]]
 
     def __init__(self) -> None:
         self.counts = {}
         self.last_tags: dict[str, Mapping[str, str] | None] = {}
 
+    @staticmethod
+    def _normalize(tags: Mapping[str, str] | None) -> tuple[tuple[str, str], ...]:
+        if not tags:
+            return ()
+        return tuple(sorted(tags.items()))
+
     def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
-        label = tags.get("job") if tags else "-"
         counter = self.counts.setdefault(name, Counter())
-        counter[label] += 1
+        counter[self._normalize(tags)] += 1
         self.last_tags[name] = dict(tags) if tags else None
 
     def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
-        # durationsは今回のテストでは利用しない
-        label = tags.get("job") if tags else "-"
         counter = self.counts.setdefault(name, Counter())
-        counter[label] += 1
+        counter[self._normalize(tags)] += 1
         self.last_tags[name] = dict(tags) if tags else None
+
+    def get_count(self, name: str, **tags: str) -> int:
+        counter = self.counts.get(name)
+        if counter is None:
+            return 0
+        if not tags:
+            return sum(counter.values())
+        expected = tuple(sorted(tags.items()))
+        total = 0
+        for recorded_tags, count in counter.items():
+            recorded_dict = dict(recorded_tags)
+            if all(recorded_dict.get(key) == value for key, value in expected):
+                total += count
+        return total
 
 
 async def test_orchestrator_logs_success_with_correlation_id(caplog: pytest.LogCaptureFixture) -> None:
@@ -133,7 +150,7 @@ async def test_orchestrator_logs_success_with_correlation_id(caplog: pytest.LogC
     )
     assert success_record.correlation_id == correlation_id
     assert success_record.job == "weather"
-    assert metrics.counts["send.success"]["weather"] == 1
+    assert metrics.get_count("send.success", job="weather") == 1
 
 
 async def test_orchestrator_logs_failure_and_metrics(caplog: pytest.LogCaptureFixture) -> None:
@@ -172,8 +189,11 @@ async def test_orchestrator_logs_failure_and_metrics(caplog: pytest.LogCaptureFi
     )
     assert failure_record.correlation_id == correlation_id
     assert failure_record.error_type == "RuntimeError"
-    assert metrics.counts["send.failure"]["weather"] == 1
-    assert metrics.counts["send.duration"]["weather"] == 1
+    assert metrics.get_count("send.failure", job="weather") == 1
+    assert metrics.get_count("send.duration", job="weather", unit="seconds") == 1
+    duration_tags = metrics.last_tags["send.duration"]
+    assert duration_tags is not None
+    assert duration_tags["unit"] == "seconds"
 
 
 async def test_orchestrator_logs_permit_denial(caplog: pytest.LogCaptureFixture) -> None:
@@ -214,7 +234,7 @@ async def test_orchestrator_logs_permit_denial(caplog: pytest.LogCaptureFixture)
     )
     assert denial_record.correlation_id == correlation_id
     assert denial_record.reason == "quota_exceeded"
-    assert metrics.counts["send.denied"]["weather"] == 1
+    assert metrics.get_count("send.denied", job="weather") == 1
 
 
 async def test_orchestrator_logs_duplicate_skip(caplog: pytest.LogCaptureFixture) -> None:

@@ -205,20 +205,51 @@ class Orchestrator:
             "platform": request.platform,
             "channel": request.channel or "-",
         }
+        aggregator = getattr(metrics_module, "_AGGREGATOR", None)
+        aggregator_configured = bool(
+            getattr(aggregator, "backend_configured", False)
+        ) if aggregator is not None else False
         metrics_enabled = not isinstance(self._metrics, NullMetricsRecorder)
+        if not metrics_enabled and aggregator_configured:
+            metrics_enabled = True
+
+        def _suppress_backend(
+            include_self_backend: bool,
+        ) -> tuple[bool, MetricsRecorder | None]:
+            if aggregator is None:
+                return False, None
+            backend = getattr(aggregator, "backend", None)
+            if backend is None:
+                return False, None
+            if isinstance(self._metrics, NullMetricsRecorder):
+                setattr(aggregator, "backend", metrics_module.NullMetricsRecorder())
+                return True, backend
+            if include_self_backend and backend is self._metrics:
+                setattr(aggregator, "backend", metrics_module.NullMetricsRecorder())
+                return True, backend
+            return False, None
 
         if not decision.allowed:
             retryable_flag = "true" if decision.retryable else "false"
             denied_tags = {**tags, "retryable": retryable_flag}
             reason = decision.reason or "unknown"
             if metrics_enabled:
-                metrics_module.report_permit_denied(
-                    job=job_name,
-                    platform=request.platform,
-                    channel=request.channel,
-                    reason=reason,
-                    permit_tags={"retryable": retryable_flag},
-                )
+                suppress_backend, original_backend = _suppress_backend(False)
+                try:
+                    metrics_module.report_permit_denied(
+                        job=job_name,
+                        platform=request.platform,
+                        channel=request.channel,
+                        reason=reason,
+                        permit_tags={"retryable": retryable_flag},
+                    )
+                finally:
+                    if (
+                        suppress_backend
+                        and aggregator is not None
+                        and original_backend is not None
+                    ):
+                        setattr(aggregator, "backend", original_backend)
             denied_metadata = {
                 "correlation_id": request.correlation_id,
                 "reason": decision.reason,
@@ -266,15 +297,7 @@ class Orchestrator:
             error_type = exc.__class__.__name__
             failure_tags = {**tags, "error": error_type}
             if metrics_enabled:
-                aggregator = getattr(metrics_module, "_AGGREGATOR", None)
-                original_backend: MetricsRecorder | None = None
-                suppress_backend = False
-                if aggregator is not None:
-                    backend = getattr(aggregator, "backend", None)
-                    if backend is self._metrics:
-                        original_backend = backend
-                        setattr(aggregator, "backend", metrics_module.NullMetricsRecorder())
-                        suppress_backend = True
+                suppress_backend, original_backend = _suppress_backend(True)
                 try:
                     await metrics_module.report_send_failure(
                         job=job_name,
@@ -284,7 +307,11 @@ class Orchestrator:
                         error_type=error_type,
                     )
                 finally:
-                    if suppress_backend and original_backend is not None:
+                    if (
+                        suppress_backend
+                        and aggregator is not None
+                        and original_backend is not None
+                    ):
                         setattr(aggregator, "backend", original_backend)
             self._metrics.observe("send.duration", duration, {**tags, "unit": "seconds"})
             self._metrics.increment("send.failure", failure_tags)
@@ -334,13 +361,22 @@ class Orchestrator:
             log_extra["engagement_score"] = request.engagement_score
             permit_tags = {"engagement_score": formatted_score}
         if metrics_enabled:
-            await metrics_module.report_send_success(
-                job=job_name,
-                platform=request.platform,
-                channel=request.channel,
-                duration_seconds=duration,
-                permit_tags=permit_tags,
-            )
+            suppress_backend, original_backend = _suppress_backend(False)
+            try:
+                await metrics_module.report_send_success(
+                    job=job_name,
+                    platform=request.platform,
+                    channel=request.channel,
+                    duration_seconds=duration,
+                    permit_tags=permit_tags,
+                )
+            finally:
+                if (
+                    suppress_backend
+                    and aggregator is not None
+                    and original_backend is not None
+                ):
+                    setattr(aggregator, "backend", original_backend)
         metadata = {"correlation_id": request.correlation_id}
         if request.engagement_score is not None:
             metadata["engagement_score"] = request.engagement_score

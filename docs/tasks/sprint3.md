@@ -18,7 +18,7 @@ known_issues: []
 1. ✅ 完了済み: `tests/` に対応テストファイルのスケルトンを追加し、計測対象とログフォーマットを固定済み。
 2. `config/settings.example.json` を参照し、週次サマリ用 Permit・通知チャンネル設定の追加差分を設計する。
 3. `src/llm_generic_bot/config/loader.py` のリロード経路（必要に応じて `runtime/setup/__init__.py` との連携）を調査し、差分検出ロジックの挿入ポイントを確定する。
-4. ✅ 完了済み: `src/llm_generic_bot/core/orchestrator.py` と `infra/metrics` パッケージ（`__init__.py`、`reporting.py`、`service.py`）の API 合意を整理し、`reporting.configure_backend` を含む現行ファサードでメトリクス配信とログの整合を担保済み。
+4. ✅ 完了済み: `src/llm_generic_bot/core/orchestrator.py` と `src/llm_generic_bot/infra/metrics/`（`__init__.py`、`reporting.py`、`service.py`）の API 合意を整理し、`reporting.configure_backend` を含む現行ファサードでメトリクス配信とログの整合を担保済み。
 5. `src/llm_generic_bot/runtime/setup/__init__.py` と `src/llm_generic_bot/runtime/setup/runtime_helpers.py` の連携を調査し、週次レポート登録とランタイム初期化の挙動を把握する。
 6. `pytest -q`, `mypy src`, `ruff check .` を順に実行し、品質ゲート通過を確認する。
 

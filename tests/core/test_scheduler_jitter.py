@@ -92,7 +92,7 @@ async def test_scheduler_immediate_when_jitter_disabled(monkeypatch: pytest.Monk
     assert sender.sent == ["only"]
 
 
-async def test_scheduler_passes_jitter_range_and_job(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_scheduler_jitter_respects_range(monkeypatch: pytest.MonkeyPatch) -> None:
     sender = StubSender()
     queue = CoalesceQueue(window_seconds=0.0, threshold=5)
     delays: deque[float] = deque()
@@ -100,16 +100,17 @@ async def test_scheduler_passes_jitter_range_and_job(monkeypatch: pytest.MonkeyP
     async def fake_sleep(duration: float) -> None:
         delays.append(duration)
 
-    jitter_calls: List[tuple[int, int]] = []
-    clash_flags: deque[bool] = deque()
-    boundaries = deque(["min", "max"])
+    jitter_values = deque([10.0, 40.0])
+    observed_ranges: deque[tuple[int, int]] = deque()
 
-    def fake_next_slot(ts: float, clash: bool, *, jitter_range: tuple[int, int]) -> float:
-        jitter_calls.append(jitter_range)
-        clash_flags.append(clash)
-        boundary = boundaries.popleft()
-        offset = float(jitter_range[0] if boundary == "min" else jitter_range[1])
-        return ts + offset
+    def fake_next_slot(
+        ts: float,
+        clash: bool,
+        jitter_range: tuple[int, int] = (60, 180),
+    ) -> float:
+        observed_ranges.append(jitter_range)
+        delta = jitter_values.popleft()
+        return ts + delta
 
     monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", fake_next_slot)
 
@@ -118,21 +119,48 @@ async def test_scheduler_passes_jitter_range_and_job(monkeypatch: pytest.MonkeyP
         sender=sender,
         queue=queue,
         jitter_enabled=True,
-        jitter_range=(5, 10),
+        jitter_range=(10, 40),
         sleep=fake_sleep,
     )
 
     base = 2000.0
-    scheduler._last_dispatch_ts = base + 1.0
-
-    queue.push("first", priority=2, job="job-a", created_at=base)
+    queue.push("min", priority=1, job="daily", created_at=base)
     await scheduler.dispatch_ready_batches(base)
 
-    queue.push("second", priority=2, job="job-b", created_at=base)
+    queue.push("max", priority=1, job="daily", created_at=base)
     await scheduler.dispatch_ready_batches(base)
 
-    assert list(delays) == [5.0, 10.0]
-    assert jitter_calls == [(5, 10), (5, 10)]
-    assert list(clash_flags) == [True, True]
-    assert sender.sent == ["first", "second"]
-    assert sender.jobs == ["job-a", "job-b"]
+    assert list(observed_ranges) == [(10, 40), (10, 40)]
+    assert list(delays) == [10.0, 40.0]
+    assert sender.sent == ["min", "max"]
+
+
+async def test_scheduler_preserves_job_with_jitter(monkeypatch: pytest.MonkeyPatch) -> None:
+    sender = StubSender()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=5)
+    delays: deque[float] = deque()
+
+    async def fake_sleep(duration: float) -> None:
+        delays.append(duration)
+
+    def fake_next_slot(ts: float, clash: bool, jitter_range: tuple[int, int]) -> float:
+        return ts + 15.0
+
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", fake_next_slot)
+
+    scheduler = Scheduler(
+        tz="UTC",
+        sender=sender,
+        queue=queue,
+        jitter_enabled=True,
+        jitter_range=(10, 40),
+        sleep=fake_sleep,
+    )
+
+    base = 3000.0
+    queue.push("payload", priority=1, job="important", created_at=base)
+    await scheduler.dispatch_ready_batches(base)
+
+    assert list(delays) == [15.0]
+    assert sender.sent == ["payload"]
+    assert sender.jobs == ["important"]

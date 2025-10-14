@@ -5,22 +5,18 @@ from __future__ import annotations
 #   削除プロセス: runtime/setup/runtime_helpers.resolve_sender を設定サービスへ昇格させた後、setup/__init__.py からの委譲を削除
 # - [x] ジョブ登録ロジックを宣言的なテーブル定義へ移設
 #   削除プロセス: runtime/setup/runtime_helpers.register_weekly_report_job を宣言的スケジュール層へ移し、setup/__init__.py の呼び出しを整理
+# - [x] クールダウン/デデュープ構築の分離
+# - [x] 送信ラッパの分離
+# - [x] ジョブ登録処理の分離
+# - [x] 週次レポート登録処理の分離
 
+from collections.abc import Iterable
 from functools import wraps
-from types import SimpleNamespace
-from typing import Any, Awaitable, Callable, Mapping, Optional, cast
+from typing import Any, Awaitable, Callable, Mapping, Optional
 
 from ...config.quotas import QuotaSettings, load_quota_settings
 from ...core.arbiter import PermitGate
-from ...core.cooldown import CooldownGate
-from ...core.dedupe import NearDuplicateFilter
-from ...core.orchestrator import (
-    Orchestrator,
-    PermitDecision,
-    PermitDecisionLike,
-    PermitEvaluator,
-    Sender,
-)
+from ...core.orchestrator import Orchestrator, PermitEvaluator, Sender
 from ...core.queue import CoalesceQueue
 from ...core.scheduler import Scheduler
 from ...features.dm_digest import build_dm_digest
@@ -31,16 +27,16 @@ from ...features.weather import build_weather_post
 from ...infra import metrics as metrics_module
 from ...infra.metrics import MetricsService
 from ..jobs import JobContext, ScheduledJob
-from ..jobs.common import (
-    as_mapping,
-    get_float,
-    resolve_object,
-)
+from ..jobs.common import as_mapping, get_float, resolve_object
 from ..jobs.dm_digest import build_dm_digest_jobs
 from ..jobs.news import build_news_jobs
 from ..jobs.omikuji import build_omikuji_jobs
 from ..jobs.weather import build_weather_jobs
-from .runtime_helpers import register_weekly_report_job, resolve_sender
+from .gates import build_cooldown, build_dedupe, build_permit
+from .jobs import install_factories
+from .reports import register_weekly_report
+from .runtime_helpers import resolve_sender
+from .sender import build_send_adapter
 
 _resolve_object = resolve_object
 
@@ -54,79 +50,6 @@ __all__ = [
     "generate_weekly_summary",
     "WeeklyReportTemplate",
 ]
-
-
-def _build_cooldown(cooldown_cfg: Mapping[str, Any]) -> CooldownGate:
-    coeff_cfg = as_mapping(cooldown_cfg.get("coeff"))
-    return CooldownGate(
-        int(get_float(cooldown_cfg.get("window_sec"), 1800)),
-        get_float(cooldown_cfg.get("mult_min"), 1.0),
-        get_float(cooldown_cfg.get("mult_max"), 6.0),
-        get_float(coeff_cfg.get("rate"), 0.5),
-        get_float(coeff_cfg.get("time"), 0.8),
-        get_float(coeff_cfg.get("eng"), 0.6),
-    )
-
-
-def _build_dedupe(dedupe_cfg: Mapping[str, Any]) -> NearDuplicateFilter:
-    return NearDuplicateFilter(
-        k=int(get_float(dedupe_cfg.get("recent_k"), 20)),
-        threshold=get_float(dedupe_cfg.get("sim_threshold"), 0.93),
-    )
-
-
-def _build_permit(
-    quota: QuotaSettings,
-    *,
-    permit_gate: Optional[PermitGate],
-) -> PermitEvaluator:
-    gate = permit_gate or (PermitGate(per_channel=quota.per_channel) if quota.per_channel else None)
-
-    if gate is None:
-
-        def _permit_no_gate(
-            _platform: str, _channel: Optional[str], job: str
-        ) -> PermitDecisionLike:
-            return cast(PermitDecisionLike, PermitDecision.allow(job))
-
-        return cast(PermitEvaluator, _permit_no_gate)
-
-    def _permit_with_gate(platform: str, channel: Optional[str], job: str) -> PermitDecisionLike:
-        decision = gate.permit(platform, channel, job)
-        if decision.allowed:
-            return cast(
-                PermitDecisionLike,
-                PermitDecision.allow(decision.job or job),
-            )
-        return cast(
-            PermitDecisionLike,
-            PermitDecision(
-                allowed=False,
-                reason=decision.reason,
-                retryable=decision.retryable,
-                job=decision.job or job,
-            ),
-        )
-
-    return cast(PermitEvaluator, _permit_with_gate)
-
-
-def _register_job(
-    scheduler: Scheduler,
-    jobs: dict[str, Callable[[], Awaitable[Optional[str]]]],
-    job: ScheduledJob,
-) -> None:
-    jobs[job.name] = job.func
-    for hhmm in job.schedules:
-        scheduler.every_day(
-            job.name,
-            hhmm,
-            job.func,
-            channel=job.channel,
-            priority=job.priority,
-        )
-
-
 def setup_runtime(
     settings: Mapping[str, Any],
     *,
@@ -138,12 +61,12 @@ def setup_runtime(
     tz = str(cfg.get("timezone", "Asia/Tokyo"))
 
     cooldown_cfg = as_mapping(cfg.get("cooldown"))
-    cooldown = _build_cooldown(cooldown_cfg)
+    cooldown = build_cooldown(cooldown_cfg)
     dedupe_cfg = as_mapping(cfg.get("dedupe"))
-    dedupe = _build_dedupe(dedupe_cfg)
+    dedupe = build_dedupe(dedupe_cfg)
 
     quota: QuotaSettings = load_quota_settings(cfg)
-    permit = _build_permit(quota, permit_gate=permit_gate)
+    permit = build_permit(quota, permit_gate=permit_gate)
 
     profiles = as_mapping(cfg.get("profiles"))
     platform, default_channel, active_sender = resolve_sender(
@@ -177,8 +100,11 @@ def setup_runtime(
         platform=platform,
     )
 
-    _CHANNEL_UNSET = object()
-    permit_overrides: dict[str, tuple[str, Optional[str], str]] = {}
+    scheduler_sender, permit_overrides = build_send_adapter(
+        orchestrator=orchestrator,
+        platform=platform,
+        default_channel=default_channel,
+    )
 
     @wraps(build_weather_post)
     async def _call_weather_post(*args: Any, **kwargs: Any) -> Optional[str]:
@@ -196,34 +122,9 @@ def setup_runtime(
     async def _call_dm_digest(*args: Any, **kwargs: Any) -> Optional[str]:
         return await build_dm_digest(*args, **kwargs)
 
-    async def send(
-        text: str,
-        channel: object = _CHANNEL_UNSET,
-        *,
-        job: str = "weather",
-    ) -> None:
-        resolved_channel = (
-            default_channel if channel is _CHANNEL_UNSET else cast(Optional[str], channel)
-        )
-        target_job = job
-        target_platform = platform
-        override = permit_overrides.get(job)
-        if override is not None:
-            override_platform, override_channel, override_job = override
-            target_platform = override_platform or target_platform
-            if override_channel is not None:
-                resolved_channel = override_channel
-            target_job = override_job
-        await orchestrator.enqueue(
-            text,
-            job=target_job,
-            platform=target_platform,
-            channel=resolved_channel,
-        )
-
     scheduler = Scheduler(
         tz=tz,
-        sender=cast(Sender, SimpleNamespace(send=send)),
+        sender=scheduler_sender,
         queue=queue,
     )
 
@@ -241,17 +142,19 @@ def setup_runtime(
     )
 
     jobs: dict[str, Callable[[], Awaitable[Optional[str]]]] = {}
-    for factory in (
+    factories: tuple[
+        Callable[[JobContext], Iterable[ScheduledJob]],
+        ...,
+    ] = (
         build_weather_jobs,
         build_news_jobs,
         build_omikuji_jobs,
         build_dm_digest_jobs,
-    ):
-        for scheduled in factory(context):
-            _register_job(scheduler, jobs, scheduled)
+    )
+    install_factories(scheduler, jobs, factories, context)
 
     report_cfg = as_mapping(cfg.get("report"))
-    register_weekly_report_job(
+    register_weekly_report(
         config=report_cfg,
         scheduler=scheduler,
         orchestrator=orchestrator,

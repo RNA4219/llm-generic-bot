@@ -243,6 +243,118 @@ async def test_setup_runtime_skips_weather_job_when_disabled() -> None:
         await orchestrator.close()
 
 
+async def test_setup_runtime_uses_custom_weather_job_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    custom_job = "daily_weather"
+
+    weather_calls: List[Dict[str, Any]] = []
+
+    async def fake_weather_post(
+        settings: Dict[str, Any],
+        *,
+        reaction_history_provider: Optional[object] = None,
+        cooldown: object | None = None,
+        platform: Optional[str] = None,
+        channel: Optional[str] = None,
+        job: Optional[str] = None,
+    ) -> str:
+        del settings, reaction_history_provider, cooldown, platform, channel
+        weather_calls.append({"job": job})
+        return "weather-text"
+
+    async def fake_history_provider(
+        *,
+        job: str,
+        limit: int,
+        platform: Optional[str],
+        channel: Optional[str],
+    ) -> list[int]:
+        del job, limit, platform, channel
+        return []
+
+    monkeypatch.setattr(main_module, "build_weather_post", fake_weather_post)
+
+    settings: Dict[str, Any] = {
+        "timezone": "UTC",
+        "profiles": {"discord": {"enabled": True, "channel": "general"}},
+        "weather": {
+            "schedule": "00:00",
+            "job": custom_job,
+            "engagement": {"history_provider": fake_history_provider},
+        },
+    }
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    scheduler.jitter_enabled = False
+
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    scheduler._sleep = no_sleep  # type: ignore[assignment]
+
+    enqueue_calls: List[Dict[str, Any]] = []
+
+    async def fake_enqueue(
+        text: str,
+        *,
+        job: str,
+        platform: str,
+        channel: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+    ) -> str:
+        enqueue_calls.append(
+            {
+                "text": text,
+                "job": job,
+                "platform": platform,
+                "channel": channel,
+                "correlation_id": correlation_id,
+            }
+        )
+        return "corr"
+
+    monkeypatch.setattr(orchestrator, "enqueue", fake_enqueue)
+
+    pushed_jobs: List[str] = []
+    original_push = scheduler.queue.push
+
+    def spy_push(
+        text: str,
+        *,
+        priority: int,
+        job: str,
+        created_at: Optional[float] = None,
+        channel: Optional[str] = None,
+    ) -> None:
+        pushed_jobs.append(job)
+        original_push(
+            text,
+            priority=priority,
+            job=job,
+            created_at=created_at,
+            channel=channel,
+        )
+
+    monkeypatch.setattr(scheduler.queue, "push", spy_push)
+
+    try:
+        assert set(jobs) == {custom_job}
+        assert [job.name for job in scheduler._jobs] == [custom_job]
+
+        tz = zoneinfo.ZoneInfo("UTC")
+        now = dt.datetime(2024, 1, 1, 0, 0, tzinfo=tz)
+        await scheduler._run_due_jobs(now)
+        await scheduler.dispatch_ready_batches(now.timestamp())
+
+        assert weather_calls == [{"job": custom_job}]
+        assert pushed_jobs == [custom_job]
+        assert enqueue_calls and enqueue_calls[-1]["job"] == custom_job
+    finally:
+        await orchestrator.close()
+
+
 async def test_weekly_report_job_uses_metrics_and_template(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

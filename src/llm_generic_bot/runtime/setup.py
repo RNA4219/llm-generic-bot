@@ -352,10 +352,44 @@ def setup_runtime(
             start_text = start_local.date().isoformat()
             end_text = end_local.date().isoformat()
             week_range_text = f"{start_text}〜{end_text}"
+            success_total = sum(
+                snapshot_entry.count
+                for snapshot_entry in snapshot.counters.get("send.success", {}).values()
+            )
+            failure_total = sum(
+                snapshot_entry.count
+                for snapshot_entry in snapshot.counters.get("send.failure", {}).values()
+            )
+            processed_total = success_total + failure_total
+
+            channel_counts: dict[str, int] = {}
+            for metric_name in ("send.success", "send.failure"):
+                for tags_key, counter_snapshot in snapshot.counters.get(metric_name, {}).items():
+                    channel_value = next(
+                        (value for key, value in tags_key if key == "channel"),
+                        None,
+                    )
+                    if channel_value:
+                        channel_counts[channel_value] = (
+                            channel_counts.get(channel_value, 0) + counter_snapshot.count
+                        )
+            top_channel_name = "-"
+            if channel_counts:
+                top_channel_name = max(channel_counts.items(), key=lambda item: item[1])[0]
+
+            success_rate_pct = (success_total / processed_total * 100.0) if processed_total else 0.0
+            failure_rate_pct = (failure_total / processed_total * 100.0) if processed_total else 0.0
+
             line_context = {
                 "start": start_text,
                 "end": end_text,
                 "week_range": week_range_text,
+                "total": processed_total,
+                "success": success_total,
+                "failure": failure_total,
+                "success_rate": success_rate_pct,
+                "failure_rate": failure_rate_pct,
+                "top_channel": top_channel_name,
             }
             if isinstance(success_rate, Mapping):
                 for name, payload in sorted(success_rate.items()):

@@ -205,17 +205,20 @@ class Orchestrator:
             "platform": request.platform,
             "channel": request.channel or "-",
         }
+        metrics_enabled = not isinstance(self._metrics, NullMetricsRecorder)
+
         if not decision.allowed:
             retryable_flag = "true" if decision.retryable else "false"
             denied_tags = {**tags, "retryable": retryable_flag}
             reason = decision.reason or "unknown"
-            metrics_module.report_permit_denied(
-                job=job_name,
-                platform=request.platform,
-                channel=request.channel,
-                reason=reason,
-                permit_tags={"retryable": retryable_flag},
-            )
+            if metrics_enabled:
+                metrics_module.report_permit_denied(
+                    job=job_name,
+                    platform=request.platform,
+                    channel=request.channel,
+                    reason=reason,
+                    permit_tags={"retryable": retryable_flag},
+                )
             denied_metadata = {
                 "correlation_id": request.correlation_id,
                 "reason": decision.reason,
@@ -262,26 +265,27 @@ class Orchestrator:
             duration = time.perf_counter() - start
             error_type = exc.__class__.__name__
             failure_tags = {**tags, "error": error_type}
-            aggregator = getattr(metrics_module, "_AGGREGATOR", None)
-            original_backend: MetricsRecorder | None = None
-            suppress_backend = False
-            if aggregator is not None:
-                backend = getattr(aggregator, "backend", None)
-                if backend is self._metrics:
-                    original_backend = backend
-                    setattr(aggregator, "backend", metrics_module.NullMetricsRecorder())
-                    suppress_backend = True
-            try:
-                await metrics_module.report_send_failure(
-                    job=job_name,
-                    platform=request.platform,
-                    channel=request.channel,
-                    duration_seconds=duration,
-                    error_type=error_type,
-                )
-            finally:
-                if suppress_backend and original_backend is not None:
-                    setattr(aggregator, "backend", original_backend)
+            if metrics_enabled:
+                aggregator = getattr(metrics_module, "_AGGREGATOR", None)
+                original_backend: MetricsRecorder | None = None
+                suppress_backend = False
+                if aggregator is not None:
+                    backend = getattr(aggregator, "backend", None)
+                    if backend is self._metrics:
+                        original_backend = backend
+                        setattr(aggregator, "backend", metrics_module.NullMetricsRecorder())
+                        suppress_backend = True
+                try:
+                    await metrics_module.report_send_failure(
+                        job=job_name,
+                        platform=request.platform,
+                        channel=request.channel,
+                        duration_seconds=duration,
+                        error_type=error_type,
+                    )
+                finally:
+                    if suppress_backend and original_backend is not None:
+                        setattr(aggregator, "backend", original_backend)
             self._metrics.observe("send.duration", duration, {**tags, "unit": "seconds"})
             self._metrics.increment("send.failure", failure_tags)
             failure_metadata = {
@@ -329,13 +333,14 @@ class Orchestrator:
             success_tags["engagement_score"] = formatted_score
             log_extra["engagement_score"] = request.engagement_score
             permit_tags = {"engagement_score": formatted_score}
-        await metrics_module.report_send_success(
-            job=job_name,
-            platform=request.platform,
-            channel=request.channel,
-            duration_seconds=duration,
-            permit_tags=permit_tags,
-        )
+        if metrics_enabled:
+            await metrics_module.report_send_success(
+                job=job_name,
+                platform=request.platform,
+                channel=request.channel,
+                duration_seconds=duration,
+                permit_tags=permit_tags,
+            )
         metadata = {"correlation_id": request.correlation_id}
         if request.engagement_score is not None:
             metadata["engagement_score"] = request.engagement_score

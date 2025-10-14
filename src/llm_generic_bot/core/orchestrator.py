@@ -117,7 +117,8 @@ class Orchestrator:
             self._metrics_service = None
             recorder = metrics
         self._metrics = recorder or NullMetricsRecorder()
-        metrics_module.configure_backend(recorder)
+        if recorder is not None:
+            metrics_module.configure_backend(recorder)
         self._logger = logger or logging.getLogger(__name__)
         self._queue: asyncio.Queue[_SendRequest | None] = asyncio.Queue(maxsize=queue_size)
         self._worker: asyncio.Task[None] | None = None

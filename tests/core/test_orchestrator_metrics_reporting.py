@@ -72,3 +72,61 @@ def test_orchestrator_reports_metrics_via_global_aggregator() -> None:
         denial["job"] == "denied-job" and denial["reason"] == "policy"
         for denial in snapshot["permit_denials"]
     )
+
+
+def test_orchestrator_preserves_metrics_backend_when_metrics_none() -> None:
+    metrics.reset_for_test()
+    service = MetricsService()
+
+    async def run() -> None:
+        orchestrator_with_metrics = Orchestrator(
+            sender=_InstrumentedSender(),
+            cooldown=CooldownGate(
+                window_sec=1,
+                mult_min=1.0,
+                mult_max=1.0,
+                k_rate=0.0,
+                k_time=0.0,
+                k_eng=0.0,
+            ),
+            dedupe=NearDuplicateFilter(),
+            permit=_permit,
+            metrics=service,
+            platform="slack",
+        )
+        try:
+            await orchestrator_with_metrics.enqueue(
+                "success-1", job="success-job", platform="slack", channel="general"
+            )
+            await orchestrator_with_metrics.flush()
+        finally:
+            await orchestrator_with_metrics.close()
+
+        orchestrator_without_metrics = Orchestrator(
+            sender=_InstrumentedSender(),
+            cooldown=CooldownGate(
+                window_sec=1,
+                mult_min=1.0,
+                mult_max=1.0,
+                k_rate=0.0,
+                k_time=0.0,
+                k_eng=0.0,
+            ),
+            dedupe=NearDuplicateFilter(),
+            permit=_permit,
+            metrics=None,
+            platform="slack",
+        )
+        try:
+            await orchestrator_without_metrics.enqueue(
+                "success-2", job="success-job", platform="slack", channel="general"
+            )
+            await orchestrator_without_metrics.flush()
+        finally:
+            await orchestrator_without_metrics.close()
+
+    asyncio.run(run())
+
+    snapshot = metrics.weekly_snapshot()
+    success_job = snapshot["success_rate"]["success-job"]
+    assert success_job["success"] == 2

@@ -1,8 +1,7 @@
 from __future__ import annotations
-from collections.abc import Awaitable
 from datetime import datetime, timezone
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Mapping, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Awaitable, Mapping, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from .metrics import (

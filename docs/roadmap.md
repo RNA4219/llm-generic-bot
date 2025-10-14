@@ -42,8 +42,7 @@
 - [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。
 
 ### 残課題
-- ニュース／おみくじ／DM ダイジェストの異常系（Permit 拒否・クールダウン解除後の再送・フィード欠損）を対象とした結合テストは `tests/integration/test_runtime_multicontent_failures.py` で完了したため、運用監視項目の整理に専念する。
-- Engagement 指標の長期トレンド分析と、Permit クォータ変動時の通知頻度チューニング方針を整理する。
+- Engagement 指標の長期トレンド分析と、Permit クォータ変動時の通知頻度チューニング方針を整理する。（OPS-08～OPS-10 で異常系テスト強化は完了済み）
 
 ## Sprint 3: 運用・可観測性
 - [OPS-02] 週次サマリ（`core/orchestrator.py`, `features/report.py`）: 成果・失敗を集計し運用向けに通知。
@@ -52,9 +51,9 @@
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。
 
 ## Sprint 4: テスト強化 & 異常系整備
-- [OPS-08] ジッタ境界と Permit 連携テスト（`tests/core/test_scheduler_jitter.py`）: 同テストでジッタの最小/最大遅延と Permit 判定の相互作用を検証し、`Scheduler.next_slot` の境界値を固定済み。
-- [OPS-09] `send_duplicate_skip` のログ/メトリクス整合（`tests/core/test_structured_logging.py`）: 重複スキップ経路の構造化ログとメトリクスタグをテストで照合し、観測値の齟齬を解消済み。
-- [OPS-10] News/おみくじ/DM 異常系結合テスト（`tests/integration/test_runtime_multicontent_failures.py`）: Permit 拒否やプロバイダ障害時の再送挙動を統合テストで再現し、異常系パスを網羅済み。
+- [OPS-08] ジッタ境界と Permit 連携テスト: `tests/core/test_scheduler_jitter.py` の 4 ケース（`test_scheduler_applies_jitter`、`test_scheduler_immediate_when_jitter_disabled`、`test_scheduler_jitter_respects_range`、`test_scheduler_preserves_job_with_jitter`）でジッタ有無の分岐と遅延レンジ境界、Permit 判定後のジョブ名維持を固定。→ 実装済み
+- [OPS-09] `send_duplicate_skip` のログ/メトリクス整合: `tests/core/test_structured_logging.py` の `test_orchestrator_logs_success_with_correlation_id` / `test_orchestrator_logs_failure_and_metrics` / `test_orchestrator_logs_permit_denial` / `test_orchestrator_logs_duplicate_skip` が重複抑止時の構造化ログ、Permit 拒否・失敗・成功経路の JSON ログ、および `send.duration` の秒単位タグを検証。→ 実装済み
+- [OPS-10] News/おみくじ/DM 異常系結合テスト: `tests/integration/test_runtime_multicontent_failures.py` の `test_permit_denied_records_metrics` / `test_cooldown_resume_allows_retry` / `test_summary_provider_retry_and_fallback` / `test_dm_digest_permit_denied_records_metrics` が Permit 拒否メトリクス、クールダウン解除後の再送成功、サマリーリトライとフォールバック記録、DM ダイジェスト拒否時の送信スキップを週次スナップショットまで確認。→ 実装済み
 
 ## テストロードマップ
 - 現状認識:
@@ -63,8 +62,8 @@
   - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無と `next_slot` 呼び出しを制御できており、同テストでジッタ範囲の最小/最大境界と Permit 連携も固定済み（[OPS-08] 完了）。
   - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否のログイベントとメトリクス更新を確認済みで、`send_duplicate_skip` 経路と `send.duration` メトリクスの整合も同テストで固定済み（[OPS-09] 完了）。
 - Sprint 1: `tests/adapters/test_retry_policy.py` に JSON ログのスナップショットケースを追加し、`tests/core/test_coalesce_queue.py` へ優先度逆転ガードの境界ケースを拡張する。同時に `tests/core/test_quota_gate.py` では Permit 拒否理由の種類ごとに `llm_generic_bot.core.arbiter` のタグ付けを検証し、構造化ログ側と整合させる。
-- Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携に加え、`tests/core/test_scheduler_jitter.py` と `tests/integration/test_runtime_multicontent_failures.py` でジッタ境界および Permit 拒否・クールダウン解除後再送の結合経路も補強済み。
-- Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`src/llm_generic_bot/infra/metrics/__init__.py`（新設予定）と `src/llm_generic_bot/infra/metrics/reporting.py`/`src/llm_generic_bot/infra/metrics/service.py` の連携、および設定再読込監査のログパス（`config` パッケージ想定）をスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加済み。
+- Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携はカバーしており、ジッタ境界と異常系結合テストは OPS-08/OPS-10 で完遂。
+- Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`src/llm_generic_bot/infra/metrics/__init__.py`（新設予定）と `src/llm_generic_bot/infra/metrics/reporting.py`/`src/llm_generic_bot/infra/metrics/service.py` の連携、および設定再読込監査のログパス（`config` パッケージ想定）をスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
 
 ### 参照タスク
 - Sprint 1 詳細: [`docs/tasks/sprint1.md`](tasks/sprint1.md)

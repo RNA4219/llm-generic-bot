@@ -8,7 +8,7 @@ from ..infra import MetricsBackend, make_metrics_recorder
 from ..infra import metrics as metrics_module
 
 if TYPE_CHECKING:
-    from ..infra.metrics import _GlobalMetricsAggregator as AggregatorT
+    from ..infra.metrics.reporting import _GlobalMetricsAggregator as AggregatorT
 else:  # pragma: no cover - typing alias
     AggregatorT = object
 

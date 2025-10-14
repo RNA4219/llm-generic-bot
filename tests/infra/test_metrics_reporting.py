@@ -29,7 +29,7 @@ except ModuleNotFoundError:  # pragma: no cover
             yield
 
 from llm_generic_bot.core.orchestrator import MetricsRecorder
-from llm_generic_bot.infra import metrics
+from llm_generic_bot.infra.metrics import reporting, service as service_module
 
 
 class RecordingMetrics(MetricsRecorder):
@@ -46,9 +46,9 @@ class RecordingMetrics(MetricsRecorder):
 
 @pytest.fixture(autouse=True)
 def reset_metrics_module() -> None:
-    metrics.reset_for_test()
+    reporting.reset_for_test()
     yield
-    metrics.reset_for_test()
+    reporting.reset_for_test()
 
 
 @pytest.fixture
@@ -59,12 +59,12 @@ def anyio_backend() -> str:
 @pytest.mark.anyio("asyncio")
 async def test_metrics_records_expected_labels_and_snapshot() -> None:
     recorder = RecordingMetrics()
-    metrics.configure_backend(recorder)
+    reporting.configure_backend(recorder)
     with freeze_time("2025-01-06T12:00:00+00:00"):
-        await metrics.report_send_success(job="weather", platform="discord", channel="alerts", duration_seconds=0.42, permit_tags={"decision": "allow"})
-        await metrics.report_send_failure(job="weather", platform="discord", channel="alerts", duration_seconds=2.4, error_type="http_500")
-        metrics.report_permit_denied(job="alerts", platform="discord", channel=None, reason="quota_exceeded", permit_tags={"rule": "quota"})
-        snapshot = metrics.weekly_snapshot()
+        await reporting.report_send_success(job="weather", platform="discord", channel="alerts", duration_seconds=0.42, permit_tags={"decision": "allow"})
+        await reporting.report_send_failure(job="weather", platform="discord", channel="alerts", duration_seconds=2.4, error_type="http_500")
+        reporting.report_permit_denied(job="alerts", platform="discord", channel=None, reason="quota_exceeded", permit_tags={"rule": "quota"})
+        snapshot = reporting.weekly_snapshot()
     assert recorder.increment_calls == [
         ("send.success", {"job": "weather", "platform": "discord", "channel": "alerts", "decision": "allow"}),
         ("send.failure", {"job": "weather", "platform": "discord", "channel": "alerts", "error": "http_500"}),
@@ -84,10 +84,10 @@ async def test_metrics_records_expected_labels_and_snapshot() -> None:
 
 @pytest.mark.anyio("asyncio")
 async def test_metrics_null_backend_falls_back_to_noop() -> None:
-    metrics.configure_backend(None)
+    reporting.configure_backend(None)
     with freeze_time("2025-01-06T09:00:00+00:00"):
-        await metrics.report_send_success(job="weather", platform="discord", channel="alerts", duration_seconds=0.5, permit_tags={"decision": "allow"})
-        snapshot = metrics.weekly_snapshot()
+        await reporting.report_send_success(job="weather", platform="discord", channel="alerts", duration_seconds=0.5, permit_tags={"decision": "allow"})
+        snapshot = reporting.weekly_snapshot()
     assert snapshot == {
         "generated_at": "2025-01-06T09:00:00+00:00",
         "success_rate": {},
@@ -99,30 +99,30 @@ async def test_metrics_null_backend_falls_back_to_noop() -> None:
 @pytest.mark.anyio("asyncio")
 async def test_metrics_weekly_snapshot_latency_boundaries() -> None:
     recorder = RecordingMetrics()
-    metrics.configure_backend(recorder)
+    reporting.configure_backend(recorder)
     with freeze_time("2025-02-03T00:00:00+00:00"):
-        await metrics.report_send_success(
+        await reporting.report_send_success(
             job="edge",
             platform="web",
             channel="status",
             duration_seconds=1.0,
             permit_tags=None,
         )
-        await metrics.report_send_success(
+        await reporting.report_send_success(
             job="edge",
             platform="web",
             channel="status",
             duration_seconds=1.01,
             permit_tags=None,
         )
-        await metrics.report_send_failure(
+        await reporting.report_send_failure(
             job="edge",
             platform="web",
             channel="status",
             duration_seconds=3.5,
             error_type="timeout",
         )
-        snapshot = metrics.weekly_snapshot()
+        snapshot = reporting.weekly_snapshot()
 
     assert snapshot["success_rate"] == {
         "edge": {"success": 2, "failure": 1, "ratio": pytest.approx(2 / 3)}
@@ -136,24 +136,24 @@ async def test_metrics_weekly_snapshot_latency_boundaries() -> None:
 @pytest.mark.anyio("asyncio")
 async def test_weekly_snapshot_ignores_events_older_than_seven_days() -> None:
     recorder = RecordingMetrics()
-    metrics.configure_backend(recorder)
+    reporting.configure_backend(recorder)
 
     with freeze_time("2025-02-02T12:00:00+00:00"):
-        await metrics.report_send_success(
+        await reporting.report_send_success(
             job="weather",
             platform="discord",
             channel="alerts",
             duration_seconds=0.2,
             permit_tags={"decision": "allow"},
         )
-        await metrics.report_send_failure(
+        await reporting.report_send_failure(
             job="weather",
             platform="discord",
             channel="alerts",
             duration_seconds=2.5,
             error_type="timeout",
         )
-        metrics.report_permit_denied(
+        reporting.report_permit_denied(
             job="weather",
             platform="discord",
             channel="alerts",
@@ -162,7 +162,7 @@ async def test_weekly_snapshot_ignores_events_older_than_seven_days() -> None:
         )
 
     with freeze_time("2025-02-04T12:00:00+00:00"):
-        await metrics.report_send_success(
+        await reporting.report_send_success(
             job="weather",
             platform="discord",
             channel="alerts",
@@ -171,14 +171,14 @@ async def test_weekly_snapshot_ignores_events_older_than_seven_days() -> None:
         )
 
     with freeze_time("2025-02-08T12:00:00+00:00"):
-        await metrics.report_send_failure(
+        await reporting.report_send_failure(
             job="weather",
             platform="discord",
             channel="alerts",
             duration_seconds=3.5,
             error_type="timeout",
         )
-        metrics.report_permit_denied(
+        reporting.report_permit_denied(
             job="weather",
             platform="discord",
             channel="alerts",
@@ -187,7 +187,7 @@ async def test_weekly_snapshot_ignores_events_older_than_seven_days() -> None:
         )
 
     with freeze_time("2025-02-10T12:00:00+00:00"):
-        snapshot = metrics.weekly_snapshot()
+        snapshot = reporting.weekly_snapshot()
 
     assert snapshot["generated_at"] == "2025-02-10T12:00:00+00:00"
     assert snapshot["success_rate"] == {
@@ -221,14 +221,14 @@ async def test_weekly_snapshot_respects_configured_retention(
     def clock() -> datetime:
         return current["value"]
 
-    monkeypatch.setattr(metrics, "_utcnow", lambda: current["value"])
+    monkeypatch.setattr(reporting, "_utcnow", lambda: current["value"])
 
-    service = metrics.MetricsService(clock=clock, retention_days=3)
-    metrics.configure_backend(service)
-    metrics.set_retention_days(3)
+    service = service_module.MetricsService(clock=clock, retention_days=3)
+    reporting.configure_backend(service)
+    reporting.set_retention_days(3)
 
     current["value"] = base_time - timedelta(days=5)
-    await metrics.report_send_success(
+    await reporting.report_send_success(
         job="weather",
         platform="discord",
         channel="alerts",
@@ -237,7 +237,7 @@ async def test_weekly_snapshot_respects_configured_retention(
     )
 
     current["value"] = base_time
-    await metrics.report_send_success(
+    await reporting.report_send_success(
         job="weather",
         platform="discord",
         channel="alerts",
@@ -245,7 +245,7 @@ async def test_weekly_snapshot_respects_configured_retention(
         permit_tags={"decision": "allow"},
     )
 
-    snapshot = metrics.weekly_snapshot()
+    snapshot = reporting.weekly_snapshot()
 
     assert snapshot["generated_at"] == base_time.isoformat()
     assert snapshot["success_rate"] == {
@@ -262,7 +262,7 @@ async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
     def clock() -> datetime:
         return current["value"]
 
-    service = metrics.MetricsService(clock=clock)
+    service = service_module.MetricsService(clock=clock)
 
     current["value"] = current["value"] - timedelta(days=8)
     service.increment("events", tags={"bucket": "too_old"})
@@ -274,7 +274,7 @@ async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
     service.increment("events", tags={"bucket": "fresh"})
 
     current["value"] = datetime(2025, 2, 10, tzinfo=timezone.utc)
-    snapshot = await metrics.collect_weekly_snapshot(service)
+    snapshot = await service_module.collect_weekly_snapshot(service)
 
     boundary_tags = tuple(sorted({"bucket": "boundary"}.items()))
     fresh_tags = tuple(sorted({"bucket": "fresh"}.items()))
@@ -283,6 +283,6 @@ async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
     assert snapshot.end == datetime(2025, 2, 10, tzinfo=timezone.utc)
     assert "events" in snapshot.counters
     counters = snapshot.counters["events"]
-    assert counters.get(boundary_tags) == metrics.CounterSnapshot(count=1)
-    assert counters.get(fresh_tags) == metrics.CounterSnapshot(count=1)
+    assert counters.get(boundary_tags) == service_module.CounterSnapshot(count=1)
+    assert counters.get(fresh_tags) == service_module.CounterSnapshot(count=1)
     assert tuple(sorted({"bucket": "too_old"}.items())) not in counters

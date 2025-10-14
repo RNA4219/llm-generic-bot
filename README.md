@@ -9,6 +9,7 @@
 - ニュース自動配信
 - おみくじ生成
 - DM ダイジェスト編纂
+- 週次サマリ/メトリクス連携（`src/llm_generic_bot/runtime/setup.py` で週次レポート登録、`tests/integration/test_runtime_weekly_report.py` で検証）
 
 ## Quick start
 
@@ -40,8 +41,11 @@ src/llm_generic_bot/
     news.py               # ニュース配信
     omikuji.py            # おみくじ
     dm_digest.py          # DM ダイジェスト
+    report.py             # 週次サマリ生成
   config/
     loader.py             # 設定ロード/ホットリロード
+  infra/
+    metrics.py            # メトリクス連携
 tests/
 .github/workflows/ci.yml
 pyproject.toml

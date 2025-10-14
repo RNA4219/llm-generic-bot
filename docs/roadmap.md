@@ -23,7 +23,7 @@
     - `llm_generic_bot.runtime.providers.SAMPLE_DM_SUMMARY`: DM 要約生成のサンプル実装。
     - `llm_generic_bot.runtime.providers.SAMPLE_DM_SENDER`: DM 送信のサンプル実装。
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
-- 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、News/おみくじ/DM ダイジェスト経路の異常系（Permit 拒否・クールダウン解除後再送）向け結合テスト追加、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである。
+- 残課題は Permit/ジッタ/バッチ閾値のパラメータ調整と Permit 失敗時の再評価フロー整備、Permit クォータの多段構成およびバッチ再送ガードの強化など運用チューニングである（News/おみくじ/DM ダイジェスト経路の異常系結合テストは `tests/integration/test_runtime_multicontent_failures.py` で完了済み）。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ
 - [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）: 429/5xx を指数バックオフ付きで再送し、上限回数で失敗をロギング。
@@ -42,7 +42,7 @@
 - [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。
 
 ### 残課題
-※ ニュース／おみくじ／DM ダイジェストの異常系結合テストは OPS-10 で完了済み。
+- ニュース／おみくじ／DM ダイジェストの異常系（Permit 拒否・クールダウン解除後の再送・フィード欠損）を対象とした結合テストは `tests/integration/test_runtime_multicontent_failures.py` で完了したため、運用監視項目の整理に専念する。
 - Engagement 指標の長期トレンド分析と、Permit クォータ変動時の通知頻度チューニング方針を整理する。
 
 ## Sprint 3: 運用・可観測性
@@ -52,19 +52,19 @@
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。
 
 ## Sprint 4: テスト強化 & 異常系整備
-- [OPS-08] ジッタ境界と Permit 連携テスト（`tests/core/test_scheduler_jitter.py`）: ジッタ有効/無効時の `Scheduler.dispatch_ready_batches` 挙動と、指定レンジでの遅延適用を 4 ケースで固定し、Permit 判定のジョブ名維持も確認済み。→ 実装済み
-- [OPS-09] `send_duplicate_skip` のログ/メトリクス整合（`tests/core/test_structured_logging.py`）: 重複スキップ時の構造化ログ/メトリクスタグ、Permit 拒否・失敗・成功経路の JSON ログ、および `send.duration` の単位タグを網羅。→ 実装済み
-- [OPS-10] News/おみくじ/DM 異常系結合テスト（`tests/integration/test_runtime_multicontent_failures.py`）: Permit 拒否メトリクス、クールダウン解除後の再送成功、サマリーリトライとフォールバック記録を再現し、週次スナップショットへの反映を検証。→ 実装済み
+- [OPS-08] ジッタ境界と Permit 連携テスト（`tests/core/test_scheduler_jitter.py`）: 同テストでジッタの最小/最大遅延と Permit 判定の相互作用を検証し、`Scheduler.next_slot` の境界値を固定済み。
+- [OPS-09] `send_duplicate_skip` のログ/メトリクス整合（`tests/core/test_structured_logging.py`）: 重複スキップ経路の構造化ログとメトリクスタグをテストで照合し、観測値の齟齬を解消済み。
+- [OPS-10] News/おみくじ/DM 異常系結合テスト（`tests/integration/test_runtime_multicontent_failures.py`）: Permit 拒否やプロバイダ障害時の再送挙動を統合テストで再現し、異常系パスを網羅済み。
 
 ## テストロードマップ
 - 現状認識:
   - リトライ: `tests/adapters/test_retry_policy.py` で Discord/Misskey の 429/Retry-After、指数バックオフ、非リトライ判定までカバー済み。残課題だった `_structured_log` の JSON フィールド（`llm_generic_bot.adapters._retry`）スナップショットは `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` で完了し、リトライ限界到達時の監査属性欠落を防止済み。
   - 併合: `tests/core/test_coalesce_queue.py` で窓内併合、閾値即時フラッシュ、単発バッチを検証済み。残課題だった `CoalesceQueue` の優先度逆転ガードは `tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` で完了し、`llm_generic_bot.core.queue` のマルチチャンネル分離・`pop_ready` ソート安定性もテーブル駆動で確認済み。
-  - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無、指定レンジ適用、Permit 判定後のジョブ名保持まで検証済み。OPS-08 で境界テストを完了。
-  - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否に加えて `send_duplicate_skip` のログ/メトリクスタグと `send.duration` の秒単位タグを固定。OPS-09 で残課題解消。
+  - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無と `next_slot` 呼び出しを制御できており、同テストでジッタ範囲の最小/最大境界と Permit 連携も固定済み（[OPS-08] 完了）。
+  - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否のログイベントとメトリクス更新を確認済みで、`send_duplicate_skip` 経路と `send.duration` メトリクスの整合も同テストで固定済み（[OPS-09] 完了）。
 - Sprint 1: `tests/adapters/test_retry_policy.py` に JSON ログのスナップショットケースを追加し、`tests/core/test_coalesce_queue.py` へ優先度逆転ガードの境界ケースを拡張する。同時に `tests/core/test_quota_gate.py` では Permit 拒否理由の種類ごとに `llm_generic_bot.core.arbiter` のタグ付けを検証し、構造化ログ側と整合させる。
-- Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携はカバーしており、ジッタ境界と異常系結合テストは OPS-08/10 で完了。
-- Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`src/llm_generic_bot/infra/metrics/__init__.py`（新設予定）と `src/llm_generic_bot/infra/metrics/reporting.py`/`src/llm_generic_bot/infra/metrics/service.py` の連携、および設定再読込監査のログパス（`config` パッケージ想定）をスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
+- Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携に加え、`tests/core/test_scheduler_jitter.py` と `tests/integration/test_runtime_multicontent_failures.py` でジッタ境界および Permit 拒否・クールダウン解除後再送の結合経路も補強済み。
+- Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`src/llm_generic_bot/infra/metrics/__init__.py`（新設予定）と `src/llm_generic_bot/infra/metrics/reporting.py`/`src/llm_generic_bot/infra/metrics/service.py` の連携、および設定再読込監査のログパス（`config` パッケージ想定）をスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加済み。
 
 ### 参照タスク
 - Sprint 1 詳細: [`docs/tasks/sprint1.md`](tasks/sprint1.md)

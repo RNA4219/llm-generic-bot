@@ -51,6 +51,11 @@
 - [OPS-04] ランタイムメトリクス（`src/llm_generic_bot/infra/metrics/__init__.py`, `src/llm_generic_bot/infra/metrics/reporting.py`, `src/llm_generic_bot/infra/metrics/service.py`）: スケジューラ遅延や送信成功率を可視化。
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。
 
+## Sprint 4: テスト強化 & 異常系整備
+- [OPS-08] ジッタ境界と Permit 連携テスト（`tests/core/test_scheduler_jitter.py`）: ジッタの最小/最大遅延と Permit 判定の相互作用をテストで固定し、必要に応じて `Scheduler.next_slot` を補強する。
+- [OPS-09] `send_duplicate_skip` のログ/メトリクス整合（`tests/core/test_structured_logging.py`, `src/llm_generic_bot/infra/metrics/service.py`）: 重複スキップ経路の構造化ログとメトリクスタグを検証するテストを追加し、観測値の齟齬を解消する。
+- [OPS-10] News/おみくじ/DM 異常系結合テスト（`tests/integration/test_runtime_multicontent_failures.py`）: Permit 拒否やプロバイダ障害時の再送挙動を再現する統合テストを追加し、必要に応じて実装の補修を行う。
+
 ## テストロードマップ
 - 現状認識:
   - リトライ: `tests/adapters/test_retry_policy.py` で Discord/Misskey の 429/Retry-After、指数バックオフ、非リトライ判定までカバー済み。残課題だった `_structured_log` の JSON フィールド（`llm_generic_bot.adapters._retry`）スナップショットは `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` で完了し、リトライ限界到達時の監査属性欠落を防止済み。
@@ -65,3 +70,4 @@
 - Sprint 1 詳細: [`docs/tasks/sprint1.md`](tasks/sprint1.md)
 - Sprint 2 詳細: [`docs/tasks/sprint2.md`](tasks/sprint2.md)
 - Sprint 3 詳細: [`docs/tasks/sprint3.md`](tasks/sprint3.md)
+- Sprint 4 詳細: [`docs/tasks/sprint4.md`](tasks/sprint4.md)

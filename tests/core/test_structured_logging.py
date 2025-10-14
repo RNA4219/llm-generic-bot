@@ -152,6 +152,7 @@ async def test_orchestrator_logs_failure_and_metrics(caplog: pytest.LogCaptureFi
     assert failure_record.correlation_id == correlation_id
     assert failure_record.error_type == "RuntimeError"
     assert metrics.counts["send.failure"]["weather"] == 1
+    assert metrics.counts["send.duration"]["weather"] == 1
 
 
 async def test_orchestrator_logs_permit_denial(caplog: pytest.LogCaptureFixture) -> None:

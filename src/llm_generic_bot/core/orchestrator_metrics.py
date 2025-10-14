@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator, Mapping, Protocol
+from typing import TYPE_CHECKING, Iterator, Mapping, Protocol, cast
 
 from ..infra import MetricsBackend, make_metrics_recorder
 from ..infra import metrics as metrics_module
+
+if TYPE_CHECKING:
+    from ..infra.metrics import _GlobalMetricsAggregator as AggregatorT
+else:  # pragma: no cover - typing alias
+    AggregatorT = object
 
 
 class MetricsRecorder(Protocol):
@@ -74,8 +79,10 @@ class MetricsBoundary:
         self.service.record_event(name, tags=tags, measurements=measurements, metadata=metadata)
 
     @staticmethod
-    def _resolve_aggregator() -> object | None:
-        return getattr(metrics_module, "_AGGREGATOR", None)
+    def _resolve_aggregator() -> AggregatorT | None:
+        return cast(
+            AggregatorT | None, getattr(metrics_module, "_AGGREGATOR", None)
+        )
 
 
 def resolve_metrics_boundary(

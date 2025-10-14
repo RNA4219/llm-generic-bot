@@ -62,6 +62,66 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+async def test_setup_runtime_uses_weather_channel_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+
+    weather_calls: List[Dict[str, Any]] = []
+
+    async def fake_weather(
+        cfg: Dict[str, Any],
+        *,
+        channel: Optional[str] = None,
+        job: str = "weather",
+    ) -> str:
+        weather_calls.append({"cfg": cfg, "channel": channel, "job": job})
+        return "weather-post"
+
+    monkeypatch.setattr(main_module, "build_weather_post", fake_weather)
+
+    settings: Dict[str, Any] = {
+        "timezone": "UTC",
+        "profiles": {"discord": {"enabled": True, "channel": "general"}},
+        "weather": {"schedule": "00:00", "channel": "weather-alerts"},
+    }
+
+    scheduler, _orchestrator, _jobs = main_module.setup_runtime(
+        settings,
+        queue=queue,
+    )
+
+    pushed: List[Dict[str, Any]] = []
+
+    def spy_push(
+        text: str,
+        *,
+        priority: int,
+        job: str,
+        created_at: Optional[float] = None,
+        channel: Optional[str] = None,
+    ) -> None:
+        pushed.append(
+            {
+                "text": text,
+                "priority": priority,
+                "job": job,
+                "created_at": created_at,
+                "channel": channel,
+            }
+        )
+
+    monkeypatch.setattr(scheduler.queue, "push", spy_push)
+
+    now = dt.datetime(2024, 1, 1, 0, 0, tzinfo=scheduler.tz)
+    await scheduler._run_due_jobs(now)
+
+    assert weather_calls
+    assert weather_calls[0]["channel"] == "weather-alerts"
+    assert pushed
+    assert pushed[0]["channel"] == "weather-alerts"
+
+
 async def test_setup_runtime_registers_all_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
     queue = CoalesceQueue(window_seconds=0.0, threshold=1)
 

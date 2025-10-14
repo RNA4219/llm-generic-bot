@@ -31,6 +31,9 @@ def build_weather_jobs(context: JobContext) -> list[ScheduledJob]:
         if weather_priority_raw is not None
         else 5
     )
+    weather_channel = (
+        optional_str(weather_cfg.get("channel")) or context.default_channel
+    )
 
     engagement_cfg = as_mapping(weather_cfg.get("engagement"))
     weather_params = inspect.signature(context.build_weather_post).parameters
@@ -50,8 +53,8 @@ def build_weather_jobs(context: JobContext) -> list[ScheduledJob]:
                 call_kwargs["cooldown"] = context.cooldown
             if "platform" in weather_params:
                 call_kwargs["platform"] = context.platform
-            if "channel" in weather_params:
-                call_kwargs["channel"] = context.default_channel
+        if "channel" in weather_params:
+            call_kwargs["channel"] = weather_channel
         if "job" in weather_params:
             call_kwargs["job"] = job_name
         return await context.build_weather_post(context.settings, **call_kwargs)
@@ -61,7 +64,7 @@ def build_weather_jobs(context: JobContext) -> list[ScheduledJob]:
             name=job_name,
             func=job_weather,
             schedules=(schedule,),
-            channel=context.default_channel,
+            channel=weather_channel,
             priority=max(priority, 0),
         )
     ]

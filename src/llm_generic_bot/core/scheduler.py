@@ -110,6 +110,9 @@ class Scheduler:
         if self.jitter_enabled:
             target_ts = next_slot(reference_ts, clash, jitter_range=jitter_range)
         delay = max(0.0, target_ts - reference_ts)
+        job = batch.job
+        channel = batch.channel
+        text = batch.text
         await self._sleep(delay)
         await self.sender.send(text, channel, job=job_name)
         self._last_dispatch_ts = target_ts if delay > 0 else reference_ts

@@ -223,7 +223,12 @@ class Orchestrator:
         if not self._dedupe.permit(request.text):
             duplicate_tags = {**tags, "status": "duplicate", "retryable": "false"}
             self._metrics.increment("send.duplicate", duplicate_tags)
-            self._record_event("send.duplicate", duplicate_tags)
+            metadata = {
+                "correlation_id": request.correlation_id,
+                "status": "duplicate",
+                "retryable": False,
+            }
+            self._record_event("send.duplicate", duplicate_tags, metadata=metadata)
             self._logger.info(
                 "duplicate_skipped",
                 extra={

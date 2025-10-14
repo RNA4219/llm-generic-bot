@@ -55,7 +55,7 @@
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。
 
 ## Sprint 4: テスト強化 & 異常系整備
-- [OPS-08] ジッタ境界と Permit 連携テスト: `tests/core/test_scheduler_jitter.py` の 4 ケース（`test_scheduler_applies_jitter`、`test_scheduler_immediate_when_jitter_disabled`、`test_scheduler_jitter_respects_range`、`test_scheduler_preserves_job_with_jitter`）でジッタ有無の分岐と遅延レンジ境界、Permit 判定後のジョブ名維持を固定。→ 実装済み
+- [OPS-08] ジッタ境界と Permit 連携テスト: `tests/core/test_scheduler_jitter.py` の 3 ケース（`test_scheduler_applies_jitter`、`test_scheduler_immediate_when_jitter_disabled`、`test_scheduler_jitter_respects_range`）でジッタ有無の分岐と遅延レンジ境界を固定し、Permit 判定後のジョブ名維持は `test_scheduler_jitter_respects_range` が担保する。→ 実装済み
 - [OPS-09] `send_duplicate_skip` のログ/メトリクス整合: `tests/core/test_structured_logging.py` の `test_orchestrator_logs_success_with_correlation_id` / `test_orchestrator_logs_failure_and_metrics` / `test_orchestrator_logs_permit_denial` / `test_orchestrator_logs_duplicate_skip` が重複抑止時の構造化ログ、Permit 拒否・失敗・成功経路の JSON ログ、および `send.duration` の秒単位タグを検証。→ 実装済み
 - [OPS-10] News/おみくじ/DM 異常系結合テスト: `tests/integration/test_runtime_multicontent_failures.py` の `test_permit_denied_records_metrics` / `test_cooldown_resume_allows_retry` / `test_summary_provider_retry_and_fallback` / `test_dm_digest_permit_denied_records_metrics` が Permit 拒否メトリクス、クールダウン解除後の再送成功、サマリーリトライとフォールバック記録、DM ダイジェスト拒否時の送信スキップを週次スナップショットまで確認。→ 実装済み
 

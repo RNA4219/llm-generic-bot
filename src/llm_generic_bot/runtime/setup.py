@@ -359,6 +359,8 @@ def setup_runtime(
             }
             if isinstance(success_rate, Mapping):
                 for name, payload in sorted(success_rate.items()):
+                    if name == permit_job or name == job_name:
+                        continue
                     if not isinstance(payload, Mapping):
                         continue
                     ratio_value = payload.get("ratio")

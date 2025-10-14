@@ -9,11 +9,18 @@ from typing import TYPE_CHECKING, Mapping, Optional, Protocol
 
 from .cooldown import CooldownGate
 from .dedupe import NearDuplicateFilter
-from ..infra import MetricsBackend, collect_weekly_snapshot, make_metrics_recorder
+from ..infra import MetricsBackend, collect_weekly_snapshot
 from ..infra import metrics as metrics_module
+from .orchestrator_metrics import (
+    MetricsRecorder,
+    NullMetricsRecorder,
+    format_metric_value,
+    resolve_metrics_boundary,
+)
 
 if TYPE_CHECKING:
     from ..infra.metrics import WeeklyMetricsSnapshot
+    from .orchestrator_metrics import MetricsBoundary
 
 
 class Sender(Protocol):
@@ -60,22 +67,6 @@ class PermitEvaluator(Protocol):
         ...
 
 
-class MetricsRecorder(Protocol):
-    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
-        ...
-
-    def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
-        ...
-
-
-class NullMetricsRecorder:
-    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
-        return None
-
-    def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
-        return None
-
-
 @dataclass
 class _SendRequest:
     text: str
@@ -84,12 +75,6 @@ class _SendRequest:
     channel: Optional[str]
     correlation_id: str
     engagement_score: Optional[float] = None
-
-
-def _format_metric_value(value: float) -> str:
-    formatted = f"{value:.3f}"
-    trimmed = formatted.rstrip("0").rstrip(".")
-    return trimmed or "0"
 
 
 class Orchestrator:
@@ -109,16 +94,10 @@ class Orchestrator:
         self._cooldown = cooldown
         self._dedupe = dedupe
         self._permit = permit
-        recorder: MetricsRecorder | None
-        if isinstance(metrics, MetricsBackend):
-            self._metrics_service = metrics
-            recorder = make_metrics_recorder(metrics)
-        else:
-            self._metrics_service = None
-            recorder = metrics
-        self._metrics = recorder or NullMetricsRecorder()
-        if recorder is not None:
-            metrics_module.configure_backend(recorder)
+        boundary = resolve_metrics_boundary(metrics)
+        self._metrics_boundary: MetricsBoundary = boundary
+        self._metrics_service = boundary.service
+        self._metrics = boundary.recorder
         self._logger = logger or logging.getLogger(__name__)
         self._queue: asyncio.Queue[_SendRequest | None] = asyncio.Queue(maxsize=queue_size)
         self._worker: asyncio.Task[None] | None = None
@@ -205,37 +184,15 @@ class Orchestrator:
             "platform": request.platform,
             "channel": request.channel or "-",
         }
-        aggregator = getattr(metrics_module, "_AGGREGATOR", None)
-        aggregator_configured = bool(
-            getattr(aggregator, "backend_configured", False)
-        ) if aggregator is not None else False
-        metrics_enabled = not isinstance(self._metrics, NullMetricsRecorder)
-        if not metrics_enabled and aggregator_configured:
-            metrics_enabled = True
-
-        def _suppress_backend(
-            include_self_backend: bool,
-        ) -> tuple[bool, MetricsRecorder | None]:
-            if aggregator is None:
-                return False, None
-            backend = getattr(aggregator, "backend", None)
-            if backend is None:
-                return False, None
-            if isinstance(self._metrics, NullMetricsRecorder):
-                setattr(aggregator, "backend", metrics_module.NullMetricsRecorder())
-                return True, backend
-            if include_self_backend and backend is self._metrics:
-                setattr(aggregator, "backend", metrics_module.NullMetricsRecorder())
-                return True, backend
-            return False, None
+        boundary = self._metrics_boundary
+        metrics_enabled = boundary.is_enabled()
 
         if not decision.allowed:
             retryable_flag = "true" if decision.retryable else "false"
             denied_tags = {**tags, "retryable": retryable_flag}
             reason = decision.reason or "unknown"
             if metrics_enabled:
-                suppress_backend, original_backend = _suppress_backend(False)
-                try:
+                with boundary.suppress_backend(False):
                     metrics_module.report_permit_denied(
                         job=job_name,
                         platform=request.platform,
@@ -243,13 +200,6 @@ class Orchestrator:
                         reason=reason,
                         permit_tags={"retryable": retryable_flag},
                     )
-                finally:
-                    if (
-                        suppress_backend
-                        and aggregator is not None
-                        and original_backend is not None
-                    ):
-                        setattr(aggregator, "backend", original_backend)
             denied_metadata = {
                 "correlation_id": request.correlation_id,
                 "reason": decision.reason,
@@ -297,8 +247,7 @@ class Orchestrator:
             error_type = exc.__class__.__name__
             failure_tags = {**tags, "error": error_type}
             if metrics_enabled:
-                suppress_backend, original_backend = _suppress_backend(True)
-                try:
+                with boundary.suppress_backend(True):
                     await metrics_module.report_send_failure(
                         job=job_name,
                         platform=request.platform,
@@ -306,13 +255,6 @@ class Orchestrator:
                         duration_seconds=duration,
                         error_type=error_type,
                     )
-                finally:
-                    if (
-                        suppress_backend
-                        and aggregator is not None
-                        and original_backend is not None
-                    ):
-                        setattr(aggregator, "backend", original_backend)
             self._metrics.observe("send.duration", duration, {**tags, "unit": "seconds"})
             self._metrics.increment("send.failure", failure_tags)
             failure_metadata = {
@@ -356,13 +298,12 @@ class Orchestrator:
         }
         permit_tags: dict[str, str] | None = None
         if request.engagement_score is not None:
-            formatted_score = _format_metric_value(request.engagement_score)
+            formatted_score = format_metric_value(request.engagement_score)
             success_tags["engagement_score"] = formatted_score
             log_extra["engagement_score"] = request.engagement_score
             permit_tags = {"engagement_score": formatted_score}
         if metrics_enabled:
-            suppress_backend, original_backend = _suppress_backend(False)
-            try:
+            with boundary.suppress_backend(False):
                 await metrics_module.report_send_success(
                     job=job_name,
                     platform=request.platform,
@@ -370,13 +311,6 @@ class Orchestrator:
                     duration_seconds=duration,
                     permit_tags=permit_tags,
                 )
-            finally:
-                if (
-                    suppress_backend
-                    and aggregator is not None
-                    and original_backend is not None
-                ):
-                    setattr(aggregator, "backend", original_backend)
         metadata = {"correlation_id": request.correlation_id}
         if request.engagement_score is not None:
             metadata["engagement_score"] = request.engagement_score
@@ -401,19 +335,10 @@ class Orchestrator:
         metadata: Mapping[str, object] | None = None,
         force: bool = False,
     ) -> None:
-        if self._metrics_service is None:
-            return
-        if not measurements:
-            return
-        if not force:
-            aggregator = getattr(metrics_module, "_AGGREGATOR", None)
-            if aggregator is not None:
-                backend = getattr(aggregator, "backend", None)
-                if backend is self._metrics:
-                    return
-        self._metrics_service.record_event(
+        self._metrics_boundary.record_event(
             name,
-            tags=tags,
+            tags,
             measurements=measurements,
             metadata=metadata,
+            force=force,
         )

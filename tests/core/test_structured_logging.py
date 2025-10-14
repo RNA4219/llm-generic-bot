@@ -49,6 +49,16 @@ class StubSender:
         self.sent.append((text, channel))
 
 
+class RecordingSender(StubSender):
+    def __init__(self) -> None:
+        super().__init__()
+        self.jobs: list[str] = []
+
+    async def send(self, text: str, channel: str | None = None, *, job: str) -> None:
+        await super().send(text, channel, job=job)
+        self.jobs.append(job)
+
+
 class FailingSender(StubSender):
     async def send(self, text: str, channel: str | None = None, *, job: str) -> None:
         await asyncio.sleep(0)
@@ -194,3 +204,58 @@ async def test_orchestrator_logs_permit_denial(caplog: pytest.LogCaptureFixture)
     assert denial_record.correlation_id == correlation_id
     assert denial_record.reason == "quota_exceeded"
     assert metrics.counts["send.denied"]["weather"] == 1
+
+
+async def test_orchestrator_processes_multiple_queue_items() -> None:
+    sender = StubSender()
+    cooldown = StubCooldown()
+    dedupe = StubDedupe()
+    metrics = MetricsStub()
+
+    def permit(_: str, __: str | None, ___: str) -> PermitDecision:
+        return PermitDecision.allow()
+
+    orchestrator = Orchestrator(
+        sender=sender,
+        cooldown=cooldown,
+        dedupe=dedupe,
+        permit=permit,
+        metrics=metrics,
+        platform="discord",
+    )
+
+    await orchestrator.enqueue("first", job="weather", platform="discord", channel="general")
+    await orchestrator.enqueue("second", job="weather", platform="discord", channel="general")
+
+    await orchestrator.flush()
+    await orchestrator.close()
+
+    assert sender.sent == [("first", "general"), ("second", "general")]
+    assert cooldown.calls[-1] == ("discord", "general", "weather")
+
+
+async def test_orchestrator_uses_permit_job_override() -> None:
+    sender = RecordingSender()
+    cooldown = StubCooldown()
+    dedupe = StubDedupe()
+    metrics = MetricsStub()
+
+    def permit(_: str, __: str | None, ___: str) -> PermitDecision:
+        return PermitDecision.allow(job="override")
+
+    orchestrator = Orchestrator(
+        sender=sender,
+        cooldown=cooldown,
+        dedupe=dedupe,
+        permit=permit,
+        metrics=metrics,
+        platform="discord",
+    )
+
+    await orchestrator.enqueue("content", job="weather", platform="discord", channel="general")
+
+    await orchestrator.flush()
+    await orchestrator.close()
+
+    assert sender.jobs == ["override"]
+    assert cooldown.calls == [("discord", "general", "override")]

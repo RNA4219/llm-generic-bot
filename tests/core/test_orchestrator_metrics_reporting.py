@@ -74,6 +74,43 @@ def test_orchestrator_reports_metrics_via_global_aggregator() -> None:
     )
 
 
+def test_orchestrator_records_single_send_duration_series() -> None:
+    metrics.reset_for_test()
+    service = MetricsService()
+
+    async def run() -> None:
+        orchestrator = Orchestrator(
+            sender=_InstrumentedSender(),
+            cooldown=CooldownGate(
+                window_sec=1,
+                mult_min=1.0,
+                mult_max=1.0,
+                k_rate=0.0,
+                k_time=0.0,
+                k_eng=0.0,
+            ),
+            dedupe=NearDuplicateFilter(),
+            permit=_permit,
+            metrics=service,
+            platform="slack",
+        )
+        try:
+            await orchestrator.enqueue(
+                "success", job="success-job", platform="slack", channel="general"
+            )
+            await orchestrator.flush()
+            snapshot = await orchestrator.weekly_snapshot()
+        finally:
+            await orchestrator.close()
+        send_observations = snapshot.observations.get("send.duration", {})
+        assert len(send_observations) == 1
+        (tags, observation), = send_observations.items()
+        assert dict(tags)["unit"] == "seconds"
+        assert observation.count == 1
+
+    asyncio.run(run())
+
+
 def test_orchestrator_preserves_metrics_backend_when_metrics_none() -> None:
     metrics.reset_for_test()
     service = MetricsService()

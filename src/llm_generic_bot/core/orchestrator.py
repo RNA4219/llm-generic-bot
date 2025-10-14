@@ -290,11 +290,13 @@ class Orchestrator:
                 "error_message": str(exc),
                 "duration_sec": duration,
             }
+            event_tags = {**failure_tags, "unit": "seconds"}
             self._record_event(
                 "send.failure",
-                failure_tags,
+                event_tags,
                 measurements={"duration_sec": duration},
                 metadata=failure_metadata,
+                force=True,
             )
             self._logger.error(
                 "send_failed",
@@ -356,11 +358,18 @@ class Orchestrator:
         *,
         measurements: Mapping[str, float] | None = None,
         metadata: Mapping[str, object] | None = None,
+        force: bool = False,
     ) -> None:
         if self._metrics_service is None:
             return
         if not measurements:
             return
+        if not force:
+            aggregator = getattr(metrics_module, "_AGGREGATOR", None)
+            if aggregator is not None:
+                backend = getattr(aggregator, "backend", None)
+                if backend is self._metrics:
+                    return
         self._metrics_service.record_event(
             name,
             tags=tags,

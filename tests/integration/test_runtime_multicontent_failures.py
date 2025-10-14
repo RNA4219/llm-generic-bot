@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Iterable
@@ -11,6 +12,7 @@ import pytest
 from llm_generic_bot import main as main_module
 from llm_generic_bot.core.orchestrator import PermitDecision
 from llm_generic_bot.core.queue import CoalesceQueue
+from llm_generic_bot.features.dm_digest import DigestLogEntry
 from llm_generic_bot.features.news import NewsFeedItem, SummaryError
 from llm_generic_bot.infra import metrics
 
@@ -150,4 +152,62 @@ async def test_summary_provider_retry_and_fallback(caplog: pytest.LogCaptureFixt
     assert len(retry) == 1 and retry[0].attempt == 1
     assert len(fallback) == 1 and fallback[0].reason == "fatal"
     assert metrics._AGGREGATOR.weekly_snapshot()["success_rate"]["news"]["success"] == 1
+    await orchestrator.close()
+
+
+async def test_dm_digest_permit_denied_records_metrics() -> None:
+    metrics.reset_for_test()
+    settings = _settings()
+    dm_cfg = settings["dm_digest"]
+    dm_cfg["enabled"] = True
+    dm_cfg["source_channel"] = "dm-source"
+    dm_cfg["recipient_id"] = "recipient-1"
+
+    entry = DigestLogEntry(
+        timestamp=datetime(2024, 1, 2, 9, 0, tzinfo=timezone.utc),
+        level="INFO",
+        message="event happened",
+    )
+
+    async def _collect(channel: str, *, limit: int) -> Iterable[DigestLogEntry]:
+        assert channel == "dm-source"
+        assert limit == dm_cfg.get("max_events", 20)
+        return [entry]
+
+    async def _summarize(text: str, *, max_events: int | None = None) -> str:
+        assert "event happened" in text
+        assert max_events == dm_cfg.get("max_events", 20)
+        return "summary"
+
+    async def _send(*args: Any, **kwargs: Any) -> None:  # pragma: no cover - should not be called
+        raise AssertionError("sender should not be invoked when permit denies")
+
+    dm_cfg["log_provider"] = SimpleNamespace(collect=_collect)
+    dm_cfg["summary_provider"] = SimpleNamespace(summarize=_summarize)
+    dm_cfg["sender"] = SimpleNamespace(send=_send)
+
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+
+    def _deny(_platform: str, _channel: str | None, job: str) -> PermitDecision:
+        return PermitDecision(allowed=False, reason="quota", retryable=False, job=f"{job}-denied")
+
+    permit_gate = SimpleNamespace(permit=_deny)
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue, permit_gate=permit_gate)
+    scheduler.jitter_enabled = False
+
+    result = await jobs["dm_digest"]()
+    assert result is None
+
+    snapshot = metrics._AGGREGATOR.weekly_snapshot()["permit_denials"]
+    assert snapshot == [
+        {
+            "job": "dm_digest-denied",
+            "platform": "discord_dm",
+            "channel": "recipient-1",
+            "reason": "quota",
+            "retryable": "false",
+        }
+    ]
+
     await orchestrator.close()

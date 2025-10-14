@@ -92,7 +92,7 @@ async def test_scheduler_immediate_when_jitter_disabled(monkeypatch: pytest.Monk
     assert sender.sent == ["only"]
 
 
-async def test_scheduler_passes_jitter_range_and_job(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_scheduler_jitter_respects_range(monkeypatch: pytest.MonkeyPatch) -> None:
     sender = StubSender()
     queue = CoalesceQueue(window_seconds=0.0, threshold=5)
     delays: deque[float] = deque()
@@ -117,7 +117,7 @@ async def test_scheduler_passes_jitter_range_and_job(monkeypatch: pytest.MonkeyP
         sender=sender,
         queue=queue,
         jitter_enabled=True,
-        jitter_range=(5, 10),
+        jitter_range=(10, 40),
         sleep=fake_sleep,
     )
 

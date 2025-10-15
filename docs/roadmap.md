@@ -30,7 +30,7 @@
 - [SCH-01] CoalesceQueue（`core/scheduler.py`）: 近接メッセージを併合し、送信処理にバッチで渡す。
 - [SCH-02] ジッタ適用（`core/scheduler.py`）: 送信時刻にランダムオフセットを付与し突発集中を緩和。
 - [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator.py`→`core/orchestrator/processor.py`）: 送信結果とコンテキストを JSON ログで記録。
-- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: `ruff check`、`mypy src`、`pytest -q` を独立ジョブとして並列運用している現行構成を維持しつつ、Lint/Type/Test の成否を Slack 通知するガードレールを追加済み。依存: 共通セットアップを各ジョブで手動繰り返し適用している暫定運用の解消。→ 実装済み
+- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: `ruff check`、`mypy src`、`pytest -q` を独立ジョブとして並列運用している現行構成を維持しつつ、Lint/Type/Test 各ジョブに `Notify Slack on failure` ガードレールを追加済み。依存: 共通セットアップを各ジョブで手動繰り返し適用している暫定運用の解消。→ 実装済み
 - [OPS-06] セキュリティスキャン拡充（`.github/workflows/ci.yml`）: CodeQL 解析と `pip-audit` を週次ジョブで追加し、依存ライブラリの脆弱性検出を自動化する。依存: [OPS-05] の共通セットアップ整備。→ 実装済み
 
 ## Sprint 2: UX & コンテンツ

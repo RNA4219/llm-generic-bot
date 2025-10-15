@@ -1,6 +1,7 @@
 # タスク記録
 
-- 2025-10-16: docs/roadmap.md の OPS-04 / Sprint3 を `infra/metrics/aggregator.py`・`infra/metrics/aggregator_state.py` 参照へ更新し、役割分担の整合を確認。
+- 2025-10-15: docs/roadmap.md の OPS-04 / Sprint3 を `infra/metrics/aggregator.py`・`infra/metrics/aggregator_state.py` 参照へ更新し、役割分担の整合を確認。
+- 2025-10-15: docs/tasks/backlog.md の OPS-B02 / UX-B01 に `core/orchestrator_metrics.py` を追記し、メトリクス境界参照先を明示。
 - 2025-10-15: README の週次サマリ参照先を `runtime/setup/__init__.py` へ更新し、構成ツリーへ `core/orchestrator/processor.py` と `infra/metrics/aggregator*.py` を追記。
 - 2025-10-14: Backlog OPS-B02 / UX-B01 の対象領域に `core/orchestrator/processor.py` を追記し、他タスクの参照揺れを防止。
 - 2025-10-14: Sprint3 ドキュメントの OPS-02/OPS-04 を `core/orchestrator/processor.py` へ更新し、Permit 判定/送信記録/メトリクス通知の責務を追記。

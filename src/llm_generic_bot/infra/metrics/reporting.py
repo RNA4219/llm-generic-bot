@@ -2,23 +2,16 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from .aggregator_state import (
-    _AGGREGATOR,
-    _GlobalMetricsAggregator as _StateGlobalMetricsAggregator,
-    _utcnow as _state_utcnow,
-)
+from . import aggregator_state
 from .service import MetricsRecorder
-
-_GlobalMetricsAggregator = _StateGlobalMetricsAggregator
-_utcnow = _state_utcnow
 
 
 def configure_backend(recorder: MetricsRecorder | None) -> None:
-    _AGGREGATOR.configure_backend(recorder)
+    aggregator_state._AGGREGATOR.configure_backend(recorder)
 
 
 def clear_history() -> None:
-    _AGGREGATOR.clear_history()
+    aggregator_state._AGGREGATOR.clear_history()
 
 
 async def report_send_success(
@@ -29,7 +22,7 @@ async def report_send_success(
     duration_seconds: float,
     permit_tags: Mapping[str, str] | None = None,
 ) -> None:
-    _AGGREGATOR.report_send_success(
+    aggregator_state._AGGREGATOR.report_send_success(
         job=job,
         platform=platform,
         channel=channel,
@@ -46,7 +39,7 @@ async def report_send_failure(
     duration_seconds: float,
     error_type: str,
 ) -> None:
-    _AGGREGATOR.report_send_failure(
+    aggregator_state._AGGREGATOR.report_send_failure(
         job=job,
         platform=platform,
         channel=channel,
@@ -63,7 +56,7 @@ def report_permit_denied(
     reason: str,
     permit_tags: Mapping[str, str] | None = None,
 ) -> None:
-    _AGGREGATOR.report_permit_denied(
+    aggregator_state._AGGREGATOR.report_permit_denied(
         job=job,
         platform=platform,
         channel=channel,
@@ -73,15 +66,15 @@ def report_permit_denied(
 
 
 def reset_for_test() -> None:
-    _AGGREGATOR.reset()
+    aggregator_state._AGGREGATOR.reset()
 
 
 def set_retention_days(retention_days: int | None) -> None:
-    _AGGREGATOR.set_retention_days(retention_days)
+    aggregator_state._AGGREGATOR.set_retention_days(retention_days)
 
 
 def weekly_snapshot() -> dict[str, object]:
-    return _AGGREGATOR.weekly_snapshot()
+    return aggregator_state._AGGREGATOR.weekly_snapshot()
 
 
 __all__ = [

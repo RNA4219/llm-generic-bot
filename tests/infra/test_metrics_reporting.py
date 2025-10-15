@@ -29,11 +29,9 @@ except ModuleNotFoundError:  # pragma: no cover
             yield
 
 from llm_generic_bot.core.orchestrator import MetricsRecorder
-from llm_generic_bot.infra.metrics import (
-    aggregator_state,
-    reporting,
-    service as service_module,
-)
+import llm_generic_bot.infra.metrics.aggregator_state as aggregator_state
+
+from llm_generic_bot.infra.metrics import reporting, service as service_module
 
 
 class RecordingMetrics(MetricsRecorder):

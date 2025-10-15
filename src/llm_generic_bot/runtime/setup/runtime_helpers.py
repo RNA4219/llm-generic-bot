@@ -26,7 +26,10 @@ def resolve_sender(
 ) -> tuple[str, Optional[str], Sender]:
     discord_cfg = as_mapping(profiles.get("discord"))
     misskey_cfg = as_mapping(profiles.get("misskey"))
-    if is_enabled(discord_cfg, default=False):
+    discord_enabled = is_enabled(discord_cfg, default=False)
+    misskey_enabled = is_enabled(misskey_cfg, default=False)
+
+    if discord_enabled:
         channel_value = discord_cfg.get("channel")
         default_channel: Optional[str]
         if isinstance(channel_value, str):
@@ -35,7 +38,7 @@ def resolve_sender(
             default_channel = None
         active_sender = sender or DiscordSender()
         return "discord", default_channel, active_sender
-    if is_enabled(misskey_cfg, default=False):
+    if misskey_enabled:
         channel_value = misskey_cfg.get("channel")
         default_channel = channel_value if isinstance(channel_value, str) else None
         active_sender = sender or MisskeySender()

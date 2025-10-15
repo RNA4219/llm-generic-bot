@@ -10,7 +10,7 @@ from ...core.orchestrator import Orchestrator, Sender
 from ...core.scheduler import Scheduler
 from ...features.report import ReportPayload, WeeklyReportTemplate, generate_weekly_summary
 from ...infra import metrics as metrics_module
-from ..jobs.common import as_mapping, collect_schedules, get_float, optional_str
+from ..jobs.common import as_mapping, collect_schedules, get_float, is_enabled, optional_str
 
 
 __all__ = [
@@ -26,7 +26,7 @@ def resolve_sender(
 ) -> tuple[str, Optional[str], Sender]:
     discord_cfg = as_mapping(profiles.get("discord"))
     misskey_cfg = as_mapping(profiles.get("misskey"))
-    if discord_cfg.get("enabled"):
+    if is_enabled(discord_cfg, default=False):
         channel_value = discord_cfg.get("channel")
         default_channel: Optional[str]
         if isinstance(channel_value, str):
@@ -35,10 +35,12 @@ def resolve_sender(
             default_channel = None
         active_sender = sender or DiscordSender()
         return "discord", default_channel, active_sender
-    channel_value = misskey_cfg.get("channel")
-    default_channel = channel_value if isinstance(channel_value, str) else None
-    active_sender = sender or MisskeySender()
-    return "misskey", default_channel, active_sender
+    if is_enabled(misskey_cfg, default=False):
+        channel_value = misskey_cfg.get("channel")
+        default_channel = channel_value if isinstance(channel_value, str) else None
+        active_sender = sender or MisskeySender()
+        return "misskey", default_channel, active_sender
+    raise ValueError("no sending profiles enabled")
 
 
 _WEEKDAY_INDEX = {

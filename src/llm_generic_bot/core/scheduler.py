@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 # NOTE: tests monkeypatch the module-level `dt` alias to control time.
 from dataclasses import dataclass
-from typing import Awaitable, Callable, List, Optional, Protocol
+from typing import Awaitable, Callable, Final, List, Optional, Protocol
 import zoneinfo
 import anyio
 
@@ -24,6 +24,9 @@ class _ScheduledJob:
     handler: _JobCallable
     priority: int
     channel: Optional[str]
+
+
+_JITTER_CAP: Final[tuple[int, int]] = (5, 10)
 
 
 class Scheduler:

@@ -14,7 +14,7 @@ from llm_generic_bot.core.orchestrator import PermitDecision
 from llm_generic_bot.core.queue import CoalesceQueue
 from llm_generic_bot.features.dm_digest import DigestLogEntry
 from llm_generic_bot.features.news import NewsFeedItem, SummaryError
-from llm_generic_bot.infra import metrics
+from llm_generic_bot.infra.metrics import aggregator_state
 
 pytestmark = pytest.mark.anyio("asyncio")
 
@@ -52,7 +52,7 @@ def anyio_backend() -> str:
 
 
 async def test_permit_denied_records_metrics(caplog: pytest.LogCaptureFixture) -> None:
-    metrics.reset_for_test()
+    aggregator_state._AGGREGATOR.reset()
     settings = _settings()
     queue = CoalesceQueue(window_seconds=0.0, threshold=1)
 
@@ -81,14 +81,14 @@ async def test_permit_denied_records_metrics(caplog: pytest.LogCaptureFixture) -
 
     denied = [record for record in caplog.records if record.message == "permit_denied"]
     assert denied and denied[0].job == "news-denied"
-    assert metrics._AGGREGATOR.weekly_snapshot()["permit_denials"] == [
+    assert aggregator_state._AGGREGATOR.weekly_snapshot()["permit_denials"] == [
         {"job": "news-denied", "platform": "discord", "channel": "discord-news", "reason": "quota", "retryable": "false"}
     ]
     await orchestrator.close()
 
 
 async def test_cooldown_resume_allows_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    metrics.reset_for_test()
+    aggregator_state._AGGREGATOR.reset()
     settings = _settings()
     queue = CoalesceQueue(window_seconds=0.0, threshold=1)
 
@@ -114,13 +114,13 @@ async def test_cooldown_resume_allows_retry(monkeypatch: pytest.MonkeyPatch) -> 
     await scheduler.dispatch_ready_batches(current)
     await orchestrator.flush()
 
-    snapshot = metrics._AGGREGATOR.weekly_snapshot()
+    snapshot = aggregator_state._AGGREGATOR.weekly_snapshot()
     assert snapshot["success_rate"]["news"]["success"] == 1
     await orchestrator.close()
 
 
 async def test_summary_provider_retry_and_fallback(caplog: pytest.LogCaptureFixture) -> None:
-    metrics.reset_for_test()
+    aggregator_state._AGGREGATOR.reset()
     settings = _settings()
     queue = CoalesceQueue(window_seconds=0.0, threshold=1)
 
@@ -151,12 +151,12 @@ async def test_summary_provider_retry_and_fallback(caplog: pytest.LogCaptureFixt
     fallback = [r for r in caplog.records if r.message == "news_summary_fallback"]
     assert len(retry) == 1 and retry[0].attempt == 1
     assert len(fallback) == 1 and fallback[0].reason == "fatal"
-    assert metrics._AGGREGATOR.weekly_snapshot()["success_rate"]["news"]["success"] == 1
+    assert aggregator_state._AGGREGATOR.weekly_snapshot()["success_rate"]["news"]["success"] == 1
     await orchestrator.close()
 
 
 async def test_dm_digest_permit_denied_records_metrics() -> None:
-    metrics.reset_for_test()
+    aggregator_state._AGGREGATOR.reset()
     settings = _settings()
     dm_cfg = settings["dm_digest"]
     dm_cfg["enabled"] = True
@@ -199,7 +199,7 @@ async def test_dm_digest_permit_denied_records_metrics() -> None:
     result = await jobs["dm_digest"]()
     assert result is None
 
-    snapshot = metrics._AGGREGATOR.weekly_snapshot()["permit_denials"]
+    snapshot = aggregator_state._AGGREGATOR.weekly_snapshot()["permit_denials"]
     assert snapshot == [
         {
             "job": "dm_digest-denied",

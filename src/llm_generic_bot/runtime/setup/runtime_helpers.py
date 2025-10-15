@@ -30,17 +30,11 @@ def resolve_sender(
     misskey_enabled = is_enabled(misskey_cfg, default=False)
 
     if discord_enabled:
-        channel_value = discord_cfg.get("channel")
-        default_channel: Optional[str]
-        if isinstance(channel_value, str):
-            default_channel = channel_value
-        else:
-            default_channel = None
+        default_channel = optional_str(discord_cfg.get("channel"))
         active_sender = sender or DiscordSender()
         return "discord", default_channel, active_sender
     if misskey_enabled:
-        channel_value = misskey_cfg.get("channel")
-        default_channel = channel_value if isinstance(channel_value, str) else None
+        default_channel = optional_str(misskey_cfg.get("channel"))
         active_sender = sender or MisskeySender()
         return "misskey", default_channel, active_sender
     raise ValueError("no sending profiles enabled")
@@ -118,7 +112,7 @@ def register_weekly_report_job(
         footer=footer_template,
     )
     permit_cfg = as_mapping(config.get("permit"))
-    permit_platform = str(permit_cfg.get("platform", platform))
+    permit_platform = optional_str(permit_cfg.get("platform")) or platform
     permit_channel = optional_str(permit_cfg.get("channel")) or job_channel
     permit_job = optional_str(permit_cfg.get("job")) or job_name
     permit_overrides[job_name] = (permit_platform, permit_channel, permit_job)

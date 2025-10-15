@@ -288,3 +288,11 @@ def _select_bucket(value: float) -> str:
 
 
 _AGGREGATOR = _GlobalMetricsAggregator()
+
+
+def weekly_snapshot() -> dict[str, object]:
+    return _AGGREGATOR.weekly_snapshot()
+
+
+def reset_for_test() -> None:
+    _AGGREGATOR.reset()

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from . import aggregator as _aggregator
 
+_GlobalMetricsAggregator = _aggregator._GlobalMetricsAggregator
+
 configure_backend = _aggregator.configure_backend
 report_permit_denied = _aggregator.report_permit_denied
 report_send_failure = _aggregator.report_send_failure

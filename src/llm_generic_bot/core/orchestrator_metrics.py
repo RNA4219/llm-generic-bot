@@ -35,9 +35,11 @@ class MetricsBoundary:
     service: MetricsBackend | None
 
     def is_enabled(self) -> bool:
-        aggregator = self._resolve_aggregator()
-        aggregator_configured = bool(getattr(aggregator, "backend_configured", False)) if aggregator else False
-        return not isinstance(self.recorder, NullMetricsRecorder) or aggregator_configured
+        if isinstance(self.recorder, NullMetricsRecorder):
+            return False
+        if self.service is None:
+            return False
+        return True
 
     @contextmanager
     def suppress_backend(self, include_self_backend: bool) -> Iterator[None]:

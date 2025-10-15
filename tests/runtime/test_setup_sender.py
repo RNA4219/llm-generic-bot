@@ -58,3 +58,25 @@ async def test_resolve_sender_discord_channel_defaults_to_none() -> None:
 
     await sender.send("world", channel=None, job="sample")
 
+
+def test_resolve_sender_rejects_string_false_profiles() -> None:
+    profiles = {
+        "discord": {"enabled": "false"},
+        "misskey": {"enabled": "false"},
+    }
+
+    with pytest.raises(ValueError, match="no sending profiles enabled"):
+        resolve_sender(profiles, sender=None)
+
+
+def test_resolve_sender_prefers_discord_when_misskey_disabled() -> None:
+    profiles = {
+        "discord": {"enabled": True},
+        "misskey": {"enabled": False},
+    }
+
+    platform, default_channel, _ = resolve_sender(profiles, sender=None)
+
+    assert platform == "discord"
+    assert default_channel is None
+

@@ -59,6 +59,34 @@ async def test_resolve_sender_discord_channel_defaults_to_none() -> None:
     await sender.send("world", channel=None, job="sample")
 
 
+@pytest.mark.anyio("asyncio")
+async def test_resolve_sender_empty_channels_are_treated_as_none() -> None:
+    profiles = {
+        "discord": {"enabled": True, "channel": ""},
+        "misskey": {"enabled": True, "channel": ""},
+    }
+
+    platform, default_channel, _ = resolve_sender(profiles, sender=None)
+
+    assert platform == "discord"
+    assert default_channel is None
+
+    stub_orchestrator = _StubOrchestrator()
+    scheduler_sender, permit_overrides = build_send_adapter(
+        orchestrator=cast(Orchestrator, stub_orchestrator),
+        platform=platform,
+        default_channel=default_channel,
+    )
+
+    assert permit_overrides == {}
+
+    await scheduler_sender.send("hello", job="sample")
+
+    assert stub_orchestrator.calls == [
+        {"text": "hello", "job": "sample", "platform": "discord", "channel": None}
+    ]
+
+
 def test_resolve_sender_rejects_string_false_profiles() -> None:
     profiles = {
         "discord": {"enabled": "false"},

@@ -104,7 +104,7 @@ class Scheduler:
         job_name = batch.job
         channel = batch.channel
         text = batch.text
-        jitter_range = self.jitter_range
+        jitter_range = self._effective_jitter_range()
 
         target_ts = reference_ts
         if self.jitter_enabled:
@@ -117,3 +117,16 @@ class Scheduler:
         await self.sender.send(text, channel, job=job_name)
         self._last_dispatch_ts = target_ts if delay > 0 else reference_ts
         return target_ts
+
+    def _effective_jitter_range(self) -> tuple[int, int]:
+        base_low, base_high = self.jitter_range
+        window = self.queue.window_seconds
+        if window <= 0.0:
+            threshold = getattr(self.queue, "_threshold", None)
+            if isinstance(threshold, int) and threshold > 0:
+                base_low = min(base_low, threshold)
+                upper_candidate = max(base_low, threshold * 2)
+                base_high = min(base_high, upper_candidate)
+        if base_low > base_high:
+            return base_low, base_low
+        return base_low, base_high

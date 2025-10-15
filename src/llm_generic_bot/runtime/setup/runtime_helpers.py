@@ -94,7 +94,7 @@ def register_weekly_report_job(
     jobs: dict[str, Callable[[], Awaitable[Optional[str]]]],
     summary_factory: Callable[..., ReportPayload] = generate_weekly_summary,
 ) -> None:
-    if not config.get("enabled"):
+    if not is_enabled(config, default=False):
         return
 
     job_name = str(config.get("job", "weekly_report"))

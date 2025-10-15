@@ -46,7 +46,7 @@
     }
   },
   "metrics": {
-    "_usage": "ランタイムメトリクスの収集/エクスポート設定 (infra.metrics.default と同一)。retention_days で保持日数(既定7日)を上書き",
+    "_usage": "ランタイムメトリクスの収集/エクスポート設定。infra/metrics/aggregator.py・infra/metrics/aggregator_state.py・infra/metrics/service.py で利用される構成を retention_days で保持日数(既定7日)と共に指定",
     "backend": "memory",
     "retention_days": 14,
     "export": {

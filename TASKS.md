@@ -1,5 +1,7 @@
 # タスク記録
 
+- 2025-10-16: config/settings.example.json の `limits` / `metrics.export` に未実装警告コメントを追加し、サンプル構成の整合を確認。
+- 2025-10-16: config/settings.example.json の `metrics._usage` を `infra/metrics/aggregator.py`・`infra/metrics/aggregator_state.py`・`infra/metrics/service.py` 参照へ更新予定（他タスクとの重複防止メモ）。
 - 2025-10-15: docs/roadmap.md の OPS-04 / Sprint3 を `infra/metrics/aggregator.py`・`infra/metrics/aggregator_state.py` 参照へ更新し、役割分担の整合を確認。
 - 2025-10-15: docs/tasks/backlog.md の OPS-B02 / UX-B01 に `core/orchestrator_metrics.py` を追記し、メトリクス境界参照先を明示。
 - 2025-10-15: README の週次サマリ参照先を `runtime/setup/__init__.py` へ更新し、構成ツリーへ `core/orchestrator/processor.py` と `infra/metrics/aggregator*.py` を追記。
@@ -14,3 +16,4 @@
 - 2025-10-16: docs/roadmap.md OPS-04 / Sprint3 のモジュールリストを更新し、`aggregator.py` / `aggregator_state.py` の責務説明と整合チェックを追記（更新済み）。
 - 2025-10-15: runtime/setup/runtime_helpers.py の送信プロファイル判定を `is_enabled` へ統一し、`pytest tests/runtime/test_setup_sender.py -q` → `mypy` → `ruff` の順で緑化確認。
 - 2025-10-15: docs/tasks/sprint3.md の OPS-04 に新メトリクスファサード（`infra/metrics/aggregator*.py`）を追記し、集約経路説明を更新。
+- 2025-10-16: `core/orchestrator_metrics.py` の `suppress_backend` 差し替え保護を追記し、`pytest tests/core/test_metrics_boundary.py -q` → `mypy src/llm_generic_bot/core/orchestrator_metrics.py` → `ruff check src/llm_generic_bot/core/orchestrator_metrics.py` を順に実施済み。

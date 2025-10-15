@@ -88,7 +88,12 @@ def setup_runtime(
     if not metrics_enabled:
         metrics_module.clear_history()
         metrics_module.configure_backend(None)
-    elif metrics_cfg.get("backend", "memory") == "memory":
+    else:
+        backend_raw = metrics_cfg.get("backend", "memory")
+        backend_name = str(backend_raw).strip()
+        backend_normalized = backend_name.lower()
+        if backend_normalized != "memory" or backend_name != "memory":
+            raise ValueError(f"unsupported metrics backend: {backend_raw!r}")
         retention_days = None
         retention_value = metrics_cfg.get("retention_days")
         if retention_value is not None:
@@ -99,8 +104,6 @@ def setup_runtime(
             metrics_service = MetricsService(retention_days=retention_days)
         else:
             metrics_service = MetricsService()
-    else:
-        metrics_module.configure_backend(None)
 
     orchestrator = Orchestrator(
         sender=active_sender,

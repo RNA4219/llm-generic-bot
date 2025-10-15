@@ -122,13 +122,14 @@ class Scheduler:
         return target_ts
 
     def _effective_jitter_range(self) -> tuple[int, int]:
-        configured_lo, configured_hi = self.jitter_range
-        cap_lo, cap_hi = _JITTER_CAP
-
-        limited_lo = min(configured_lo, cap_lo)
-        limited_hi = min(configured_hi, cap_hi)
-
-        if limited_hi < limited_lo:
-            limited_hi = limited_lo
-
-        return (limited_lo, limited_hi)
+        base_low, base_high = self.jitter_range
+        window = self.queue.window_seconds
+        if window <= 0.0:
+            threshold = getattr(self.queue, "_threshold", None)
+            if isinstance(threshold, int) and threshold > 0:
+                base_low = min(base_low, threshold)
+                upper_candidate = max(base_low, threshold * 2)
+                base_high = min(base_high, upper_candidate)
+        if base_low > base_high:
+            return base_low, base_low
+        return base_low, base_high

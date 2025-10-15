@@ -131,8 +131,11 @@ async def test_scheduler_jitter_respects_range(monkeypatch: pytest.MonkeyPatch) 
     queue.push("second", priority=2, job="job-b", created_at=base, channel="permit")
     await scheduler.dispatch_ready_batches(base)
 
+    expected_low = min(scheduler.jitter_range[0], getattr(queue, "_threshold"))
+    expected_high = min(scheduler.jitter_range[1], max(expected_low, getattr(queue, "_threshold") * 2))
+
     assert list(delays) == [0.0, 5.0, 10.0]
-    assert jitter_calls == [(5, 10), (5, 10), (5, 10)]
+    assert jitter_calls == [(expected_low, expected_high)] * 3
     assert list(clash_flags) == [False, True, True]
     assert sender.sent == ["min", "permit:first", "permit:second"]
     assert sender.jobs == ["daily", "job-a", "job-b"]

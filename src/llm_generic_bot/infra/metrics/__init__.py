@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .aggregator import _AGGREGATOR
 from .reporting import (
     configure_backend,
     report_permit_denied,
@@ -8,7 +9,6 @@ from .reporting import (
     reset_for_test,
     set_retention_days,
     weekly_snapshot,
-    _AGGREGATOR,
 )
 from .service import (
     CounterSnapshot,

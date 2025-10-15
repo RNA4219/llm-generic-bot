@@ -6,7 +6,7 @@
 - `build_weather_jobs` は OpenWeather からの都市別現在値を配信する Weather 投稿ジョブを構築し、設定で指定された単一/複数スケジュールを 1 件の `ScheduledJob` に束ねつつ today/yesterday キャッシュをローテーションし、30℃/35℃ 閾値や前日比 ΔT をもとに注意枠を生成している。
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
 - PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
-  - `src/llm_generic_bot/runtime/setup/__init__.py` の `setup_runtime` は `src/llm_generic_bot/runtime/setup/runtime_helpers.py` を介して `PermitGate.permit` の結果を `PermitDecision` に包み直し、許可時はジョブ名を差し替えつつ `Orchestrator.enqueue` へ渡す。
+  - `src/llm_generic_bot/runtime/setup/__init__.py` の `setup_runtime` は `src/llm_generic_bot/runtime/setup/gates.py::build_permit` を呼び出して `PermitGate.permit` の結果を `PermitDecision` へ包み直した `PermitEvaluator` を構築し、同関数内で `Orchestrator` と `JobContext` へ共有している。
   - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 判定前のメッセージ束を保持する。`Scheduler.queue.push` で積まれたバッチは `dispatch_ready_batches` を経て `sender.send` で `Orchestrator.enqueue` に載せられ、内部ワーカー `_process` が Permit を評価する。不許可時は `send.denied` を記録してバッチを破棄する。
   - ジッタは `core/scheduler.py` の `Scheduler` で既定有効となり、Permit 判定前のバッチに対して `next_slot` が遅延を決定してからオーケストレータへ渡す。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
 - integration テストは以下で運用経路をカバーしている:

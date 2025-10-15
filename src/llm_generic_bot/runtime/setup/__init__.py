@@ -27,7 +27,7 @@ from ...features.weather import build_weather_post
 from ...infra import metrics as metrics_module
 from ...infra.metrics import MetricsService
 from ..jobs import JobContext, ScheduledJob
-from ..jobs.common import as_mapping, get_float, resolve_object
+from ..jobs.common import as_mapping, get_float, is_enabled, resolve_object
 from ..jobs.dm_digest import build_dm_digest_jobs
 from ..jobs.news import build_news_jobs
 from ..jobs.omikuji import build_omikuji_jobs
@@ -71,8 +71,8 @@ def setup_runtime(
     profiles = as_mapping(cfg.get("profiles"))
     discord_cfg = as_mapping(profiles.get("discord"))
     misskey_cfg = as_mapping(profiles.get("misskey"))
-    discord_enabled = bool(discord_cfg.get("enabled"))
-    misskey_enabled = bool(misskey_cfg.get("enabled"))
+    discord_enabled = is_enabled(discord_cfg, default=False)
+    misskey_enabled = is_enabled(misskey_cfg, default=False)
     if not discord_enabled and not misskey_enabled:
         raise ValueError("no sending profiles enabled")
 

@@ -30,7 +30,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from llm_generic_bot.core.orchestrator import MetricsRecorder
 from llm_generic_bot.infra.metrics import (
-    aggregator as aggregator_module,
+    aggregator_state,
     reporting,
     service as service_module,
 )
@@ -75,12 +75,12 @@ async def test_reset_for_test_restores_defaults() -> None:
             permit_tags=None,
         )
 
-    assert aggregator_module._AGGREGATOR.retention_days == 3
+    assert aggregator_state._AGGREGATOR.retention_days == 3
 
     reporting.reset_for_test()
 
     # reset_for_test should fully restore aggregator defaults for follow-up refactors.
-    assert aggregator_module._AGGREGATOR.retention_days == 7
+    assert aggregator_state._AGGREGATOR.retention_days == 7
     snapshot = reporting.weekly_snapshot()
     assert snapshot["success_rate"] == {}
     assert snapshot["latency_histogram_seconds"] == {}
@@ -252,7 +252,7 @@ async def test_weekly_snapshot_respects_configured_retention(
     def clock() -> datetime:
         return current["value"]
 
-    monkeypatch.setattr(aggregator_module, "_utcnow", lambda: current["value"])
+    monkeypatch.setattr(aggregator_state, "_utcnow", lambda: current["value"])
 
     service = service_module.MetricsService(clock=clock, retention_days=3)
     reporting.configure_backend(service)
@@ -413,7 +413,7 @@ async def test_weekly_snapshot_retention_survives_backend_reconfiguration(
     base_time = datetime(2025, 4, 10, tzinfo=timezone.utc)
     current = {"value": base_time}
 
-    monkeypatch.setattr(aggregator_module, "_utcnow", lambda: current["value"])
+    monkeypatch.setattr(aggregator_state, "_utcnow", lambda: current["value"])
 
     reporting.set_retention_days(3)
 

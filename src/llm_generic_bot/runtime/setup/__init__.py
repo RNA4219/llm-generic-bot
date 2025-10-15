@@ -82,9 +82,12 @@ def setup_runtime(
     )
 
     metrics_cfg = as_mapping(cfg.get("metrics"))
+    metrics_enabled = is_enabled(metrics_cfg, default=True)
     metrics_service: Optional[MetricsService] = None
     metrics_module.set_retention_days(None)
-    if metrics_cfg.get("backend", "memory") == "memory":
+    if not metrics_enabled:
+        metrics_module.configure_backend(None)
+    elif metrics_cfg.get("backend", "memory") == "memory":
         retention_days = None
         retention_value = metrics_cfg.get("retention_days")
         if retention_value is not None:
@@ -96,7 +99,7 @@ def setup_runtime(
         else:
             metrics_service = MetricsService()
     else:
-        metrics_module.set_retention_days(None)
+        metrics_module.configure_backend(None)
 
     orchestrator = Orchestrator(
         sender=active_sender,

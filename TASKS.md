@@ -2,6 +2,7 @@
 
 - 2025-10-16: config/settings.example.json の `limits` / `metrics.export` に未実装警告コメントを追加し、サンプル構成の整合を確認。
 - 2025-10-16: config/settings.example.json の `metrics._usage` を `infra/metrics/aggregator.py`・`infra/metrics/aggregator_state.py`・`infra/metrics/service.py` 参照へ更新予定（他タスクとの重複防止メモ）。
+- 2025-10-16: tests/runtime/test_weekly_report_setup.py での同一ファイル追加入力タスク（`is_enabled` 判定統一対応の継続）を記録。
 - 2025-10-15: docs/roadmap.md の OPS-04 / Sprint3 を `infra/metrics/aggregator.py`・`infra/metrics/aggregator_state.py` 参照へ更新し、役割分担の整合を確認。
 - 2025-10-15: docs/tasks/backlog.md の OPS-B02 / UX-B01 に `core/orchestrator_metrics.py` を追記し、メトリクス境界参照先を明示。
 - 2025-10-15: README の週次サマリ参照先を `runtime/setup/__init__.py` へ更新し、構成ツリーへ `core/orchestrator/processor.py` と `infra/metrics/aggregator*.py` を追記。

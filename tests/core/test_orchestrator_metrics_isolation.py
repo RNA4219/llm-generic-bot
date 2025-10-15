@@ -35,7 +35,6 @@ def test_weekly_snapshot_is_isolated_between_instances() -> None:
 
     async def run() -> None:
         sender_a = StubSender()
-        sender_b = StubSender()
         cooldown = StubCooldownGate()
         dedupe = StubNearDuplicateFilter()
 
@@ -50,17 +49,20 @@ def test_weekly_snapshot_is_isolated_between_instances() -> None:
             metrics=MetricsService(),
             platform="test-platform",
         )
-        orchestrator_b = Orchestrator(
-            sender=sender_b,
-            cooldown=cooldown,
-            dedupe=dedupe,
-            permit=permit,
-            metrics=None,
-            platform="test-platform",
-        )
+        orchestrator_b: Orchestrator | None = None
 
         try:
             await orchestrator_a.send("hello", job="job-a")
+
+            orchestrator_b = Orchestrator(
+                sender=StubSender(),
+                cooldown=cooldown,
+                dedupe=dedupe,
+                permit=permit,
+                metrics=None,
+                platform="test-platform",
+            )
+
             await orchestrator_b.send("world", job="job-b")
 
             snapshot = await orchestrator_a.weekly_snapshot()
@@ -74,7 +76,55 @@ def test_weekly_snapshot_is_isolated_between_instances() -> None:
             assert recorded_jobs == {"job-a"}
         finally:
             await orchestrator_a.close()
-            await orchestrator_b.close()
+            if orchestrator_b is not None:
+                await orchestrator_b.close()
+
+    asyncio.run(run())
+
+
+def test_metrics_module_weekly_snapshot_ignores_disabled_backend() -> None:
+    metrics_module.reset_for_test()
+
+    async def run() -> None:
+        sender_a = StubSender()
+        cooldown = StubCooldownGate()
+        dedupe = StubNearDuplicateFilter()
+
+        def permit(_: str, __: str | None, job: str) -> PermitDecision:
+            return PermitDecision.allow(job=job)
+
+        orchestrator_a = Orchestrator(
+            sender=sender_a,
+            cooldown=cooldown,
+            dedupe=dedupe,
+            permit=permit,
+            metrics=MetricsService(),
+            platform="test-platform",
+        )
+        orchestrator_b: Orchestrator | None = None
+
+        try:
+            await orchestrator_a.send("hello", job="job-a")
+
+            orchestrator_b = Orchestrator(
+                sender=StubSender(),
+                cooldown=cooldown,
+                dedupe=dedupe,
+                permit=permit,
+                metrics=None,
+                platform="test-platform",
+            )
+
+            await orchestrator_b.send("world", job="job-b")
+
+            snapshot = metrics_module.weekly_snapshot()
+            success_rate = snapshot.get("success_rate", {})
+            assert success_rate, "expected at least one success_rate entry"
+            assert set(success_rate) == {"job-a"}
+        finally:
+            await orchestrator_a.close()
+            if orchestrator_b is not None:
+                await orchestrator_b.close()
 
     asyncio.run(run())
 

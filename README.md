@@ -9,7 +9,7 @@
 - ニュース自動配信
 - おみくじ生成
 - DM ダイジェスト編纂
-- 週次サマリ/メトリクス連携（`src/llm_generic_bot/runtime/setup.py` で週次レポート登録、`tests/integration/test_runtime_weekly_report.py` で検証）
+- 週次サマリ/メトリクス連携（`src/llm_generic_bot/runtime/setup/__init__.py` で週次レポート登録、`tests/integration/test_runtime_weekly_report.py` で検証）
 
 ## Quick start
 
@@ -28,6 +28,8 @@ src/llm_generic_bot/
   core/
     scheduler.py          # スケジュール/ジョブオーケストレーション
     orchestrator.py       # 実行キュー制御
+    orchestrator/
+      processor.py        # 実行要求の許可判定と実行フロー制御
     orchestrator_metrics.py # メトリクス計測フック
     queue.py              # 実行キュー定義
     cooldown.py           # 適応型クールタイム
@@ -68,6 +70,8 @@ src/llm_generic_bot/
     __init__.py           # MetricsBackend / collect_weekly_snapshot エントリポイント
     metrics/
       __init__.py         # メトリクス DTO エクスポート
+      aggregator.py       # メトリクス集計ロジック
+      aggregator_state.py # 集計状態の保持
       service.py          # バックエンド実装
       reporting.py        # 週次レポート整形
 tests/

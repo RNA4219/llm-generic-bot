@@ -101,8 +101,7 @@ def resolve_metrics_boundary(
     else:
         service = None
         recorder = metrics
-    if recorder is not None:
-        metrics_module.configure_backend(recorder)
+    metrics_module.configure_backend(recorder)
     return MetricsBoundary(recorder or NullMetricsRecorder(), service)
 
 

@@ -28,9 +28,11 @@ def resolve_sender(
     misskey_cfg = as_mapping(profiles.get("misskey"))
     if discord_cfg.get("enabled"):
         channel_value = discord_cfg.get("channel")
-        default_channel: Optional[str] = (
-            channel_value if isinstance(channel_value, str) else "default"
-        )
+        default_channel: Optional[str]
+        if isinstance(channel_value, str):
+            default_channel = channel_value
+        else:
+            default_channel = None
         active_sender = sender or DiscordSender()
         return "discord", default_channel, active_sender
     channel_value = misskey_cfg.get("channel")

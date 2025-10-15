@@ -107,3 +107,54 @@ async def test_setup_runtime_disables_metrics_when_disabled(
 
     await orchestrator.close()
     metrics_module.reset_for_test()
+
+
+def _profile_settings() -> dict[str, object]:
+    return {
+        "profiles": {
+            "discord": {"enabled": True, "channel": "#bot"},
+            "misskey": {"enabled": False},
+        }
+    }
+
+
+def test_setup_runtime_raises_when_metrics_backend_has_case_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metrics_module.reset_for_test()
+    monkeypatch.setattr(
+        "llm_generic_bot.core.orchestrator.Orchestrator._start_worker",
+        lambda self: None,
+    )
+    settings = _profile_settings()
+
+    _, orchestrator, _ = setup_runtime(settings)
+    assert metrics_module._AGGREGATOR.backend_configured is True
+
+    with pytest.raises(ValueError):
+        setup_runtime({"metrics": {"backend": "Memory"}, **_profile_settings()})
+
+    assert metrics_module._AGGREGATOR.backend_configured is True
+    asyncio.run(orchestrator.close())
+    metrics_module.reset_for_test()
+
+
+def test_setup_runtime_raises_when_metrics_backend_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metrics_module.reset_for_test()
+    monkeypatch.setattr(
+        "llm_generic_bot.core.orchestrator.Orchestrator._start_worker",
+        lambda self: None,
+    )
+    settings = _profile_settings()
+
+    _, orchestrator, _ = setup_runtime(settings)
+    assert metrics_module._AGGREGATOR.backend_configured is True
+
+    with pytest.raises(ValueError):
+        setup_runtime({"metrics": {"backend": "stdout"}, **_profile_settings()})
+
+    assert metrics_module._AGGREGATOR.backend_configured is True
+    asyncio.run(orchestrator.close())
+    metrics_module.reset_for_test()

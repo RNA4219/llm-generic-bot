@@ -69,6 +69,13 @@ def setup_runtime(
     permit = build_permit(quota, permit_gate=permit_gate)
 
     profiles = as_mapping(cfg.get("profiles"))
+    discord_cfg = as_mapping(profiles.get("discord"))
+    misskey_cfg = as_mapping(profiles.get("misskey"))
+    discord_enabled = bool(discord_cfg.get("enabled"))
+    misskey_enabled = bool(misskey_cfg.get("enabled"))
+    if not discord_enabled and not misskey_enabled:
+        raise ValueError("no sending profiles enabled")
+
     platform, default_channel, active_sender = resolve_sender(
         profiles,
         sender=sender,

@@ -1,18 +1,88 @@
 from __future__ import annotations
 
-from . import aggregator as _aggregator
+from typing import Mapping
 
-_GlobalMetricsAggregator = _aggregator._GlobalMetricsAggregator
+from .aggregator_state import (
+    _AGGREGATOR,
+    _GlobalMetricsAggregator as _StateGlobalMetricsAggregator,
+    _utcnow as _state_utcnow,
+)
+from .service import MetricsRecorder
 
-configure_backend = _aggregator.configure_backend
-clear_history = _aggregator.clear_history
-report_permit_denied = _aggregator.report_permit_denied
-report_send_failure = _aggregator.report_send_failure
-report_send_success = _aggregator.report_send_success
-reset_for_test = _aggregator.reset_for_test
-set_retention_days = _aggregator.set_retention_days
-weekly_snapshot = _aggregator.weekly_snapshot
-_utcnow = _aggregator._utcnow
+_GlobalMetricsAggregator = _StateGlobalMetricsAggregator
+_utcnow = _state_utcnow
+
+
+def configure_backend(recorder: MetricsRecorder | None) -> None:
+    _AGGREGATOR.configure_backend(recorder)
+
+
+def clear_history() -> None:
+    _AGGREGATOR.clear_history()
+
+
+async def report_send_success(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    duration_seconds: float,
+    permit_tags: Mapping[str, str] | None = None,
+) -> None:
+    _AGGREGATOR.report_send_success(
+        job=job,
+        platform=platform,
+        channel=channel,
+        duration_seconds=duration_seconds,
+        permit_tags=permit_tags,
+    )
+
+
+async def report_send_failure(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    duration_seconds: float,
+    error_type: str,
+) -> None:
+    _AGGREGATOR.report_send_failure(
+        job=job,
+        platform=platform,
+        channel=channel,
+        duration_seconds=duration_seconds,
+        error_type=error_type,
+    )
+
+
+def report_permit_denied(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    reason: str,
+    permit_tags: Mapping[str, str] | None = None,
+) -> None:
+    _AGGREGATOR.report_permit_denied(
+        job=job,
+        platform=platform,
+        channel=channel,
+        reason=reason,
+        permit_tags=permit_tags,
+    )
+
+
+def reset_for_test() -> None:
+    _AGGREGATOR.reset()
+
+
+def set_retention_days(retention_days: int | None) -> None:
+    _AGGREGATOR.set_retention_days(retention_days)
+
+
+def weekly_snapshot() -> dict[str, object]:
+    return _AGGREGATOR.weekly_snapshot()
+
 
 __all__ = [
     "configure_backend",

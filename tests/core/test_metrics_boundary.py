@@ -5,6 +5,7 @@ from llm_generic_bot.core.orchestrator_metrics import (
     NullMetricsRecorder as BoundaryNullRecorder,
 )
 from llm_generic_bot.infra import metrics as metrics_module
+from llm_generic_bot.infra.metrics import aggregator_state
 
 
 class RecorderStub:
@@ -29,7 +30,7 @@ def reset_metrics() -> None:
 def _configure_stub_backend() -> tuple[RecorderStub, object, bool]:
     recorder = RecorderStub()
     metrics_module.configure_backend(recorder)
-    aggregator = metrics_module._AGGREGATOR
+    aggregator = aggregator_state._AGGREGATOR
     original_backend = aggregator.backend
     original_configured = aggregator.backend_configured
     return recorder, original_backend, original_configured
@@ -37,7 +38,7 @@ def _configure_stub_backend() -> tuple[RecorderStub, object, bool]:
 
 def test_suppress_backend_restores_state_when_including_self_backend() -> None:
     recorder, original_backend, original_configured = _configure_stub_backend()
-    aggregator = metrics_module._AGGREGATOR
+    aggregator = aggregator_state._AGGREGATOR
     boundary = MetricsBoundary(recorder=recorder, service=None)
 
     with boundary.suppress_backend(include_self_backend=True):
@@ -51,7 +52,7 @@ def test_suppress_backend_restores_state_when_including_self_backend() -> None:
 
 def test_suppress_backend_preserves_backend_when_excluding_self_recorder() -> None:
     recorder, original_backend, original_configured = _configure_stub_backend()
-    aggregator = metrics_module._AGGREGATOR
+    aggregator = aggregator_state._AGGREGATOR
     boundary = MetricsBoundary(recorder=recorder, service=None)
 
     with boundary.suppress_backend(include_self_backend=False):
@@ -64,7 +65,7 @@ def test_suppress_backend_preserves_backend_when_excluding_self_recorder() -> No
 
 def test_suppress_backend_restores_backend_for_null_recorder() -> None:
     _, original_backend, original_configured = _configure_stub_backend()
-    aggregator = metrics_module._AGGREGATOR
+    aggregator = aggregator_state._AGGREGATOR
     boundary = MetricsBoundary(recorder=BoundaryNullRecorder(), service=None)
 
     with boundary.suppress_backend(include_self_backend=False):
@@ -78,7 +79,7 @@ def test_suppress_backend_restores_backend_for_null_recorder() -> None:
 
 def test_suppress_backend_keeps_new_backend_when_reconfigured() -> None:
     recorder, _, _ = _configure_stub_backend()
-    aggregator = metrics_module._AGGREGATOR
+    aggregator = aggregator_state._AGGREGATOR
     replacement = RecorderStub()
     boundary = MetricsBoundary(recorder=recorder, service=None)
 

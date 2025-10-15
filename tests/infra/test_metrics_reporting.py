@@ -61,6 +61,33 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio("asyncio")
+async def test_reset_for_test_restores_defaults() -> None:
+    recorder = RecordingMetrics()
+    reporting.configure_backend(recorder)
+    reporting.set_retention_days(3)
+
+    with freeze_time("2025-05-01T00:00:00+00:00"):
+        await reporting.report_send_success(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=0.5,
+            permit_tags=None,
+        )
+
+    assert aggregator_module._AGGREGATOR.retention_days == 3
+
+    reporting.reset_for_test()
+
+    # reset_for_test should fully restore aggregator defaults for follow-up refactors.
+    assert aggregator_module._AGGREGATOR.retention_days == 7
+    snapshot = reporting.weekly_snapshot()
+    assert snapshot["success_rate"] == {}
+    assert snapshot["latency_histogram_seconds"] == {}
+    assert snapshot["permit_denials"] == []
+
+
+@pytest.mark.anyio("asyncio")
 async def test_metrics_records_expected_labels_and_snapshot() -> None:
     recorder = RecordingMetrics()
     reporting.configure_backend(recorder)

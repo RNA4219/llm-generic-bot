@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .aggregator import _AGGREGATOR
 from .reporting import (
+    clear_history,
     configure_backend,
     report_permit_denied,
     report_send_failure,
@@ -31,6 +32,7 @@ __all__ = [
     "ObservationSnapshot",
     "WeeklyMetricsSnapshot",
     "collect_weekly_snapshot",
+    "clear_history",
     "configure_backend",
     "make_metrics_recorder",
     "report_permit_denied",

@@ -65,9 +65,11 @@ class _GlobalMetricsAggregator:
         with self.lock:
             self.backend = backend
             self.backend_configured = configured
-            if not configured:
-                self._send_events.clear()
-                self._permit_denials.clear()
+
+    def clear_history(self) -> None:
+        with self.lock:
+            self._send_events.clear()
+            self._permit_denials.clear()
 
     def set_retention_days(self, retention_days: int | None) -> None:
         value = _normalize_retention_days(retention_days)

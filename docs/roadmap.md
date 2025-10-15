@@ -34,13 +34,13 @@
 - [SND-02] Permit ゲート導入（`core/arbiter.py` など）: チャンネル別クォータをチェックし、拒否時はメトリクスを更新。
 - [SCH-01] CoalesceQueue（`core/scheduler.py`）: 近接メッセージを併合し、送信処理にバッチで渡す。
 - [SCH-02] ジッタ適用（`core/scheduler.py`）: 送信時刻にランダムオフセットを付与し突発集中を緩和。
-- [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator.py`）: 送信結果とコンテキストを JSON ログで記録。
+- [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator.py`→`core/orchestrator/processor.py`）: 送信結果とコンテキストを JSON ログで記録。
 - [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: `ruff check`、`mypy src`、`pytest -q` を独立ジョブとして並列運用している現行構成を維持しつつ、Lint/Type/Test の成否を Slack 通知するガードレールを追加する。依存: 共通セットアップを各ジョブで手動繰り返し適用している暫定運用の解消。
 - [OPS-06] セキュリティスキャン拡充（`.github/workflows/ci.yml`）: CodeQL 解析と `pip-audit` を週次ジョブで追加し、依存ライブラリの脆弱性検出を自動化する。依存: [OPS-05] の共通セットアップ整備。→ 実装済み
 
 ## Sprint 2: UX & コンテンツ
 ### 完了済み
-- [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator.py`）: リアクション履歴をもとに出力頻度を調整し、`tests/features/test_weather_engagement.py` で閾値・クールダウン・再開シナリオを固定。
+- [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator.py`→`core/orchestrator/processor.py`）: リアクション履歴をもとに出力頻度を調整し、`tests/features/test_weather_engagement.py` で閾値・クールダウン・再開シナリオを固定。
 - [UX-02] ニュース配信実装（`features/news.py`）: フィード取得・要約・クールダウンを統合し、`tests/features/test_news.py` で正常系とフォールバック・クールダウン抑止を検証。
 - [UX-03] おみくじ生成（`features/omikuji.py`）: テンプレートローテーションとユーザー別シードを実装し、`tests/features/test_omikuji.py` でローテーションとフォールバック挙動をカバー。
 - [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。
@@ -49,7 +49,7 @@
 - Engagement 指標の長期トレンド分析と、Permit クォータ変動時の通知頻度チューニング方針を整理する。（OPS-08～OPS-10 で異常系テスト強化は完了済み）
 
 ## Sprint 3: 運用・可観測性
-- [OPS-02] 週次サマリ（`core/orchestrator.py`, `features/report.py`）: 成果・失敗を集計し運用向けに通知。
+- [OPS-02] 週次サマリ（`core/orchestrator.py`→`core/orchestrator/processor.py`, `features/report.py`）: 成果・失敗を集計し運用向けに通知。
 - [OPS-03] 設定再読込ログ（`src/llm_generic_bot/config/loader.py`, `src/llm_generic_bot/runtime/setup/__init__.py`, `config/*`）: リロード時の差分検出と監査ログ。
 - [OPS-04] ランタイムメトリクス（`src/llm_generic_bot/infra/metrics/__init__.py`, `src/llm_generic_bot/infra/metrics/reporting.py`, `src/llm_generic_bot/infra/metrics/service.py`）: スケジューラ遅延や送信成功率を可視化。
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。

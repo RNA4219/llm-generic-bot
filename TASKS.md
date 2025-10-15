@@ -10,3 +10,4 @@
 
 - 2025-10-13: docs/tasks/sprint1.md の SND-02 / OPS-01 を `core/orchestrator/processor.py` 参照へ更新済み。
 - 2025-10-15: runtime/setup/runtime_helpers.py の送信プロファイル判定を `is_enabled` へ統一し、`pytest tests/runtime/test_setup_sender.py -q` → `mypy` → `ruff` の順で緑化確認。
+- 2025-10-15: docs/tasks/sprint3.md の OPS-04 に新メトリクスファサード（`infra/metrics/aggregator*.py`）を追記し、集約経路説明を更新。

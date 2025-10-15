@@ -6,7 +6,7 @@ from typing import ContextManager, TYPE_CHECKING, Iterator, Mapping, Protocol, c
 
 from ..infra import MetricsBackend, make_metrics_recorder
 from ..infra import metrics as metrics_module
-from ..infra.metrics import aggregator_state as aggregator_state_module
+from ..infra.metrics.aggregator_state import _AGGREGATOR as state_aggregator
 
 if TYPE_CHECKING:
     from ..infra.metrics.aggregator_state import _GlobalMetricsAggregator as AggregatorT
@@ -100,7 +100,7 @@ class MetricsBoundary:
 
     @staticmethod
     def _resolve_aggregator() -> AggregatorT | None:
-        return cast(AggregatorT, aggregator_state_module._AGGREGATOR)
+        return cast(AggregatorT, state_aggregator)
 
 
 def resolve_metrics_boundary(

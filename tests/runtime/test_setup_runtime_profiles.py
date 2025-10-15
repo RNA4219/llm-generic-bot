@@ -107,3 +107,53 @@ async def test_setup_runtime_disables_metrics_when_disabled(
 
     await orchestrator.close()
     metrics_module.reset_for_test()
+
+
+@pytest.mark.anyio("asyncio")
+async def test_setup_runtime_resets_metrics_state_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metrics_module.reset_for_test()
+    monkeypatch.setattr(
+        "llm_generic_bot.core.orchestrator.Orchestrator._start_worker",
+        lambda self: None,
+    )
+    enabled_settings = {
+        "metrics": {"enabled": True, "backend": "memory"},
+        "profiles": {
+            "discord": {"enabled": True, "channel": "#bot"},
+            "misskey": {"enabled": False},
+        },
+    }
+
+    _, orchestrator_enabled, _ = setup_runtime(enabled_settings)
+
+    await metrics_module.report_send_success(
+        job="news",
+        platform="discord",
+        channel="#bot",
+        duration_seconds=1.0,
+        permit_tags=None,
+    )
+    snapshot_before_disable = metrics_module.weekly_snapshot()
+    assert snapshot_before_disable["success_rate"] != {}
+
+    await orchestrator_enabled.close()
+
+    disabled_settings = {
+        "metrics": {"enabled": False},
+        "profiles": {
+            "discord": {"enabled": True, "channel": "#bot"},
+            "misskey": {"enabled": False},
+        },
+    }
+
+    _, orchestrator_disabled, _ = setup_runtime(disabled_settings)
+
+    snapshot_after_disable = metrics_module.weekly_snapshot()
+    assert snapshot_after_disable["success_rate"] == {}
+    assert snapshot_after_disable["latency_histogram_seconds"] == {}
+    assert snapshot_after_disable["permit_denials"] == []
+
+    await orchestrator_disabled.close()
+    metrics_module.reset_for_test()

@@ -20,7 +20,6 @@
   "quota": { "per_channel": { "day": 20, "window_min": 30, "burst_limit": 5 } },
   "arbiter": { "jitter_sec": [60, 180] },
   "dedupe": { "enable": true, "recent_k": 20, "sim_threshold": 0.93 },
-  "limits": { "max_lines_night": 4, "max_emojis_night": 1 },
   "report": {
     "_usage": "週次サマリ機能: enabled を true にすると指定スケジュールで週間レポートを生成し、permit.channel で指定した通知チャンネルへ送信する",
     "enabled": false,
@@ -44,12 +43,7 @@
   "metrics": {
     "_usage": "ランタイムメトリクスの収集/エクスポート設定 (infra.metrics.default と同一)。retention_days で保持日数(既定7日)を上書き",
     "backend": "memory",
-    "retention_days": 14,
-    "export": {
-      "_usage": "メトリクスのエクスポート先や送信方式を定義",
-      "enabled": false,
-      "destination": "stdout"
-    }
+    "retention_days": 14
   },
   "weather": {
     "schedule": "21:00",

@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-15: README の週次サマリ参照先を `runtime/setup/__init__.py` へ更新し、構成ツリーへ `core/orchestrator/processor.py` と `infra/metrics/aggregator*.py` を追記。
 - 2025-10-14: Sprint3 ドキュメントの OPS-02/OPS-04 を `core/orchestrator/processor.py` へ更新し、Permit 判定/送信記録/メトリクス通知の責務を追記。
 # TASKS
 

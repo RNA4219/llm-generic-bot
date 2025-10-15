@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-14: Backlog OPS-B02 / UX-B01 の対象領域に `core/orchestrator/processor.py` を追記し、他タスクの参照揺れを防止。
 - 2025-10-14: Sprint3 ドキュメントの OPS-02/OPS-04 を `core/orchestrator/processor.py` へ更新し、Permit 判定/送信記録/メトリクス通知の責務を追記。
 # TASKS
 

@@ -27,6 +27,9 @@ src/llm_generic_bot/
   main.py                 # 起動・DI
   core/
     scheduler.py          # スケジュール/ジョブオーケストレーション
+    orchestrator.py       # 実行キュー制御
+    orchestrator_metrics.py # メトリクス計測フック
+    queue.py              # 実行キュー定義
     cooldown.py           # 適応型クールタイム
     arbiter.py            # 衝突回避・優先度ジッタ
     dedupe.py             # 近傍重複検出
@@ -36,6 +39,7 @@ src/llm_generic_bot/
     discord.py            # Discord 送信
     misskey.py            # Misskey 送信
     openweather.py        # OpenWeather fetch
+    _retry.py             # アダプタ共通再試行ロジック
   features/
     weather.py            # 天気機能
     news.py               # ニュース配信
@@ -44,8 +48,28 @@ src/llm_generic_bot/
     report.py             # 週次サマリ生成
   config/
     loader.py             # 設定ロード/ホットリロード
+    quotas.py             # 呼び出し制限管理
+  runtime/
+    providers.py          # DI エントリポイント
+    history.py            # 実行履歴管理
+    setup/
+      jobs.py             # 定期ジョブ束ね
+      reports.py          # 週次レポート登録
+      sender.py           # 投稿エグゼキュータ束ね
+      gates.py            # フィーチャーフラグ/ゲート制御
+      runtime_helpers.py  # 共通初期化ユーティリティ
+    jobs/
+      common.py           # ジョブ基盤
+      weather.py          # 天気ジョブ
+      news.py             # ニュースジョブ
+      omikuji.py          # おみくじジョブ
+      dm_digest.py        # DM ダイジェストジョブ
   infra/
-    metrics.py            # メトリクス連携
+    __init__.py           # MetricsBackend / collect_weekly_snapshot エントリポイント
+    metrics/
+      __init__.py         # メトリクス DTO エクスポート
+      service.py          # バックエンド実装
+      reporting.py        # 週次レポート整形
 tests/
 .github/workflows/ci.yml
 pyproject.toml

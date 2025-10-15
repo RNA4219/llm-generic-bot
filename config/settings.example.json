@@ -20,7 +20,11 @@
   "quota": { "per_channel": { "day": 20, "window_min": 30, "burst_limit": 5 } },
   "arbiter": { "jitter_sec": [60, 180] },
   "dedupe": { "enable": true, "recent_k": 20, "sim_threshold": 0.93 },
-  "limits": { "max_lines_night": 4, "max_emojis_night": 1 },
+  "limits": {
+    "_usage": "制限設定サンプル。⚠️ 現行実装では未対応のため、実装が揃うまでは有効化しないこと",
+    "max_lines_night": 4,
+    "max_emojis_night": 1
+  },
   "report": {
     "_usage": "週次サマリ機能: enabled を true にすると指定スケジュールで週間レポートを生成し、permit.channel で指定した通知チャンネルへ送信する",
     "enabled": false,
@@ -46,7 +50,7 @@
     "backend": "memory",
     "retention_days": 14,
     "export": {
-      "_usage": "メトリクスのエクスポート先や送信方式を定義",
+      "_usage": "メトリクスのエクスポート設定サンプル。⚠️ 現行実装は未対応のため、設定を変更しても送信は行われない",
       "enabled": false,
       "destination": "stdout"
     }

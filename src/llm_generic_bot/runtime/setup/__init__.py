@@ -86,6 +86,7 @@ def setup_runtime(
     metrics_service: Optional[MetricsService] = None
     metrics_module.set_retention_days(None)
     if not metrics_enabled:
+        metrics_module.clear_history()
         metrics_module.configure_backend(None)
     else:
         backend_raw = metrics_cfg.get("backend", "memory")

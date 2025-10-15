@@ -5,6 +5,7 @@ from . import aggregator as _aggregator
 _GlobalMetricsAggregator = _aggregator._GlobalMetricsAggregator
 
 configure_backend = _aggregator.configure_backend
+clear_history = _aggregator.clear_history
 report_permit_denied = _aggregator.report_permit_denied
 report_send_failure = _aggregator.report_send_failure
 report_send_success = _aggregator.report_send_success
@@ -15,6 +16,7 @@ _utcnow = _aggregator._utcnow
 
 __all__ = [
     "configure_backend",
+    "clear_history",
     "report_permit_denied",
     "report_send_failure",
     "report_send_success",

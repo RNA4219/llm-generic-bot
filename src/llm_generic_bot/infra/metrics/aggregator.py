@@ -27,6 +27,10 @@ def set_retention_days(retention_days: int | None) -> None:
     _AGGREGATOR.set_retention_days(retention_days)
 
 
+def clear_history() -> None:
+    _AGGREGATOR.clear_history()
+
+
 async def report_send_success(
     *,
     job: str,
@@ -87,6 +91,7 @@ def reset_for_test() -> None:
 
 __all__ = [
     "configure_backend",
+    "clear_history",
     "report_permit_denied",
     "report_send_failure",
     "report_send_success",

@@ -127,3 +127,49 @@ def test_metrics_module_weekly_snapshot_ignores_disabled_backend() -> None:
                 await orchestrator_b.close()
 
     asyncio.run(run())
+
+
+def test_metrics_none_instance_does_not_report_global_metrics() -> None:
+    metrics_module.reset_for_test()
+
+    async def run() -> None:
+        sender_a = StubSender()
+        sender_b = StubSender()
+        cooldown = StubCooldownGate()
+        dedupe = StubNearDuplicateFilter()
+
+        def permit(_: str, __: str | None, job: str) -> PermitDecision:
+            return PermitDecision.allow(job=job)
+
+        orchestrator_with_metrics = Orchestrator(
+            sender=sender_a,
+            cooldown=cooldown,
+            dedupe=dedupe,
+            permit=permit,
+            metrics=MetricsService(),
+            platform="test-platform",
+        )
+        try:
+            await orchestrator_with_metrics.send("hello", job="job-a")
+        finally:
+            await orchestrator_with_metrics.close()
+
+        orchestrator_without_metrics = Orchestrator(
+            sender=sender_b,
+            cooldown=cooldown,
+            dedupe=dedupe,
+            permit=permit,
+            metrics=None,
+            platform="test-platform",
+        )
+        try:
+            await orchestrator_without_metrics.send("world", job="job-b")
+        finally:
+            await orchestrator_without_metrics.close()
+
+    asyncio.run(run())
+
+    snapshot = metrics_module.weekly_snapshot()
+    success_metrics = snapshot["success_rate"]
+    assert success_metrics["job-a"]["success"] == 1
+    assert "job-b" not in success_metrics

@@ -167,4 +167,3 @@ def test_orchestrator_disables_metrics_backend_when_metrics_none() -> None:
     snapshot = metrics.weekly_snapshot()
     success_job = snapshot["success_rate"]["success-job"]
     assert success_job["success"] == 1
-    assert not metrics._AGGREGATOR.backend_configured

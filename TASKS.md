@@ -1,6 +1,6 @@
 # タスク記録
 
-- 2025-10-16: config/settings.example.json の `limits` / `metrics.export` に未実装警告コメントを追加し、サンプル構成の整合を確認。
+- 2025-10-16: config/settings.example.json の `limits` / `metrics._usage` / `metrics.export` コメントを更新済みとし、サンプル構成の整合を確認。
 - 2025-10-16: tests/runtime/test_weekly_report_setup.py での同一ファイル追加入力タスク（`is_enabled` 判定統一対応の継続）を記録。
 - 2025-10-15: docs/roadmap.md の OPS-04 / Sprint3 を `infra/metrics/aggregator.py`・`infra/metrics/aggregator_state.py` 参照へ更新し、役割分担の整合を確認。
 - 2025-10-15: docs/tasks/backlog.md の OPS-B02 / UX-B01 に `core/orchestrator_metrics.py` を追記し、メトリクス境界参照先を明示。

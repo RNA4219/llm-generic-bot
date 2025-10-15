@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 # NOTE: tests monkeypatch the module-level `dt` alias to control time.
 from dataclasses import dataclass
-from typing import Awaitable, Callable, List, Optional, Protocol
+from typing import Awaitable, Callable, Final, List, Optional, Protocol
 import zoneinfo
 import anyio
 
@@ -24,6 +24,9 @@ class _ScheduledJob:
     handler: _JobCallable
     priority: int
     channel: Optional[str]
+
+
+_JITTER_CAP: Final[tuple[int, int]] = (5, 10)
 
 
 class Scheduler:
@@ -104,7 +107,7 @@ class Scheduler:
         job_name = batch.job
         channel = batch.channel
         text = batch.text
-        jitter_range = self.jitter_range
+        jitter_range = self._effective_jitter_range()
 
         target_ts = reference_ts
         if self.jitter_enabled:
@@ -117,3 +120,15 @@ class Scheduler:
         await self.sender.send(text, channel, job=job_name)
         self._last_dispatch_ts = target_ts if delay > 0 else reference_ts
         return target_ts
+
+    def _effective_jitter_range(self) -> tuple[int, int]:
+        configured_lo, configured_hi = self.jitter_range
+        cap_lo, cap_hi = _JITTER_CAP
+
+        limited_lo = min(configured_lo, cap_lo)
+        limited_hi = min(configured_hi, cap_hi)
+
+        if limited_hi < limited_lo:
+            limited_hi = limited_lo
+
+        return (limited_lo, limited_hi)

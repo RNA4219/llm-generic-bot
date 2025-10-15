@@ -37,9 +37,12 @@ class MetricsBoundary:
     def is_enabled(self) -> bool:
         if isinstance(self.recorder, NullMetricsRecorder):
             return False
-        if self.service is None:
+        if self.service is not None:
+            return True
+        aggregator = self._resolve_aggregator()
+        if aggregator is None:
             return False
-        return True
+        return bool(getattr(aggregator, "backend_configured", False))
 
     @contextmanager
     def suppress_backend(self, include_self_backend: bool) -> Iterator[None]:

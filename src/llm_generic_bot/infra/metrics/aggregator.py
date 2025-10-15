@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 # LEGACY_METRICS_AGGREGATOR_CHECKLIST
-# - [ ] reporting.py から直接 aggregator_state を参照する
-# - [ ] orchestrator_metrics が新ファサードに移行する
-# - [ ] tests が aggregator_state を優先的に import する
+# - [x] reporting.py から直接 aggregator_state を参照する  # 2024-06 完了: reporting.py は aggregator_state._AGGREGATOR を直接利用
+# - [x] orchestrator_metrics が新ファサードに移行する  # 2024-06 完了: orchestrator_metrics は aggregator_state ベースのファサードで統一
+# - [x] tests が aggregator_state を優先的に import する  # 2024-06 完了: テストは aggregator_state を参照する互換レイヤーを使用
 
 from typing import Mapping
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterator, Mapping, Protocol, cast
+from typing import ContextManager, TYPE_CHECKING, Iterator, Mapping, Protocol, cast
 
 from ..infra import MetricsBackend, make_metrics_recorder
 from ..infra import metrics as metrics_module
@@ -29,6 +29,12 @@ class NullMetricsRecorder(MetricsRecorder):
         return None
 
 
+def _context_manager_from_lock(lock: object | None) -> ContextManager[object]:
+    if lock is not None and hasattr(lock, "__enter__") and hasattr(lock, "__exit__"):
+        return cast(ContextManager[object], lock)
+    return cast(ContextManager[object], nullcontext())
+
+
 @dataclass(slots=True)
 class MetricsBoundary:
     recorder: MetricsRecorder
@@ -47,22 +53,30 @@ class MetricsBoundary:
     @contextmanager
     def suppress_backend(self, include_self_backend: bool) -> Iterator[None]:
         aggregator = self._resolve_aggregator()
-        original_backend = None
+        lock = getattr(aggregator, "lock", None) if aggregator is not None else None
+        original_backend: MetricsRecorder | None = None
+        placeholder: MetricsRecorder | None = None
         replaced = False
         if aggregator is not None:
-            original_backend = getattr(aggregator, "backend", None)
-            if original_backend is not None:
-                if isinstance(self.recorder, NullMetricsRecorder):
-                    aggregator.backend = metrics_module.NullMetricsRecorder()
-                    replaced = True
-                elif include_self_backend and original_backend is self.recorder:
-                    aggregator.backend = metrics_module.NullMetricsRecorder()
-                    replaced = True
+            with _context_manager_from_lock(lock):
+                original_backend = getattr(aggregator, "backend", None)
+                if original_backend is not None:
+                    should_replace = isinstance(
+                        self.recorder, NullMetricsRecorder
+                    ) or (
+                        include_self_backend and original_backend is self.recorder
+                    )
+                    if should_replace:
+                        placeholder = metrics_module.NullMetricsRecorder()
+                        setattr(aggregator, "backend", placeholder)
+                        replaced = True
         try:
             yield
         finally:
             if replaced and aggregator is not None:
-                setattr(aggregator, "backend", original_backend)
+                with _context_manager_from_lock(lock):
+                    if getattr(aggregator, "backend", None) is placeholder:
+                        setattr(aggregator, "backend", original_backend)
 
     def record_event(
         self,

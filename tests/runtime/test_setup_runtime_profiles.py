@@ -5,6 +5,9 @@ import asyncio
 import pytest
 
 from llm_generic_bot.infra import metrics as metrics_module
+from llm_generic_bot.infra.metrics import (
+    aggregator_state as aggregator_state_module,
+)
 
 from llm_generic_bot.runtime.setup import setup_runtime
 
@@ -100,7 +103,7 @@ async def test_setup_runtime_disables_metrics_when_disabled(
     _, orchestrator, _ = setup_runtime(settings)
 
     snapshot = metrics_module.weekly_snapshot()
-    assert metrics_module._AGGREGATOR.backend_configured is False
+    assert aggregator_state_module._AGGREGATOR.backend_configured is False
     assert snapshot["success_rate"] == {}
     assert snapshot["latency_histogram_seconds"] == {}
     assert snapshot["permit_denials"] == []

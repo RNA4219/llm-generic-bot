@@ -74,3 +74,17 @@ def test_suppress_backend_restores_backend_for_null_recorder() -> None:
 
     assert aggregator.backend is original_backend
     assert aggregator.backend_configured == original_configured
+
+
+def test_suppress_backend_keeps_new_backend_when_reconfigured() -> None:
+    recorder, _, _ = _configure_stub_backend()
+    aggregator = metrics_module._AGGREGATOR
+    replacement = RecorderStub()
+    boundary = MetricsBoundary(recorder=recorder, service=None)
+
+    with boundary.suppress_backend(include_self_backend=True):
+        metrics_module.configure_backend(replacement)
+        assert aggregator.backend is replacement
+
+    assert aggregator.backend is replacement
+    assert aggregator.backend_configured is True

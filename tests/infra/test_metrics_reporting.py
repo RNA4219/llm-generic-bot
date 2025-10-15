@@ -29,7 +29,11 @@ except ModuleNotFoundError:  # pragma: no cover
             yield
 
 from llm_generic_bot.core.orchestrator import MetricsRecorder
-from llm_generic_bot.infra.metrics import reporting, service as service_module
+from llm_generic_bot.infra.metrics import (
+    aggregator as aggregator_module,
+    reporting,
+    service as service_module,
+)
 
 
 class RecordingMetrics(MetricsRecorder):
@@ -221,7 +225,7 @@ async def test_weekly_snapshot_respects_configured_retention(
     def clock() -> datetime:
         return current["value"]
 
-    monkeypatch.setattr(reporting, "_utcnow", lambda: current["value"])
+    monkeypatch.setattr(aggregator_module, "_utcnow", lambda: current["value"])
 
     service = service_module.MetricsService(clock=clock, retention_days=3)
     reporting.configure_backend(service)
@@ -286,3 +290,144 @@ async def test_collect_weekly_snapshot_threshold_includes_boundary() -> None:
     assert counters.get(boundary_tags) == service_module.CounterSnapshot(count=1)
     assert counters.get(fresh_tags) == service_module.CounterSnapshot(count=1)
     assert tuple(sorted({"bucket": "too_old"}.items())) not in counters
+
+
+@pytest.mark.anyio("asyncio")
+async def test_configure_backend_reconfiguration_uses_latest_backend() -> None:
+    first = RecordingMetrics()
+    second = RecordingMetrics()
+
+    reporting.configure_backend(first)
+    with freeze_time("2025-04-01T00:00:00+00:00"):
+        await reporting.report_send_success(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=0.25,
+            permit_tags={"decision": "allow"},
+        )
+
+    reporting.configure_backend(second)
+    with freeze_time("2025-04-02T00:00:00+00:00"):
+        await reporting.report_send_failure(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=1.5,
+            error_type="timeout",
+        )
+
+    with freeze_time("2025-04-03T00:00:00+00:00"):
+        snapshot = reporting.weekly_snapshot()
+
+    assert first.increment_calls == [
+        (
+            "send.success",
+            {
+                "job": "weather",
+                "platform": "discord",
+                "channel": "alerts",
+                "decision": "allow",
+            },
+        )
+    ]
+    assert first.observe_calls == [
+        (
+            "send.duration",
+            pytest.approx(0.25),
+            {
+                "job": "weather",
+                "platform": "discord",
+                "channel": "alerts",
+                "unit": "seconds",
+            },
+        )
+    ]
+    assert second.increment_calls == [
+        (
+            "send.failure",
+            {
+                "job": "weather",
+                "platform": "discord",
+                "channel": "alerts",
+                "error": "timeout",
+            },
+        )
+    ]
+    assert second.observe_calls == [
+        (
+            "send.duration",
+            pytest.approx(1.5),
+            {
+                "job": "weather",
+                "platform": "discord",
+                "channel": "alerts",
+                "unit": "seconds",
+            },
+        )
+    ]
+    assert snapshot["success_rate"] == {
+        "weather": {
+            "success": 1,
+            "failure": 1,
+            "ratio": pytest.approx(0.5),
+        }
+    }
+    assert snapshot["latency_histogram_seconds"] == {
+        "weather": {"1s": 1, "3s": 1}
+    }
+    assert snapshot["permit_denials"] == []
+
+
+@pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_retention_survives_backend_reconfiguration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_time = datetime(2025, 4, 10, tzinfo=timezone.utc)
+    current = {"value": base_time}
+
+    monkeypatch.setattr(aggregator_module, "_utcnow", lambda: current["value"])
+
+    reporting.set_retention_days(3)
+
+    first = RecordingMetrics()
+    second = RecordingMetrics()
+
+    reporting.configure_backend(first)
+
+    current["value"] = base_time - timedelta(days=4)
+    await reporting.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.4,
+        permit_tags={"decision": "allow"},
+    )
+
+    reporting.configure_backend(second)
+
+    current["value"] = base_time
+    await reporting.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.6,
+        permit_tags={"decision": "allow"},
+    )
+
+    current["value"] = base_time
+    snapshot = reporting.weekly_snapshot()
+
+    assert len(first.increment_calls) == 1
+    assert len(second.increment_calls) == 1
+    assert snapshot["success_rate"] == {
+        "weather": {
+            "success": 1,
+            "failure": 0,
+            "ratio": pytest.approx(1.0),
+        }
+    }
+    assert snapshot["latency_histogram_seconds"] == {
+        "weather": {"1s": 1}
+    }
+    assert snapshot["permit_denials"] == []

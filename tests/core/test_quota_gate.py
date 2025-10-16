@@ -1,5 +1,4 @@
 import logging
-from typing import List, Tuple
 
 import pytest
 
@@ -9,7 +8,7 @@ from llm_generic_bot.core.arbiter import PermitDecision, PermitGate
 
 class DummyMetrics:
     def __init__(self) -> None:
-        self.calls: List[Tuple[str, dict[str, str]]] = []
+        self.calls: list[tuple[str, dict[str, str]]] = []
 
     def increment(self, name: str, tags: dict[str, str]) -> None:
         self.calls.append((name, tags))

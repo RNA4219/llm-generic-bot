@@ -13,11 +13,13 @@
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
   - `tests/integration/runtime_weekly_report/`: 週次サマリジョブの曜日スケジュールおよびテンプレート整形を `weekly_snapshot` / `generate_weekly_summary` の協調呼び出しで検証。
+    - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が構成された曜日どおりにジョブを起動することを検証し、祝日・週末の除外設定が反映されることを保証。
     - `test_weekly_report_config_template_regression`: テンプレート改変が週次サマリ生成へ確実に反映されることを保証。
     - `test_weekly_report_template_line_context`: テンプレート行整形（行コンテキストの付与）が期待どおりに適用されることを固定。
     - `test_weekly_report_skips_self_success_rate`: 自身の成功率が週次サマリから除外されることを検証し、自己スコア混入を防止。
     - `test_weekly_report_respects_weekday_schedule`: 定義された曜日スケジュール順守を確認し、週次ジョブが許容日のみ実行されることを担保。
     - `test_weekly_report_permit_override_applies_to_dispatch`: Permit 上書き設定が dispatch 送信先へ反映され、指定されたプラットフォーム/チャンネル/ジョブで実行されることを検証。
+    - `test_weekly_report_permit_override_applies_to_dispatch`: Permit で上書きされたプラットフォーム/チャンネル/ジョブが dispatch 時に使用されることを確認し、送信経路の再評価結果が確実に適用されることを担保。
     - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 判定を通過した場合のみ送信へ進むことを確認し、Permit 拒否時はスケジューラを汚さず監査ログへ残す役割を担う。
       - DM ダイジェスト直接送信のスキップ確認（バッチ未追加と Permit 拒否ログ）。
     - `tests/integration/weather_engagement/`: Weather Engagement の履歴参照と抑止/再開制御を代表ケース（`test_cache_control.py`・`test_cooldown_coordination.py`・`test_engagement_calculation.py`）で end-to-end に検証し、履歴キャッシュの同期と Permit 前の投稿判断を保証する。

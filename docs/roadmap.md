@@ -21,7 +21,7 @@
       - `test_weekly_report_template_line_context`: テンプレート行整形（行コンテキストの付与）が期待どおりに適用されることを固定。
     - `test_fallbacks.py`:
       - `test_weekly_report_skips_self_success_rate`: 自身の成功率が週次サマリから除外されることを検証し、自己スコア混入を防止。
-    - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 判定を通過した場合のみ送信へ進むことを確認し、Permit 拒否時はスケジューラを汚さず監査ログへ残す役割を担う。
+    - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 判定を通過した場合のみ送信へ進むことを確認し、Permit 拒否時はスケジューラを汚さず監査ログへ残す役割を担う（パイプライン経由の dispatch を通さず、スケジューラへの push 抑止を直接検証する位置付け）。
       - DM ダイジェスト直接送信のスキップ確認（バッチ未追加と Permit 拒否ログ）。
       - `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` は Permit 拒否時に DM 送信を抑止しつつ、`dm_digest_permit_denied` ログイベントへ `retryable=False` と `job="dm_digest-denied"`（PermitDecision 由来サフィックス）を記録していることを検証する。
     - `tests/integration/weather_engagement/`: Weather Engagement の履歴参照と抑止/再開制御を代表ケース（`test_cache_control.py`・`test_cooldown_coordination.py`・`test_engagement_calculation.py`）で end-to-end に検証し、履歴キャッシュの同期と Permit 前の投稿判断を保証する。
@@ -32,7 +32,7 @@
     - Weather/News/おみくじは設定どおりのチャンネルへエンキューされることを確認。
     - スケジューラ dispatch 中の DM ダイジェスト監視を担い、オーケストレータ経由での配送状況を確認する（直接送信の保証は専用ジョブテストに委譲）。
   - `tests/integration/runtime_multicontent/test_dm_digest.py`: DM 専用ジョブが Permit 通過後にキューへ積まず直接送信する経路を担保する。
-    - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、ジョブが scheduler queue を経由しないことを固定化。
+    - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、ジョブが scheduler queue を経由しないことを固定化してキュー未使用での送信保証を明示する。
 - `tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。
 - `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。→ 実装済み
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。

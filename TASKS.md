@@ -1,6 +1,6 @@
 # タスク記録
 
-- 2025-10-29: docs/roadmap.md の runtime_multicontent 節へ `tests/integration/runtime_multicontent/test_dm_digest.py::test_dm_digest_job_sends_without_scheduler_queue` の直接送信検証を追記し、`test_pipeline.py` との監視/直接送信の役割差分を補足。
+- 2025-10-29: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-28 に更新し、OPS-B07 行の備考へ最終更新日同期を追記してメタデータ整合を確認。
 - 2025-10-28: docs/roadmap.md の DM ダイジェスト節に `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` が送信抑止と `dm_digest_permit_denied` ログ（`retryable=False`・`job="dm_digest-denied"` サフィックス）を検証する旨を追記し、記録を更新。
 - 2025-10-27: docs/roadmap.md の DM ダイジェスト節へ Permit 拒否時ログ（`dm_digest_permit_denied`・`job="dm_digest-denied"`・`retryable=False`）を明示し、`tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` の送信抑止と PermitDecision 由来サフィックス保証をドキュメント化。
 - 2025-10-26: docs/roadmap.md の DM ダイジェスト節へ `test_dm_digest_job_denied_by_permit` の Permit 拒否時送信抑止と `dm_digest_permit_denied` ログ検証を追記し、tests/integration/test_runtime_dm_digest.py の挙動と整合を確認。

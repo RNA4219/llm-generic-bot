@@ -46,11 +46,15 @@ if _PROVIDERS_MODULE not in sys.modules:
         del text, channel, correlation_id, job, recipient_id
         return None
 
-    providers_module.SAMPLE_NEWS_FEED = SimpleNamespace(fetch=_sample_fetch)  # type: ignore[attr-defined]
-    providers_module.SAMPLE_NEWS_SUMMARY = SimpleNamespace(summarize=_sample_summarize)  # type: ignore[attr-defined]
-    providers_module.SAMPLE_DM_LOG = SimpleNamespace(collect=_sample_collect)  # type: ignore[attr-defined]
-    providers_module.SAMPLE_DM_SUMMARY = SimpleNamespace(summarize=_sample_digest)  # type: ignore[attr-defined]
-    providers_module.SAMPLE_DM_SENDER = SimpleNamespace(send=_sample_send)  # type: ignore[attr-defined]
+    provider_fixtures = {
+        "SAMPLE_NEWS_FEED": SimpleNamespace(fetch=_sample_fetch),
+        "SAMPLE_NEWS_SUMMARY": SimpleNamespace(summarize=_sample_summarize),
+        "SAMPLE_DM_LOG": SimpleNamespace(collect=_sample_collect),
+        "SAMPLE_DM_SUMMARY": SimpleNamespace(summarize=_sample_digest),
+        "SAMPLE_DM_SENDER": SimpleNamespace(send=_sample_send),
+    }
+    for attr, value in provider_fixtures.items():
+        setattr(providers_module, attr, value)
     sys.modules[_PROVIDERS_MODULE] = providers_module
 
 

@@ -20,7 +20,7 @@ async def test_runtime_weather_engagement_flow(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module_name = "tests.integration.runtime_weather_engagement_provider"
+    module_name = "tests.integration.weather_engagement.runtime_weather_engagement_provider"
     provider_module = ModuleType(module_name)
     provider_module.PROVIDER = None  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, module_name, provider_module)

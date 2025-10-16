@@ -1,360 +1,62 @@
-import datetime as dt
-import json
-from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Optional
+"""Legacy import shim for runtime weekly report tests."""
 
-import pytest
+from __future__ import annotations
 
-from llm_generic_bot.features.report import ReportPayload
-from llm_generic_bot.infra.metrics import CounterSnapshot, WeeklyMetricsSnapshot
-from llm_generic_bot.runtime import setup as runtime_setup
+from tests.integration.runtime_weekly_report import (
+    test_fallbacks as _fallbacks,
+    test_scheduler as _scheduler,
+    test_templates as _templates,
+)
+from tests.integration.runtime_weekly_report._shared import (
+    FakeSummary,
+    anyio_backend,
+    fake_summary,
+    pytestmark,
+    weekly_snapshot,
+)
 
-pytestmark = pytest.mark.anyio("asyncio")
+LEGACY_RUNTIME_WEEKLY_REPORT_SPLIT_CHECKLIST = """
+- [ ] tests.integration.runtime_weekly_report.* から直接 import するよう参照箇所を更新する。
+- [ ] このシムの __all__ から対応するテスト関数エイリアスを削除する。
+- [ ] 本ファイルを削除後に pytest / mypy / ruff を再実行しグリーンを確認する。
+"""
 
+__all__ = [
+    "FakeSummary",
+    "LEGACY_RUNTIME_WEEKLY_REPORT_SPLIT_CHECKLIST",
+    "anyio_backend",
+    "fake_summary",
+    "pytestmark",
+    "weekly_snapshot",
+    "test_weekly_report_config_template_regression",
+    "test_weekly_report_permit_override_applies_to_dispatch",
+    "test_weekly_report_respects_weekday_schedule",
+    "test_weekly_report_skips_self_success_rate",
+    "test_weekly_report_template_line_context",
+]
 
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
+# Re-export test callables while preventing duplicate collection.
+test_weekly_report_respects_weekday_schedule = (
+    _scheduler.test_weekly_report_respects_weekday_schedule
+)
+test_weekly_report_respects_weekday_schedule.__test__ = False
 
+test_weekly_report_permit_override_applies_to_dispatch = (
+    _scheduler.test_weekly_report_permit_override_applies_to_dispatch
+)
+test_weekly_report_permit_override_applies_to_dispatch.__test__ = False
 
-async def test_weekly_report_respects_weekday_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def enqueue(
-        text: str,
-        *,
-        job: str,
-        platform: str,
-        channel: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-    ) -> str:
-        del text, job, platform, channel, correlation_id
-        return "corr"
+test_weekly_report_config_template_regression = (
+    _templates.test_weekly_report_config_template_regression
+)
+test_weekly_report_config_template_regression.__test__ = False
 
-    async def weekly_snapshot() -> WeeklyMetricsSnapshot:
-        return WeeklyMetricsSnapshot(
-            start=dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc),
-            end=dt.datetime(2024, 1, 8, tzinfo=dt.timezone.utc),
-            counters={},
-            observations={},
-        )
+test_weekly_report_template_line_context = (
+    _templates.test_weekly_report_template_line_context
+)
+test_weekly_report_template_line_context.__test__ = False
 
-    monkeypatch.setattr(
-        runtime_setup,
-        "Orchestrator",
-        lambda *_, **__: SimpleNamespace(enqueue=enqueue, weekly_snapshot=weekly_snapshot),
-    )
-    for name in (
-        "build_weather_jobs",
-        "build_news_jobs",
-        "build_omikuji_jobs",
-        "build_dm_digest_jobs",
-    ):
-        monkeypatch.setattr(runtime_setup, name, lambda *_: [])
-
-    summary_calls = 0
-
-    def fake_summary(snapshot: WeeklyMetricsSnapshot, **_: Any) -> ReportPayload:
-        nonlocal summary_calls
-        summary_calls += 1
-        return ReportPayload(body="body", channel="ops", tags={"locale": "ja"})
-
-    monkeypatch.setattr(runtime_setup, "generate_weekly_summary", fake_summary)
-    monkeypatch.setattr(runtime_setup.metrics_module, "weekly_snapshot", lambda: {})
-
-    settings = {
-        "timezone": "UTC",
-        "profiles": {"discord": {"enabled": True, "channel": "general"}},
-        "report": {
-            "enabled": True,
-            "job": "weekly_report",
-            "schedule": "Tue,Thu 09:00",
-            "channel": "ops-weekly",
-            "permit": {"platform": "discord", "channel": "ops-weekly", "job": "weekly_report"},
-            "template": {"title": "title {week_range}", "line": "line {metric}: {value}"},
-        },
-    }
-
-    scheduler, _orchestrator, jobs = runtime_setup.setup_runtime(settings)
-    assert await jobs["weekly_report"]() == "body"
-    assert summary_calls == 1
-
-    scheduler._test_now = dt.datetime(2024, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
-    await scheduler._run_due_jobs(scheduler._test_now)
-    assert summary_calls == 1
-
-    scheduler._test_now = dt.datetime(2024, 1, 2, 9, 0, tzinfo=dt.timezone.utc)
-    await scheduler._run_due_jobs(scheduler._test_now)
-    assert summary_calls == 2
-
-    scheduler._test_now = dt.datetime(2024, 1, 4, 9, 0, tzinfo=dt.timezone.utc)
-    await scheduler._run_due_jobs(scheduler._test_now)
-    assert summary_calls == 3
-
-    del scheduler._test_now
-
-
-async def test_weekly_report_config_template_regression(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = json.loads(Path("config/settings.example.json").read_text(encoding="utf-8"))
-    settings.setdefault("report", {})
-    report_cfg = settings["report"]
-    report_cfg["enabled"] = True
-    report_cfg.setdefault("schedule", "Tue 09:00")
-    template_cfg = report_cfg.setdefault("template", {})
-    template_cfg["line"] = str(template_cfg.get("line", "・{metric}: {value}")).replace(
-        "{metric}", "{label}"
-    )
-
-    async def enqueue(
-        text: str,
-        *,
-        job: str,
-        platform: str,
-        channel: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-    ) -> str:
-        del text, job, platform, channel, correlation_id
-        return "corr"
-
-    async def weekly_snapshot() -> WeeklyMetricsSnapshot:
-        return WeeklyMetricsSnapshot(
-            start=dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc),
-            end=dt.datetime(2024, 1, 8, tzinfo=dt.timezone.utc),
-            counters={
-                "send.success": {(): CounterSnapshot(count=120)},
-                "send.failure": {(): CounterSnapshot(count=5)},
-            },
-            observations={},
-        )
-
-    monkeypatch.setattr(
-        runtime_setup,
-        "Orchestrator",
-        lambda *_, **__: SimpleNamespace(enqueue=enqueue, weekly_snapshot=weekly_snapshot),
-    )
-    for name in (
-        "build_weather_jobs",
-        "build_news_jobs",
-        "build_omikuji_jobs",
-        "build_dm_digest_jobs",
-    ):
-        monkeypatch.setattr(runtime_setup, name, lambda *_: [])
-
-    monkeypatch.setattr(
-        runtime_setup.metrics_module,
-        "weekly_snapshot",
-        lambda: {"success_rate": {"ops": {"ratio": 0.92}}},
-    )
-
-    scheduler, _orchestrator, jobs = runtime_setup.setup_runtime(settings)
-
-    result = await jobs[report_cfg.get("job", "weekly_report",)]()
-    assert isinstance(result, str)
-    assert "ops success" in result
-
-
-async def test_weekly_report_template_line_context(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = json.loads(Path("config/settings.example.json").read_text(encoding="utf-8"))
-    settings.setdefault("report", {})
-    report_cfg = settings["report"]
-    report_cfg["enabled"] = True
-    report_cfg.setdefault("schedule", "Tue 09:00")
-    template_cfg = report_cfg.setdefault("template", {})
-    template_cfg["line"] = "stats total={total} success_rate={success_rate:.1f}% value={value}"
-
-    async def enqueue(
-        text: str,
-        *,
-        job: str,
-        platform: str,
-        channel: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-    ) -> str:
-        del text, job, platform, channel, correlation_id
-        return "corr"
-
-    async def weekly_snapshot() -> WeeklyMetricsSnapshot:
-        return WeeklyMetricsSnapshot(
-            start=dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc),
-            end=dt.datetime(2024, 1, 8, tzinfo=dt.timezone.utc),
-            counters={
-                "send.success": {
-                    (("channel", "ops"),): CounterSnapshot(count=8),
-                },
-                "send.failure": {
-                    (("channel", "ops"),): CounterSnapshot(count=2),
-                },
-            },
-            observations={},
-        )
-
-    monkeypatch.setattr(
-        runtime_setup,
-        "Orchestrator",
-        lambda *_, **__: SimpleNamespace(enqueue=enqueue, weekly_snapshot=weekly_snapshot),
-    )
-    for name in (
-        "build_weather_jobs",
-        "build_news_jobs",
-        "build_omikuji_jobs",
-        "build_dm_digest_jobs",
-    ):
-        monkeypatch.setattr(runtime_setup, name, lambda *_: [])
-
-    monkeypatch.setattr(runtime_setup.metrics_module, "weekly_snapshot", lambda: {})
-
-    scheduler, _orchestrator, jobs = runtime_setup.setup_runtime(settings)
-
-    result = await jobs[report_cfg.get("job", "weekly_report",)]()
-    assert isinstance(result, str)
-    assert "total=10" in result
-    assert "success_rate=80.0%" in result
-    assert "{total}" not in result
-
-
-async def test_weekly_report_skips_self_success_rate(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = json.loads(Path("config/settings.example.json").read_text(encoding="utf-8"))
-    settings.setdefault("report", {})
-    report_cfg = settings["report"]
-    report_cfg["enabled"] = True
-    report_cfg.setdefault("schedule", "Tue 09:00")
-
-    async def enqueue(
-        text: str,
-        *,
-        job: str,
-        platform: str,
-        channel: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-    ) -> str:
-        del text, job, platform, channel, correlation_id
-        return "corr"
-
-    async def weekly_snapshot() -> WeeklyMetricsSnapshot:
-        return WeeklyMetricsSnapshot(
-            start=dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc),
-            end=dt.datetime(2024, 1, 8, tzinfo=dt.timezone.utc),
-            counters={
-                "send.success": {(): CounterSnapshot(count=12)},
-            },
-            observations={},
-        )
-
-    monkeypatch.setattr(
-        runtime_setup,
-        "Orchestrator",
-        lambda *_, **__: SimpleNamespace(enqueue=enqueue, weekly_snapshot=weekly_snapshot),
-    )
-    for name in (
-        "build_weather_jobs",
-        "build_news_jobs",
-        "build_omikuji_jobs",
-        "build_dm_digest_jobs",
-    ):
-        monkeypatch.setattr(runtime_setup, name, lambda *_: [])
-
-    monkeypatch.setattr(
-        runtime_setup.metrics_module,
-        "weekly_snapshot",
-        lambda: {
-            "success_rate": {
-                "weekly_report": {"ratio": 0.75},
-                "ops": {"ratio": 0.92},
-            }
-        },
-    )
-
-    scheduler, _orchestrator, jobs = runtime_setup.setup_runtime(settings)
-
-    result = await jobs[report_cfg.get("job", "weekly_report",)]()
-    assert isinstance(result, str)
-    assert "ops success" in result
-    assert "weekly_report success" not in result
-
-
-async def test_weekly_report_permit_override_applies_to_dispatch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    enqueue_calls: list[dict[str, Optional[str]]] = []
-
-    async def enqueue(
-        text: str,
-        *,
-        job: str,
-        platform: str,
-        channel: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-    ) -> str:
-        del correlation_id
-        enqueue_calls.append(
-            {
-                "text": text,
-                "job": job,
-                "platform": platform,
-                "channel": channel,
-            }
-        )
-        return "corr"
-
-    async def weekly_snapshot() -> WeeklyMetricsSnapshot:
-        return WeeklyMetricsSnapshot(
-            start=dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc),
-            end=dt.datetime(2024, 1, 8, tzinfo=dt.timezone.utc),
-            counters={},
-            observations={},
-        )
-
-    monkeypatch.setattr(
-        runtime_setup,
-        "Orchestrator",
-        lambda *_, **__: SimpleNamespace(enqueue=enqueue, weekly_snapshot=weekly_snapshot),
-    )
-    for name in (
-        "build_weather_jobs",
-        "build_news_jobs",
-        "build_omikuji_jobs",
-        "build_dm_digest_jobs",
-    ):
-        monkeypatch.setattr(runtime_setup, name, lambda *_: [])
-
-    def fake_summary(snapshot: WeeklyMetricsSnapshot, **_: Any) -> ReportPayload:
-        del snapshot
-        return ReportPayload(
-            body="header\nline",
-            channel="ops",
-            tags={"severity": "normal"},
-        )
-
-    monkeypatch.setattr(runtime_setup, "generate_weekly_summary", fake_summary)
-    monkeypatch.setattr(runtime_setup.metrics_module, "weekly_snapshot", lambda: {})
-
-    settings = {
-        "timezone": "UTC",
-        "profiles": {"discord": {"enabled": True, "channel": "general"}},
-        "report": {
-            "enabled": True,
-            "job": "weekly_report",
-            "schedule": "Mon 09:00",
-            "channel": "ops-weekly",
-            "permit": {
-                "platform": "slack",
-                "channel": "reports",
-                "job": "weekly_report_alias",
-            },
-            "template": {"title": "title {week_range}", "line": "line {metric}: {value}"},
-        },
-    }
-
-    scheduler, _orchestrator, _jobs = runtime_setup.setup_runtime(settings)
-    scheduler.jitter_enabled = False
-
-    current = dt.datetime(2024, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
-    scheduler._test_now = current
-    await scheduler._run_due_jobs(current)
-    await scheduler.dispatch_ready_batches(current.timestamp() + 600.0)
-    del scheduler._test_now
-
-    assert len(enqueue_calls) == 1
-    enqueue_call = enqueue_calls[0]
-    assert enqueue_call["platform"] == "slack"
-    assert enqueue_call["channel"] == "reports"
-    assert enqueue_call["job"] == "weekly_report_alias"
+test_weekly_report_skips_self_success_rate = (
+    _fallbacks.test_weekly_report_skips_self_success_rate
+)
+test_weekly_report_skips_self_success_rate.__test__ = False

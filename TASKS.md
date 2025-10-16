@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-25: `tests/infra/test_metrics_reporting.py` を最終撤去する OPS-B07 をバックログへ追加し、完了条件（ファイル削除・参照最終確認・CI `pytest`/`mypy`/`ruff` 緑化・関連ドキュメント更新）を明文化。背景は OPS-B05 での撤去前チェック完了後に本削除へ進むための仕上げ作業として設定し、他タスクとの重複はなし。
 - 2025-10-24: (a) docs/roadmap.md の週次サマリ節重複を解消し、(b) docs/tasks/backlog.md へ OPS-B07 を追加した記録を追記。
 - 2025-10-24: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へ曜日スケジュール遵守の説明を追加し、週次サマリ検証記述を最新状態へ更新。
 - 2025-10-24: docs/roadmap.md の週次サマリ節を最新テンプレートへ更新し、`tests/integration/runtime_weekly_report/` の検証観点差分を反映予定。

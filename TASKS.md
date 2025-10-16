@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-22: docs/tasks/sprint3.md の OPS-04 行で確認テスト列を `tests/infra/metrics/test_reporting_freeze_time.py`・`test_reporting_recording_metrics.py`・`test_reporting_service.py` へ差し替え、備考に旧 `tests/infra/test_metrics_reporting` シム継続を追記。
 - 2025-10-23: docs/roadmap.md の Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` へ差し替え、旧 `tests/infra/test_metrics_reporting.py` がレガシーシムである旨を追記。
 - 2025-10-22: docs/roadmap.md の統合テスト一覧に DM ダイジェスト/Weather Engagement/設定リロードの役割を追記し、Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_*` 分割済み・`tests/infra/test_metrics_reporting.py` シム継続へ更新。
 - 2025-10-21: docs/roadmap.md の runtime_multicontent 統合テスト紹介を現行ディレクトリ構成（`tests/integration/runtime_multicontent/test_pipeline.py`）へ更新し、DM ダイジェスト検証説明との整合を確認。

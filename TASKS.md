@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-24: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へ曜日スケジュール遵守の説明を追加し、週次サマリ検証記述を最新状態へ更新。
 - 2025-10-24: docs/roadmap.md の週次サマリ節を最新テンプレートへ更新し、`tests/integration/runtime_weekly_report/` の検証観点差分を反映予定。
 - 2025-10-24: docs/tasks/backlog.md へオーケストレータシム撤去タスクを追加し、`tests/infra/test_metrics_reporting.py` 依存解消のチェックリストを整備予定。
 - 2025-10-22: docs/tasks/sprint3.md の OPS-04 行で確認テスト列を `tests/infra/metrics/test_reporting_freeze_time.py`・`test_reporting_recording_metrics.py`・`test_reporting_service.py` へ差し替え、備考に旧 `tests/infra/test_metrics_reporting` シム継続を追記。

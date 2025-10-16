@@ -551,6 +551,7 @@ async def test_weekly_report_job_uses_metrics_and_template(
     assert "weather" in lines[1] and "75%" in lines[1]
     assert lines[-1] == "詳細は運用ダッシュボードを参照"
 
+    assert scheduler.sender is not None
     await scheduler.sender.send(text, job="weekly_report")
     assert enqueue_calls and enqueue_calls[-1]["job"] == "weekly_report"
     assert enqueue_calls[-1]["platform"] == "discord"

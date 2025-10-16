@@ -21,9 +21,9 @@
       - `test_weekly_report_template_line_context`: テンプレート行整形（行コンテキストの付与）が期待どおりに適用されることを固定。
     - `test_fallbacks.py`:
       - `test_weekly_report_skips_self_success_rate`: 自身の成功率が週次サマリから除外されることを検証し、自己スコア混入を防止。
-    - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 通過後に直接送信し、スケジューラキューを汚さないことを専用テストで検証する（パイプライン経由の dispatch を通さず、スケジューラへの push 抑止を直接確認する位置付け）。
-      - DM ダイジェスト直接送信のスキップ確認（`test_dm_digest_job_returns_none_and_skips_dispatch` がキュー未追加と dispatch スキップを保証）。
-      - `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` は Permit 拒否時に DM 送信を抑止しつつ、`dm_digest_permit_denied` ログイベントへ `retryable=False` と `job="dm_digest-denied"`（PermitDecision 由来サフィックス）を記録していることを検証する。
+    - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが dispatch キューを汚さないことと Permit 拒否時に監査ログを出力することを専用テストで検証する（パイプライン経由の dispatch を通さず、スケジューラへの push 抑止と拒否ログの両方にフォーカスする）。Permit 通過後に直接送信する経路は `tests/integration/runtime_multicontent/test_dm_digest.py` が多経路統合テストとして担保するため、本テストは責務を分離している。
+      - `test_dm_digest_job_returns_none_and_skips_dispatch`: キュー未追加と dispatch スキップを保証し、dispatch キューを汚さないことを固定化する。
+      - `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit`: Permit 拒否時に DM 送信を抑止しつつ、`dm_digest_permit_denied` ログイベントへ `retryable=False` と `job="dm_digest-denied"`（PermitDecision 由来サフィックス）を記録していることを検証する。
     - `tests/integration/weather_engagement/`: Weather Engagement の履歴参照と抑止/再開制御を代表ケース（`test_cache_control.py`・`test_cooldown_coordination.py`・`test_engagement_calculation.py`）で end-to-end に検証し、履歴キャッシュの同期と Permit 前の投稿判断を保証する。
       - Weather Engagement の履歴連携を `history_provider` 呼び出し・再開スコアで確認。
     - `tests/integration/test_runtime_reload.py`: 設定リロード時の差分検出と監査ログ出力をファイル I/O 越しに確認し、リロードシグナル後にランタイムへ副作用なく設定差分を適用できることを担保する。
@@ -31,8 +31,8 @@
   - `tests/integration/runtime_multicontent/test_pipeline.py`: `setup_runtime` が Weather/News/おみくじ/DM ダイジェストの 4 ジョブを登録し、
     - Weather/News/おみくじは設定どおりのチャンネルへエンキューされることを確認。
     - スケジューラ dispatch 中の DM ダイジェスト監視を担い、オーケストレータ経由での配送状況を確認する（直接送信の保証は専用ジョブテストに委譲）。
-  - `tests/integration/runtime_multicontent/test_dm_digest.py`: DM 専用ジョブが Permit 通過後にキューへ積まず直接送信する経路を担保する。
-    - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、ジョブが scheduler queue を経由しないことを固定化してキュー未使用での送信保証を明示する。
+  - `tests/integration/runtime_multicontent/test_dm_digest.py`: DM 専用ジョブが Permit 通過後にキューへ積まず直接送信する経路を担保する（`tests/integration/test_runtime_dm_digest.py` で確認済みの dispatch キュー無汚染・Permit 拒否監査ログと責務分担）。
+    - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、Permit 通過時に scheduler queue を経由しない直接送信保証を明示する。
 - `tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。
 - `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。→ 実装済み
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。

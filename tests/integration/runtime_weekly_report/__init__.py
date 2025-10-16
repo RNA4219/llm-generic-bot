@@ -15,5 +15,21 @@ Shared fixtures/mocks
 
 from ._shared import __all__ as _shared_all
 from ._shared import *  # noqa: F401,F403
+from .test_fallbacks import test_weekly_report_skips_self_success_rate
+from .test_scheduler import (
+    test_weekly_report_permit_override_applies_to_dispatch,
+    test_weekly_report_respects_weekday_schedule,
+)
+from .test_templates import (
+    test_weekly_report_config_template_regression,
+    test_weekly_report_template_line_context,
+)
 
-__all__ = [*_shared_all]
+__all__ = [
+    *_shared_all,
+    "test_weekly_report_config_template_regression",
+    "test_weekly_report_permit_override_applies_to_dispatch",
+    "test_weekly_report_respects_weekday_schedule",
+    "test_weekly_report_skips_self_success_rate",
+    "test_weekly_report_template_line_context",
+]

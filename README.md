@@ -9,7 +9,7 @@
 - ニュース自動配信
 - おみくじ生成
 - DM ダイジェスト編纂
-- 週次サマリ/メトリクス連携（`src/llm_generic_bot/runtime/setup/__init__.py` で週次レポート登録、`tests/integration/test_runtime_weekly_report.py` で検証）
+- 週次サマリ/メトリクス連携（`src/llm_generic_bot/runtime/setup/__init__.py` で週次レポート登録、`tests/integration/runtime_weekly_report/` 配下で検証）
 
 ## Quick start
 

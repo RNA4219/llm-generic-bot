@@ -141,7 +141,8 @@ async def test_weather_runtime_engagement_controls_dispatch(
 
     records = [r for r in caplog.records if r.message == "send_success"]
     assert len(records) == len(records_before) + 1
-    assert records[-1].engagement_score == pytest.approx(1.0)
+    last_record = records[-1]
+    assert getattr(last_record, "engagement_score") == pytest.approx(1.0)
 
     assert len(send_calls) == 1
     assert send_calls[0]["text"] == enqueue_calls[0]["text"]

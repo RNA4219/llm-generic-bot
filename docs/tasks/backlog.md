@@ -1,7 +1,7 @@
 ---
 category: backlog
 status: in_progress
-updated: 2025-10-19
+updated: 2025-10-23
 ---
 
 # 残課題バックログ
@@ -11,6 +11,7 @@ updated: 2025-10-19
 | [ ] | OPS-B01 | Permit/ジッタ/バッチ閾値の運用チューニング | `config/settings.example.json` 系列<br>`src/llm_generic_bot/core/scheduler.py`<br>`src/llm_generic_bot/core/arbiter.py` | テストを先に追加し、Permit/ジッタ/バッチ閾値を調整しても `pytest tests/integration/test_runtime_multicontent_failures.py -q` がグリーンであること、および遅延・Permit 通過率が期待値内に収束するメトリクス検証を `tests/infra/` 配下に追加する。 | ロードマップ「残課題」から OPS-B01 に明記。具体的な閾値とモニタリング条件を決定し、設定ファイルに反映する。 | [OPS-08] ジッタ境界テスト済み。 |
 | [ ] | OPS-B02 | Permit 失敗時の再評価フロー整備 | `src/llm_generic_bot/core/orchestrator.py`<br>`src/llm_generic_bot/core/orchestrator/processor.py`<br>`src/llm_generic_bot/core/orchestrator_metrics.py` (メトリクス境界更新時の参照先)<br>`src/llm_generic_bot/core/arbiter.py`<br>`tests/integration/` | Permit 拒否後の再評価タイミングをテストで固定し、再評価時にメトリクス/ログへ再試行理由を記録する。`pytest tests/integration/test_runtime_multicontent_failures.py -k permit -q` を新テストと併せてグリーン化する。 | PermitGate のレート制御と重複スキップの両立を確認するため、再評価待ちキューや通知ダッシュボード更新も含めて検証する。 | [OPS-10] Permit 拒否メトリクス取得済み。 |
 | [ ] | OPS-B03 | Permit クォータ多段構成とバッチ再送ガード | `src/llm_generic_bot/core/arbiter.py`<br>`src/llm_generic_bot/core/queue.py`<br>`tests/core/` | 多段クォータを導入するテストを先に追加し、再送ガードが二重送信を防ぎつつ `pytest tests/core/test_quota_gate.py -q` を拡張テストと共にグリーン化する。 | スケジューラ併合と連携し、閾値超過時のバッチ破棄・遅延再送の境界条件を明示する。 | Sprint1 [SND-02] 残課題を引継ぎ。 |
+| [ ] | OPS-B04 | `tests/infra/test_metrics_reporting.py` の段階的廃止 | `tests/infra/metrics/`<br>`docs/roadmap.md`<br>`docs/tasks/backlog.md` | 1. `tests/infra/metrics/*` への参照整理が完了し、旧 `tests/infra/test_metrics_reporting.py` への依存が残存しないことをリポジトリ全体で確認する。<br>2. CI (`pytest`, `mypy`, `ruff`) をグリーン化し、`tests/infra/metrics/` 経由のレポート統合が回帰しないことを保証する。<br>3. バックログおよび関連ドキュメントから旧パスの言及を更新し、移行完了手順を共有する。 | metrics レポート統合の移行完了までは旧テストファイルを削除しない。 | 2025-10-23: 本行追加。 |
 | [ ] | UX-B01 | Engagement 指標の長期トレンド分析と調整方針 | `src/llm_generic_bot/features/weather.py`<br>`src/llm_generic_bot/core/orchestrator.py`<br>`src/llm_generic_bot/core/orchestrator/processor.py`<br>`src/llm_generic_bot/core/orchestrator_metrics.py` (メトリクス境界更新時の参照先)<br>`tests/features/` | Engagement ログを一定期間蓄積するテストダブルを用意し、Permit クォータ変動時の通知頻度を調整するロジックを `pytest tests/features/test_weather_engagement.py -q` の新ケースで固定する。 | Sprint2 「残課題」から移管。トレンドに応じた通知頻度調整と PermitGate の協調方針を定義する。 | [UX-01] Engagement 反映ロジック実装済み。 |
 
 ## 進行手順

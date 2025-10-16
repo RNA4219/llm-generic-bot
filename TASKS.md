@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-28: docs/roadmap.md の DM ダイジェスト節に `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` が送信抑止と `dm_digest_permit_denied` ログ（`retryable=False`・`job="dm_digest-denied"` サフィックス）を検証する旨を追記し、記録を更新。
 - 2025-10-27: docs/roadmap.md の DM ダイジェスト節へ Permit 拒否時ログ（`dm_digest_permit_denied`・`job="dm_digest-denied"`・`retryable=False`）を明示し、`tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` の送信抑止と PermitDecision 由来サフィックス保証をドキュメント化。
 - 2025-10-26: docs/roadmap.md の DM ダイジェスト節へ `test_dm_digest_job_denied_by_permit` の Permit 拒否時送信抑止と `dm_digest_permit_denied` ログ検証を追記し、tests/integration/test_runtime_dm_digest.py の挙動と整合を確認。
 - 2025-10-25: `tests/infra/test_metrics_reporting.py` を最終撤去する OPS-B07 をバックログへ追加し、完了条件（ファイル削除・参照最終確認・CI `pytest`/`mypy`/`ruff` 緑化・関連ドキュメント更新）を明文化。背景は OPS-B05 での撤去前チェック完了後に本削除へ進むための仕上げ作業として設定し、他タスクとの重複はなし。

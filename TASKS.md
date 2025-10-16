@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-22: docs/roadmap.md の統合テスト一覧に DM ダイジェスト/Weather Engagement/設定リロードの役割を追記し、Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_*` 分割済み・`tests/infra/test_metrics_reporting.py` シム継続へ更新。
 - 2025-10-21: docs/roadmap.md の runtime_multicontent 統合テスト紹介を現行ディレクトリ構成（`tests/integration/runtime_multicontent/test_pipeline.py`）へ更新し、DM ダイジェスト検証説明との整合を確認。
 - 2025-10-16: docs/roadmap.md の integration テスト一覧へ DM ダイジェスト/Weather Engagement/設定リロードの各結合テスト概要を追記し、検証観点（直接送信スキップ・履歴連携・差分ログ）を補足。
 - 2025-10-16: config/settings.example.json の `limits` / `metrics._usage` / `metrics.export` コメントを更新済みとし、サンプル構成の整合を確認。

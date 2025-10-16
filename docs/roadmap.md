@@ -13,12 +13,12 @@
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
   - `tests/integration/runtime_weekly_report/`: 週次サマリジョブの曜日スケジュールおよびテンプレート整形を `weekly_snapshot` / `generate_weekly_summary` の協調呼び出しで検証。
-  - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブの生成・Permit 判定・送信経路を単体で検証。
-    - DM ダイジェスト直接送信のスキップ確認（バッチ未追加と Permit 拒否ログ）。
-  - `tests/integration/weather_engagement/`: Weather 投稿がリアクション履歴を参照して投稿抑止/再開を制御できることを end-to-end で固定。
-    - Weather Engagement の履歴連携を `history_provider` 呼び出し・再開スコアで確認。
-  - `tests/integration/test_runtime_reload.py`: 設定リロード時の差分検出と監査ログ出力をファイル I/O 越しに確認。
-    - 設定再読込時の差分ログ出力（差分なしケースはログ抑止）。
+    - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 判定を通過した場合のみ送信へ進むことを確認し、Permit 拒否時はスケジューラを汚さず監査ログへ残す役割を担う。
+      - DM ダイジェスト直接送信のスキップ確認（バッチ未追加と Permit 拒否ログ）。
+    - `tests/integration/weather_engagement/`: Weather Engagement の履歴参照と抑止/再開制御を代表ケース（`test_cache_control.py`・`test_cooldown_coordination.py`・`test_engagement_calculation.py`）で end-to-end に検証し、履歴キャッシュの同期と Permit 前の投稿判断を保証する。
+      - Weather Engagement の履歴連携を `history_provider` 呼び出し・再開スコアで確認。
+    - `tests/integration/test_runtime_reload.py`: 設定リロード時の差分検出と監査ログ出力をファイル I/O 越しに確認し、リロードシグナル後にランタイムへ副作用なく設定差分を適用できることを担保する。
+      - 設定再読込時の差分ログ出力（差分なしケースはログ抑止）。
   - `tests/integration/runtime_multicontent/test_pipeline.py`: `setup_runtime` が Weather/News/おみくじ/DM ダイジェストの 4 ジョブを登録し、
     - Weather/News/おみくじは設定どおりのチャンネルへエンキューされることを確認。
     - DM ダイジェストはスケジューラのキューを増やさずに sender が直接 DM を送ることを、DM ジョブ実行後もエンキュー件数が変化しない挙動で検証。
@@ -69,7 +69,7 @@
   - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否のログイベントとメトリクス更新を確認済みで、`send_duplicate_skip` 経路と `send.duration` メトリクスの整合も同テストで固定済み（[OPS-09] 完了）。
 - Sprint 1: `tests/adapters/test_retry_policy.py` に JSON ログのスナップショットケースを追加し、`tests/core/test_coalesce_queue.py` へ優先度逆転ガードの境界ケースを拡張する。同時に `tests/core/test_quota_gate.py` では Permit 拒否理由の種類ごとに `llm_generic_bot.core.arbiter` のタグ付けを検証し、構造化ログ側と整合させる。
 - Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携はカバーしており、ジッタ境界と異常系結合テストは OPS-08/OPS-10 で完遂。
-- Sprint 3: `tests/infra/test_metrics_reporting.py` を追加し、`src/llm_generic_bot/infra/metrics/aggregator.py` を入口に `src/llm_generic_bot/infra/metrics/aggregator_state.py` が保持する履歴と `src/llm_generic_bot/infra/metrics/reporting.py`/`src/llm_generic_bot/infra/metrics/service.py` の集計・送出が結合できることをスナップショットで確認する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
+- Sprint 3: ランタイムメトリクスの結合テストは `tests/infra/metrics/test_reporting_*.py` へ分割済みで、`tests/infra/test_metrics_reporting.py` は旧ケース互換のためのシムとして維持する。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
 
 ### 参照タスク
 - Sprint 1 詳細: [`docs/tasks/sprint1.md`](tasks/sprint1.md)

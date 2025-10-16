@@ -16,6 +16,7 @@
     - `test_weekly_report_config_template_regression`: テンプレート改変が週次サマリ生成へ確実に反映されることを保証。
     - `test_weekly_report_template_line_context`: テンプレート行整形（行コンテキストの付与）が期待どおりに適用されることを固定。
     - `test_weekly_report_skips_self_success_rate`: 自身の成功率が週次サマリから除外されることを検証し、自己スコア混入を防止。
+    - `test_weekly_report_permit_override_applies_to_dispatch`: Permit で上書きされたプラットフォーム/チャンネル/ジョブが dispatch 時に使用されることを確認。
     - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 判定を通過した場合のみ送信へ進むことを確認し、Permit 拒否時はスケジューラを汚さず監査ログへ残す役割を担う。
       - DM ダイジェスト直接送信のスキップ確認（バッチ未追加と Permit 拒否ログ）。
     - `tests/integration/weather_engagement/`: Weather Engagement の履歴参照と抑止/再開制御を代表ケース（`test_cache_control.py`・`test_cooldown_coordination.py`・`test_engagement_calculation.py`）で end-to-end に検証し、履歴キャッシュの同期と Permit 前の投稿判断を保証する。

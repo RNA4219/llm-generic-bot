@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-24: (a) docs/roadmap.md の週次サマリ節重複を解消し、(b) docs/tasks/backlog.md へ OPS-B07 を追加した記録を追記。
 - 2025-10-24: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へ曜日スケジュール遵守の説明を追加し、週次サマリ検証記述を最新状態へ更新。
 - 2025-10-24: docs/roadmap.md の週次サマリ節を最新テンプレートへ更新し、`tests/integration/runtime_weekly_report/` の検証観点差分を反映予定。
 - 2025-10-24: docs/tasks/backlog.md へオーケストレータシム撤去タスクを追加し、`tests/infra/test_metrics_reporting.py` 依存解消のチェックリストを整備予定。

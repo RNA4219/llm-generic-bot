@@ -23,6 +23,7 @@
       - `test_weekly_report_skips_self_success_rate`: 自身の成功率が週次サマリから除外されることを検証し、自己スコア混入を防止。
     - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 判定を通過した場合のみ送信へ進むことを確認し、Permit 拒否時はスケジューラを汚さず監査ログへ残す役割を担う。
       - DM ダイジェスト直接送信のスキップ確認（バッチ未追加と Permit 拒否ログ）。
+      - `test_dm_digest_job_denied_by_permit` で Permit 拒否時に送信を抑止しつつ、監査ログへ `dm_digest_permit_denied` を記録することを検証。
     - `tests/integration/weather_engagement/`: Weather Engagement の履歴参照と抑止/再開制御を代表ケース（`test_cache_control.py`・`test_cooldown_coordination.py`・`test_engagement_calculation.py`）で end-to-end に検証し、履歴キャッシュの同期と Permit 前の投稿判断を保証する。
       - Weather Engagement の履歴連携を `history_provider` 呼び出し・再開スコアで確認。
     - `tests/integration/test_runtime_reload.py`: 設定リロード時の差分検出と監査ログ出力をファイル I/O 越しに確認し、リロードシグナル後にランタイムへ副作用なく設定差分を適用できることを担保する。

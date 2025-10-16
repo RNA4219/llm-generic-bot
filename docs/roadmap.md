@@ -21,7 +21,7 @@
       - `test_weekly_report_template_line_context`: テンプレート行整形（行コンテキストの付与）が期待どおりに適用されることを固定。
     - `test_fallbacks.py`:
       - `test_weekly_report_skips_self_success_rate`: 自身の成功率が週次サマリから除外されることを検証し、自己スコア混入を防止。
-    - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 判定を通過した場合のみ送信へ進むことを確認し、Permit 拒否時はスケジューラを汚さず監査ログへ残す役割を担う（パイプライン経由の dispatch を通さず、スケジューラへの push 抑止を直接検証する位置付け）。
+    - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが Permit 通過後に直接送信し、スケジューラキューを汚さないことを専用テストで検証する（パイプライン経由の dispatch を通さず、スケジューラへの push 抑止を直接確認する位置付け）。
       - DM ダイジェスト直接送信のスキップ確認（`test_dm_digest_job_returns_none_and_skips_dispatch` がキュー未追加と dispatch スキップを保証）。
       - `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` は Permit 拒否時に DM 送信を抑止しつつ、`dm_digest_permit_denied` ログイベントへ `retryable=False` と `job="dm_digest-denied"`（PermitDecision 由来サフィックス）を記録していることを検証する。
     - `tests/integration/weather_engagement/`: Weather Engagement の履歴参照と抑止/再開制御を代表ケース（`test_cache_control.py`・`test_cooldown_coordination.py`・`test_engagement_calculation.py`）で end-to-end に検証し、履歴キャッシュの同期と Permit 前の投稿判断を保証する。

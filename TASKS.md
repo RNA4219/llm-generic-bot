@@ -1,6 +1,7 @@
 # タスク記録
 
 - 2025-10-29: docs/roadmap.md の runtime_multicontent DM ダイジェスト節へ runtime_multicontent DM ダイジェストの最新ダイジェスト情報を追記し、docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-29 に補正する作業を予定（関連: OPS-B07）。
+- 2025-10-29: docs/roadmap.md の DM ダイジェスト節を再調整し、`test_dm_digest_job_returns_none_and_skips_dispatch` の記述をキュー未追加と送信スキップ確認へ限定したことを共有。
 - 2025-10-29: docs/roadmap.md の DM ダイジェスト節から Permit 拒否ログの重複表現を整理し、`test_dm_digest_job_returns_none_and_skips_dispatch` が担保するキュー未追加/dispatch スキップと `test_dm_digest_job_denied_by_permit` の Permit 拒否ログ検証を再確認。
 - 2025-10-29: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-28 に更新し、OPS-B07 行の備考へ最終更新日同期を追記してメタデータ整合を確認。
 - 2025-10-28: docs/roadmap.md の DM ダイジェスト節に `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` が送信抑止と `dm_digest_permit_denied` ログ（`retryable=False`・`job="dm_digest-denied"` サフィックス）を検証する旨を追記し、記録を更新。

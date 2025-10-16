@@ -16,7 +16,7 @@
 - `tests/integration/test_runtime_multicontent.py`: `setup_runtime` が Weather/News/おみくじ/DM ダイジェストの 4 ジョブを登録し、
   - Weather/News/おみくじは設定どおりのチャンネルへエンキューされることを確認。
   - DM ダイジェストはスケジューラのキューを増やさずに sender が直接 DM を送ることを、DM ジョブ実行後もエンキュー件数が変化しない挙動で検証。
-- `tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `llm_generic_bot.runtime.providers` モジュールに `SAMPLE_NEWS_FEED` / `SAMPLE_NEWS_SUMMARY` / `SAMPLE_DM_LOG` / `SAMPLE_DM_SUMMARY` / `SAMPLE_DM_SENDER` を登録して `sys.modules` に挿入し、`module:attr` / `module.attr` 形式で指定したプロバイダ文字列が `resolve_object` により正しく解決されることを検証する。
+- `tests/integration/test_runtime_multicontent.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。
 - `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。→ 実装済み
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
 - 残課題は以下の運用チューニングに限定される:

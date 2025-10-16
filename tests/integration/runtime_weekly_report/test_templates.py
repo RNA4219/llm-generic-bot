@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
+from typing import Optional, cast
 
 import pytest
 
@@ -33,9 +33,10 @@ async def test_weekly_report_config_template_regression(monkeypatch: pytest.Monk
         del text, job, platform, channel, correlation_id
         return "corr"
 
+    empty_labels = cast(tuple[tuple[str, str], ...], ())
     counters = {
-        "send.success": {(): CounterSnapshot(count=120)},
-        "send.failure": {(): CounterSnapshot(count=5)},
+        "send.success": {empty_labels: CounterSnapshot(count=120)},
+        "send.failure": {empty_labels: CounterSnapshot(count=5)},
     }
 
     monkeypatch.setattr(
@@ -84,12 +85,13 @@ async def test_weekly_report_template_line_context(monkeypatch: pytest.MonkeyPat
         del text, job, platform, channel, correlation_id
         return "corr"
 
+    single_channel = cast(tuple[tuple[str, str], ...], (("channel", "ops"),))
     counters = {
         "send.success": {
-            (("channel", "ops"),): CounterSnapshot(count=8),
+            single_channel: CounterSnapshot(count=8),
         },
         "send.failure": {
-            (("channel", "ops"),): CounterSnapshot(count=2),
+            single_channel: CounterSnapshot(count=2),
         },
     }
 

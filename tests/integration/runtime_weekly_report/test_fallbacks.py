@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
+from typing import Optional, cast
 
 import pytest
 
@@ -31,8 +31,9 @@ async def test_weekly_report_skips_self_success_rate(monkeypatch: pytest.MonkeyP
         del text, job, platform, channel, correlation_id
         return "corr"
 
+    empty_labels = cast(tuple[tuple[str, str], ...], ())
     counters = {
-        "send.success": {(): CounterSnapshot(count=12)},
+        "send.success": {empty_labels: CounterSnapshot(count=12)},
     }
 
     monkeypatch.setattr(

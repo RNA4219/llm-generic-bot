@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from types import SimpleNamespace
-from typing import Optional
+from typing import Any, Optional, cast
 
 import pytest
 
@@ -54,22 +54,23 @@ async def test_weekly_report_respects_weekday_schedule(monkeypatch: pytest.Monke
     }
 
     scheduler, _orchestrator, jobs = runtime_setup.setup_runtime(settings)
+    scheduler_any = cast(Any, scheduler)
     assert await jobs["weekly_report"]() == "body"
     assert summary.calls == 1
 
-    scheduler._test_now = dt.datetime(2024, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
-    await scheduler._run_due_jobs(scheduler._test_now)
+    scheduler_any._test_now = dt.datetime(2024, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
+    await scheduler._run_due_jobs(scheduler_any._test_now)
     assert summary.calls == 1
 
-    scheduler._test_now = dt.datetime(2024, 1, 2, 9, 0, tzinfo=dt.timezone.utc)
-    await scheduler._run_due_jobs(scheduler._test_now)
+    scheduler_any._test_now = dt.datetime(2024, 1, 2, 9, 0, tzinfo=dt.timezone.utc)
+    await scheduler._run_due_jobs(scheduler_any._test_now)
     assert summary.calls == 2
 
-    scheduler._test_now = dt.datetime(2024, 1, 4, 9, 0, tzinfo=dt.timezone.utc)
-    await scheduler._run_due_jobs(scheduler._test_now)
+    scheduler_any._test_now = dt.datetime(2024, 1, 4, 9, 0, tzinfo=dt.timezone.utc)
+    await scheduler._run_due_jobs(scheduler_any._test_now)
     assert summary.calls == 3
 
-    del scheduler._test_now
+    del scheduler_any._test_now
 
 
 async def test_weekly_report_permit_override_applies_to_dispatch(
@@ -131,13 +132,14 @@ async def test_weekly_report_permit_override_applies_to_dispatch(
     }
 
     scheduler, _orchestrator, _jobs = runtime_setup.setup_runtime(settings)
+    scheduler_any = cast(Any, scheduler)
     scheduler.jitter_enabled = False
 
     current = dt.datetime(2024, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
-    scheduler._test_now = current
+    scheduler_any._test_now = current
     await scheduler._run_due_jobs(current)
     await scheduler.dispatch_ready_batches(current.timestamp() + 600.0)
-    del scheduler._test_now
+    del scheduler_any._test_now
 
     assert len(enqueue_calls) == 1
     enqueue_call = enqueue_calls[0]

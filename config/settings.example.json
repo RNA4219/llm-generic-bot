@@ -10,9 +10,8 @@
       { "range": ["23:00","05:00"], "factor": 1.2 }
     ],
     "jobs": {
-      "greeting":  { "base_gap_sec": 3600, "priority": 40 },
+      "dm_digest": { "base_gap_sec": 21600, "priority": 30 },
       "news":      { "base_gap_sec": 1800, "priority": 50, "coalesce_window_sec": 900 },
-      "monologue": { "base_gap_sec": 2700, "priority": 20, "coalesce_window_sec": 1200 },
       "omikuji":   { "base_gap_sec": 10800,"priority": 10 },
       "weather":   { "base_gap_sec": 86400,"priority": 80 }
     }

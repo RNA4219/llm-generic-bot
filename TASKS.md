@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-10-30: docs/roadmap.md の runtime_multicontent パイプライン節へ `test_weekly_report_job_uses_metrics_and_template` の役割追記を実施し、週次サマリのメトリクス/テンプレート保証を明文化。
 - 2025-10-29: docs/roadmap.md の DM ダイジェスト節で `tests/integration/test_runtime_dm_digest.py` をキュー無汚染確認テストとして位置付け直し、直接送信経路は `tests/integration/runtime_multicontent/test_dm_digest.py` が担保する旨を記録。
 - 2025-10-29: docs/roadmap.md の runtime_multicontent DM ダイジェスト節へ runtime_multicontent DM ダイジェストの最新ダイジェスト情報を追記し、docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-29 に補正する作業を予定（関連: OPS-B07）。
 - 2025-10-29: docs/roadmap.md の DM ダイジェスト節を再調整し、`test_dm_digest_job_returns_none_and_skips_dispatch` の記述をキュー未追加と送信スキップ確認へ限定したことを共有。

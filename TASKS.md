@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-11-05: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-29 へ更新し、最新のタスク追加日と整合させた。
 - 2025-11-05: docs/roadmap.md runtime_multicontent Weather〜DM ダイジェスト各テスト説明を実保証へ合わせて再記述。
 - 2025-11-05: docs/roadmap.md へ runtime デデュープ無効化シム・設定サンプルクールダウン検証の説明を追加し、Sprint1 完了記述とテストロードマップの反映状況を更新。
 - 2025-11-05: docs/tasks/backlog.md へ DOC-B08/DOC-B09 を追加し、docs/roadmap.md の DM ダイジェスト節・週次サマリ節更新タスクを明文化。

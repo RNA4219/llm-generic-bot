@@ -3,6 +3,7 @@
 - 2025-11-01: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を平日スケジュール遵守へ更新し、祝日・週末除外未カバーであることを明示。
 - 2025-11-01: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を「Tue,Thu 09:00」設定で火曜・木曜のみ起動する内容へ更新し、祝日・週末への言及を整理。
 - 2025-10-31: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_weekly_report_job_uses_metrics_and_template` がメトリクススナップショット取得とタイトル/本文/フッター整形を確認している旨を追記。
+- 2025-10-31: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を Tue/Thu 09:00 の起動確認へ改め、祝日・週末記述を整理。
 - 2025-10-30: docs/roadmap.md の runtime_multicontent パイプライン節へ `test_weekly_report_job_uses_metrics_and_template` の役割追記を実施し、週次サマリのメトリクス/テンプレート保証を明文化。
 - 2025-10-29: docs/roadmap.md の DM ダイジェスト節で `tests/integration/test_runtime_dm_digest.py` をキュー無汚染確認テストとして位置付け直し、直接送信経路は `tests/integration/runtime_multicontent/test_dm_digest.py` が担保する旨を記録。
 - 2025-10-29: docs/roadmap.md の runtime_multicontent DM ダイジェスト節へ runtime_multicontent DM ダイジェストの最新ダイジェスト情報を追記し、docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-29 に補正する作業を予定（関連: OPS-B07）。
@@ -49,6 +50,7 @@
 - 2025-10-18: バックログ OPS-B01/B02/B03・UX-B01 ほか未完了タスクが残存しており、開発継続が必要であることを確認。
 - 2025-10-19: docs/roadmap.md と docs/tasks/backlog.md を照合し、OPS-B01〜OPS-B03・UX-B01 が未完了である旨を双方に明示した。
 - 2025-10-18: src/llm_generic_bot/infra/metrics/aggregator.py の LEGACY_METRICS_AGGREGATOR_CHECKLIST が全項目完了済みで、docs/roadmap.md・docs/tasks/backlog.md の記述と整合していることを確認。
+- 2025-10-17: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を Tue/Thu 09:00 例へ更新し、tests/integration/runtime_weekly_report/test_scheduler.py の呼び出し検証と整合を確認した記録。
 - 2025-10-17: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_weekly_report_job_uses_metrics_and_template` が `MetricsService.collect_weekly_snapshot` と `metrics_module.weekly_snapshot` の双方を通じて週次サマリを整形する保証を記録。
 - 2025-10-20: OPS-B01 Permit/ジッタ/バッチ閾値の調整タスクを着手用にスタブ化。`pytest tests/integration/test_runtime_multicontent_failures.py -q` を先に実行し現状を固定、その後 `tests/infra/` にメトリクス検証を追加するサブタスクを設定。
 - 2025-10-20: OPS-B02 Permit 再評価フロー整備タスクをスタブ化。`pytest tests/integration/test_runtime_multicontent_failures.py -k permit -q` を再現シナリオとして先に追加し、再評価時のメトリクス/ログ記録を実装するタスクを設定。

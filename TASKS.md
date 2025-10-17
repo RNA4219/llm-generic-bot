@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-11-03: runtime/setup/gates.py の `is_enabled` へ `dedupe.enable` 判定を追加し、`tests/runtime/test_setup_runtime_dedupe.py` で無効化時の連続 permit 成功を記録。
 - 2025-11-03: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 箇条書きを平日順守と「Tue,Thu 09:00」検証をまとめた一文へ再整理。
 - 2025-11-02: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を単一箇条書きへ統合し、曜日順守と「Tue,Thu 09:00」検証を一文へ集約。
 - 2025-11-02: runtime/setup/gates.py のデデュープ無効化経路を `_PassthroughDedupe` で追加し、`tests/runtime/test_setup_runtime_dedupe.py` で `dedupe.enabled=False` の連続 permit 成功を記録。

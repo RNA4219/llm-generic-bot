@@ -20,7 +20,7 @@ def test_setup_runtime_disables_dedupe_when_disabled(
         lambda self: None,
     )
     settings = {
-        "dedupe": {"enabled": False},
+        "dedupe": {"enable": False},
         "profiles": {
             "discord": {"enabled": True, "channel": "#bot"},
             "misskey": {"enabled": False},
@@ -29,6 +29,7 @@ def test_setup_runtime_disables_dedupe_when_disabled(
 
     _, orchestrator, _ = setup_runtime(settings)
 
+    assert orchestrator._dedupe.permit("text") is True
     assert orchestrator._dedupe.permit("text") is True
     assert orchestrator._dedupe.permit("text") is True
 

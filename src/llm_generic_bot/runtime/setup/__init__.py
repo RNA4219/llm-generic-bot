@@ -50,6 +50,29 @@ __all__ = [
     "generate_weekly_summary",
     "WeeklyReportTemplate",
 ]
+
+
+def _parse_positive_int_pair(raw: object) -> tuple[int, int]:
+    if isinstance(raw, Mapping):
+        raise ValueError("arbiter.jitter_sec must be a sequence of two positive integers")
+    if not isinstance(raw, Iterable) or isinstance(raw, (str, bytes)):
+        raise ValueError("arbiter.jitter_sec must be a sequence of two positive integers")
+
+    values = list(raw)
+    if len(values) != 2:
+        raise ValueError("arbiter.jitter_sec must contain exactly two positive integers")
+
+    parsed: list[int] = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("arbiter.jitter_sec values must be positive integers")
+        if value <= 0:
+            raise ValueError("arbiter.jitter_sec values must be positive integers")
+        parsed.append(value)
+
+    return parsed[0], parsed[1]
+
+
 def setup_runtime(
     settings: Mapping[str, Any],
     *,
@@ -70,34 +93,7 @@ def setup_runtime(
     if arbiter_cfg:
         jitter_values = arbiter_cfg.get("jitter_sec")
         if jitter_values is not None:
-            if isinstance(jitter_values, Mapping):
-                raise ValueError("arbiter.jitter_sec must be an iterable of two integers")
-            if not isinstance(jitter_values, Iterable) or isinstance(
-                jitter_values, (str, bytes)
-            ):
-                raise ValueError("arbiter.jitter_sec must be an iterable of two integers")
-            values = list(jitter_values)
-            if len(values) != 2:
-                raise ValueError("arbiter.jitter_sec must contain exactly two integers")
-
-            def _coerce_positive_int(raw: Any) -> int:
-                if isinstance(raw, bool):
-                    raise ValueError("arbiter.jitter_sec values must be positive integers")
-                try:
-                    number = float(raw)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        "arbiter.jitter_sec values must be positive integers"
-                    ) from exc
-                if not number.is_integer():
-                    raise ValueError("arbiter.jitter_sec values must be positive integers")
-                candidate = int(number)
-                if candidate <= 0:
-                    raise ValueError("arbiter.jitter_sec values must be positive integers")
-                return candidate
-
-            low, high = (_coerce_positive_int(values[0]), _coerce_positive_int(values[1]))
-            jitter_range_override = (low, high)
+            jitter_range_override = _parse_positive_int_pair(jitter_values)
 
     quota: QuotaSettings = load_quota_settings(cfg)
     permit = build_permit(quota, permit_gate=permit_gate)

@@ -84,6 +84,25 @@ def test_setup_runtime_applies_scheduler_jitter_from_settings(
     asyncio.run(orchestrator.close())
 
 
+def test_setup_runtime_rejects_invalid_scheduler_jitter_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "llm_generic_bot.core.orchestrator.Orchestrator._start_worker",
+        lambda self: None,
+    )
+    settings = {
+        "profiles": {
+            "discord": {"enabled": True, "channel": "#bot"},
+            "misskey": {"enabled": False},
+        },
+        "arbiter": {"jitter_sec": [0, 40]},
+    }
+
+    with pytest.raises(ValueError):
+        setup_runtime(settings)
+
+
 def test_setup_runtime_raises_when_profiles_disabled_via_string_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

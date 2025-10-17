@@ -14,6 +14,7 @@
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
   - `tests/integration/runtime_weekly_report/`: 週次サマリジョブの曜日スケジュールおよびテンプレート整形を `weekly_snapshot` / `generate_weekly_summary` の協調呼び出しで検証。
     - `test_scheduler.py`:
+      - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が構成した平日スケジュール（例: Tue/Thu 09:00）どおりにジョブを起動できることを確認し、曜日順守を保証。
       - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が `Tue,Thu 09:00` の設定で火曜・木曜の 09:00 にのみジョブを起動することを確認して曜日順守を保証。
       - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が構成された平日の曜日スケジュールどおりにジョブを起動することを確認して曜日順守を保証（祝日・週末除外は未カバー）。
       - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が構成されたスケジュールどおりにジョブを起動することを確認し、「Tue,Thu 09:00」設定では火曜と木曜の 9 時だけ実行されることを保証。

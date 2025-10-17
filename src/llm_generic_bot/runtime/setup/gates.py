@@ -16,7 +16,14 @@ from ..jobs.common import get_float
 
 
 def is_enabled(config: Mapping[str, Any], *, default: bool = True) -> bool:
-    flag = config.get("enabled")
+    flag: Any = default
+    for key in ("enable", "enabled"):
+        if key in config:
+            flag = config[key]
+            break
+    else:
+        return default
+
     if flag is None:
         return default
     if isinstance(flag, bool):

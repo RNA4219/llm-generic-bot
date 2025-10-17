@@ -63,6 +63,27 @@ def test_setup_runtime_disables_misskey_via_string_false(monkeypatch: pytest.Mon
     asyncio.run(orchestrator.close())
 
 
+def test_setup_runtime_applies_scheduler_jitter_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "llm_generic_bot.core.orchestrator.Orchestrator._start_worker",
+        lambda self: None,
+    )
+    settings = {
+        "profiles": {
+            "discord": {"enabled": True, "channel": "#bot"},
+            "misskey": {"enabled": False},
+        },
+        "arbiter": {"jitter_sec": [10, 40]},
+    }
+
+    scheduler, orchestrator, _ = setup_runtime(settings)
+
+    assert scheduler.jitter_range == (10, 40)
+    asyncio.run(orchestrator.close())
+
+
 def test_setup_runtime_raises_when_profiles_disabled_via_string_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

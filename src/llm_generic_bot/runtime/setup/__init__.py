@@ -65,6 +65,40 @@ def setup_runtime(
     dedupe_cfg = as_mapping(cfg.get("dedupe"))
     dedupe = build_dedupe(dedupe_cfg)
 
+    arbiter_cfg = as_mapping(cfg.get("arbiter"))
+    jitter_range_override: Optional[tuple[int, int]] = None
+    if arbiter_cfg:
+        jitter_values = arbiter_cfg.get("jitter_sec")
+        if jitter_values is not None:
+            if isinstance(jitter_values, Mapping):
+                raise ValueError("arbiter.jitter_sec must be an iterable of two integers")
+            if not isinstance(jitter_values, Iterable) or isinstance(
+                jitter_values, (str, bytes)
+            ):
+                raise ValueError("arbiter.jitter_sec must be an iterable of two integers")
+            values = list(jitter_values)
+            if len(values) != 2:
+                raise ValueError("arbiter.jitter_sec must contain exactly two integers")
+
+            def _coerce_positive_int(raw: Any) -> int:
+                if isinstance(raw, bool):
+                    raise ValueError("arbiter.jitter_sec values must be positive integers")
+                try:
+                    number = float(raw)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "arbiter.jitter_sec values must be positive integers"
+                    ) from exc
+                if not number.is_integer():
+                    raise ValueError("arbiter.jitter_sec values must be positive integers")
+                candidate = int(number)
+                if candidate <= 0:
+                    raise ValueError("arbiter.jitter_sec values must be positive integers")
+                return candidate
+
+            low, high = (_coerce_positive_int(values[0]), _coerce_positive_int(values[1]))
+            jitter_range_override = (low, high)
+
     quota: QuotaSettings = load_quota_settings(cfg)
     permit = build_permit(quota, permit_gate=permit_gate)
 
@@ -136,10 +170,15 @@ def setup_runtime(
     async def _call_dm_digest(*args: Any, **kwargs: Any) -> Optional[str]:
         return await build_dm_digest(*args, **kwargs)
 
+    scheduler_kwargs: dict[str, Any] = {}
+    if jitter_range_override is not None:
+        scheduler_kwargs["jitter_range"] = jitter_range_override
+
     scheduler = Scheduler(
         tz=tz,
         sender=scheduler_sender,
         queue=queue,
+        **scheduler_kwargs,
     )
 
     context = JobContext(

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 
@@ -34,3 +36,14 @@ def test_setup_runtime_disables_dedupe_when_disabled(
     assert orchestrator._dedupe.permit("text") is True
 
     asyncio.run(orchestrator.close())
+
+
+def test_settings_example_uses_enabled_key_for_dedupe() -> None:
+    config_path = Path("config/settings.example.json")
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+
+    dedupe_block = config.get("dedupe")
+    assert isinstance(dedupe_block, dict)
+
+    assert "enabled" in dedupe_block
+    assert "enable" not in dedupe_block

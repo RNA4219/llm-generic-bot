@@ -19,7 +19,7 @@
   },
   "quota": { "per_channel": { "day": 20, "window_min": 30, "burst_limit": 5 } },
   "arbiter": { "jitter_sec": [60, 180] },
-  "dedupe": { "enable": true, "recent_k": 20, "sim_threshold": 0.93 },
+  "dedupe": { "enabled": true, "recent_k": 20, "sim_threshold": 0.93 },
   "limits": {
     "_usage": "制限設定サンプル。⚠️ 現行実装では未対応のため、実装が揃うまでは有効化しないこと",
     "max_lines_night": 4,

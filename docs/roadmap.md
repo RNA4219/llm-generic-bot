@@ -28,7 +28,7 @@
       - Weather Engagement の履歴連携を `history_provider` 呼び出し・再開スコアで確認。
     - `tests/integration/test_runtime_reload.py`: 設定リロード時の差分検出と監査ログ出力をファイル I/O 越しに確認し、リロードシグナル後にランタイムへ副作用なく設定差分を適用できることを担保する。
       - 設定再読込時の差分ログ出力（差分なしケースはログ抑止）。
-  - `tests/integration/runtime_multicontent/test_pipeline.py`: runtime_multicontent パイプライン移行履歴の LEGACY チェックリストのみを保持する。Weather/News/おみくじ/DM/週次レポートの各統合テスト本体は `test_pipeline_weather.py`・`test_pipeline_news.py`・`test_pipeline_omikuji.py`・`test_pipeline_dm_digest.py`・`test_pipeline_weekly_report.py` へ機能別に移動済みで、後継テスト群が担保する登録・dispatch 条件を退避スナップショットとして記録する。
+  - `tests/integration/runtime_multicontent/test_pipeline.py`: runtime_multicontent パイプライン移行履歴の LEGACY チェックリストであり、後継となる `test_pipeline_weather.py`・`test_pipeline_news.py`・`test_pipeline_omikuji.py`・`test_pipeline_dm_digest.py`・`test_pipeline_weekly_report.py` を追跡しつつ登録・dispatch 条件の移行完了スナップショットを同一段落で記録する。
   - `tests/integration/runtime_multicontent/test_pipeline_weather.py`: Weather ジョブが設定された複数チャンネルへエンキューされ、Permit 判定前後のバッチングを `setup_runtime` 越しに検証。
   - `tests/integration/runtime_multicontent/test_pipeline_news.py`: News サマリがニュース専用チャンネルへ配送され、Permit 拒否時の挙動が Weather と独立していることを確認。
   - `tests/integration/runtime_multicontent/test_pipeline_omikuji.py`: おみくじ投稿がテンプレートローテーションとチャンネル振り分けを保ったまま、パイプライン経由で送信されることを確認。

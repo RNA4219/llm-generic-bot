@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-11-05: runtime/setup/_parse_positive_int_pair の降順 jitter 例外メッセージ強化と対応テストを追加。
 - 2025-11-03: runtime/setup/gates.py の `is_enabled` へ `dedupe.enable` 判定を追加し、`tests/runtime/test_setup_runtime_dedupe.py` で無効化時の連続 permit 成功を記録。
 - 2025-11-04: docs/roadmap.md の週次サマリ箇条書きを平日順守と「Tue/Thu 09:00」検証を単一文へ統合する調整を実施。
 - 2025-11-03: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 箇条書きを平日順守と「Tue,Thu 09:00」検証をまとめた一文へ再整理。

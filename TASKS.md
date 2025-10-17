@@ -1,6 +1,7 @@
 # タスク記録
 
 - 2025-11-05: docs/roadmap.md runtime_multicontent Weather〜DM ダイジェスト各テスト説明を実保証へ合わせて再記述。
+- 2025-11-05: docs/roadmap.md の `test_pipeline_dm_digest.py` 説明をキュー/dispatch 不発保証へ更新。
 - 2025-11-05: docs/roadmap.md の `test_pipeline_dm_digest.py` 説明をジョブ登録後にキュー/dispatch 無しを保証する内容へ更新。
 - 2025-11-05: docs/roadmap.md runtime_multicontent Weather/News/おみくじ説明を実テストのチャンネル/ビルダー保証に沿うよう更新。
 - 2025-11-05: docs/roadmap.md の runtime_multicontent 節で `test_pipeline.py` 説明を 1 行に集約し、LEGACY チェックリストと後継テスト追跡の役割を統合記述した。

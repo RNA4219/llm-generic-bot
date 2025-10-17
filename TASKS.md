@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-11-05: tests/config/test_settings_example_cooldown.py を追加し、`config/settings.example.json` の cooldown.jobs ジョブ集合が weather/news/omikuji/dm_digest のみであることを検証。
 - 2025-11-05: tests/integration/runtime_multicontent/test_pipeline.py の天気/ニュース/おみくじ/DM/週次レポート各テストを機能別ファイルへ分割し、共通シムを `_helpers.py` へ集約、LEGACY チェックリストで移行完了を明示した。
 - 2025-11-05: config/settings.example.json の `cooldown.jobs` を現行ジョブセット（weather/news/omikuji/dm_digest）へ合わせて整理。
 - 2025-11-05: runtime/setup/_parse_positive_int_pair の降順 jitter 例外メッセージ強化と対応テストを追加。

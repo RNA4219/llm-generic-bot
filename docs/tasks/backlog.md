@@ -1,7 +1,7 @@
 ---
 category: backlog
 status: in_progress
-updated: 2025-11-05
+updated: 2025-10-17
 ---
 
 # 残課題バックログ
@@ -18,6 +18,7 @@ updated: 2025-11-05
 | [ ] | UX-B01 | Engagement 指標の長期トレンド分析と調整方針 | `src/llm_generic_bot/features/weather.py`<br>`src/llm_generic_bot/core/orchestrator.py`<br>`src/llm_generic_bot/core/orchestrator/processor.py`<br>`src/llm_generic_bot/core/orchestrator_metrics.py` (メトリクス境界更新時の参照先)<br>`tests/features/` | Engagement ログを一定期間蓄積するテストダブルを用意し、Permit クォータ変動時の通知頻度を調整するロジックを `pytest tests/features/test_weather_engagement.py -q` の新ケースで固定する。 | Sprint2 「残課題」から移管。トレンドに応じた通知頻度調整と PermitGate の協調方針を定義する。 | [UX-01] Engagement 反映ロジック実装済み。 |
 | [ ] | DOC-B08 | runtime_multicontent の DM ダイジェスト節を現行実装へ同期 | `docs/roadmap.md`<br>`docs/tasks/backlog.md` | 1. `docs/roadmap.md` で DM ダイジェスト統合テストの説明を更新し、`tests/integration/runtime_multicontent/test_pipeline_dm_digest.py::test_dm_digest_job_registers_without_enqueue` と `tests/integration/runtime_multicontent/test_dm_digest.py::test_dm_digest_job_sends_without_scheduler_queue` が sender 直接送信と dispatch 非発火を担保していることを明文化する。<br>2. 更新内容をバックログへ反映するため、本ファイルの Frontmatter `updated` 日付と DM ダイジェスト関連タスクの備考を調整し、差分確認後に `markdownlint docs/roadmap.md`・`markdownlint docs/tasks/backlog.md` を実行する。<br>3. `git diff` で意図しない変更が混入していないことを確認する。 | TASKS.md 2025-10-29 行で予定記録のみ残っているため、文書更新を確定させる。 | OPS-B07 |
 | [ ] | DOC-B09 | 週次サマリ節のテンプレート差分説明を補完 | `docs/roadmap.md` | 1. `tests/integration/runtime_weekly_report/test_templates.py`・`test_scheduler.py`・`test_fallbacks.py` で保証しているテンプレート整形/曜日スケジュール/自己成功率除外の内容を再確認し、`docs/roadmap.md` の該当節へ不足している検証観点（テンプレート差分ハイライトや fallback 経路）を追記する。<br>2. `markdownlint docs/roadmap.md` を実行し、書式崩れがないことを確認する。<br>3. `git diff docs/roadmap.md` で意図した差分のみになっていることを確認する。 | TASKS.md 2025-10-24 行で更新予定が残存しているため、実ドキュメントへ反映する。 | OPS-B02 |
+| [ ] | DOC-B10 | デデュープ無効化テストと cooldown.jobs 検証のロードマップ反映 | `docs/roadmap.md` | 1. ロードマップにデデュープ無効化テストの検証観点を追記する。<br>2. 同じく cooldown.jobs 検証内容を整理し、ロードマップへ反映する。<br>3. 上記 2 テスト（デデュープ無効化テスト、cooldown.jobs 検証）を完了条件として明記し、`markdownlint docs/roadmap.md` を実行して整形崩れがないことを確認する。 | 2025-10-17: 本行追加。 | OPS-B07 |
 
 ## 進行手順
 1. 各残課題について、テストケースを先に作成し現状挙動を固定する。

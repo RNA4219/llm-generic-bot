@@ -14,6 +14,7 @@
 - 2025-10-27: docs/roadmap.md の DM ダイジェスト節へ Permit 拒否時ログ（`dm_digest_permit_denied`・`job="dm_digest-denied"`・`retryable=False`）を明示し、`tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` の送信抑止と PermitDecision 由来サフィックス保証をドキュメント化。
 - 2025-10-26: docs/roadmap.md の DM ダイジェスト節へ `test_dm_digest_job_denied_by_permit` の Permit 拒否時送信抑止と `dm_digest_permit_denied` ログ検証を追記し、tests/integration/test_runtime_dm_digest.py の挙動と整合を確認。
 - 2025-10-25: `tests/infra/test_metrics_reporting.py` を最終撤去する OPS-B07 をバックログへ追加し、完了条件（ファイル削除・参照最終確認・CI `pytest`/`mypy`/`ruff` 緑化・関連ドキュメント更新）を明文化。背景は OPS-B05 での撤去前チェック完了後に本削除へ進むための仕上げ作業として設定し、他タスクとの重複はなし。
+- 2025-10-24: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を曜日スロット準拠へ更新し、重複箇条書きを統合。
 - 2025-10-24: (a) docs/roadmap.md の週次サマリ節重複を解消し、(b) docs/tasks/backlog.md へ OPS-B07 を追加した記録を追記。
 - 2025-10-24: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節で週次サマリ統合テストをファイル単位へ整理し、`test_weekly_report_permit_override_applies_to_dispatch` の重複表記を単一化。
 - 2025-10-24: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へ曜日スケジュール遵守の説明を追加し、週次サマリ検証記述を最新状態へ更新。

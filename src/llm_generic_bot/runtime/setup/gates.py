@@ -15,6 +15,23 @@ from ...core.orchestrator import (
 from ..jobs.common import get_float
 
 
+def is_enabled(config: Mapping[str, Any], *, default: bool = True) -> bool:
+    flag = config.get("enabled")
+    if flag is None:
+        return default
+    if isinstance(flag, bool):
+        return flag
+    if isinstance(flag, (int, float)):
+        return bool(flag)
+    if isinstance(flag, str):
+        lowered = flag.strip().lower()
+        if lowered in {"", "0", "false", "off"}:
+            return False
+        if lowered in {"1", "true", "on"}:
+            return True
+    return default
+
+
 def build_cooldown(cooldown_cfg: Mapping[str, Any]) -> CooldownGate:
     coeff_cfg = cooldown_cfg.get("coeff")
     coeff_mapping = coeff_cfg if isinstance(coeff_cfg, Mapping) else {}
@@ -28,7 +45,17 @@ def build_cooldown(cooldown_cfg: Mapping[str, Any]) -> CooldownGate:
     )
 
 
+class _PassthroughDedupe(NearDuplicateFilter):
+    def __init__(self) -> None:
+        super().__init__(k=1, threshold=1.0)
+
+    def permit(self, text: str) -> bool:
+        return True
+
+
 def build_dedupe(dedupe_cfg: Mapping[str, Any]) -> NearDuplicateFilter:
+    if not is_enabled(dedupe_cfg):
+        return _PassthroughDedupe()
     return NearDuplicateFilter(
         k=int(get_float(dedupe_cfg.get("recent_k"), 20)),
         threshold=get_float(dedupe_cfg.get("sim_threshold"), 0.93),

@@ -10,7 +10,7 @@ from __future__ import annotations
 # - [x] ジョブ登録処理の分離
 # - [x] 週次レポート登録処理の分離
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from functools import wraps
 from typing import Any, Awaitable, Callable, Mapping, Optional
 
@@ -55,7 +55,7 @@ __all__ = [
 def _parse_positive_int_pair(raw: object) -> tuple[int, int]:
     if isinstance(raw, Mapping):
         raise ValueError("arbiter.jitter_sec must be a sequence of two positive integers")
-    if not isinstance(raw, Iterable) or isinstance(raw, (str, bytes)):
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
         raise ValueError("arbiter.jitter_sec must be a sequence of two positive integers")
 
     values = list(raw)

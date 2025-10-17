@@ -29,6 +29,12 @@
     - `tests/integration/test_runtime_reload.py`: 設定リロード時の差分検出と監査ログ出力をファイル I/O 越しに確認し、リロードシグナル後にランタイムへ副作用なく設定差分を適用できることを担保する。
       - 設定再読込時の差分ログ出力（差分なしケースはログ抑止）。
   - `tests/integration/runtime_multicontent/test_pipeline.py`: 現在は Weather/News/おみくじ/DM ダイジェスト/週次レポート移行履歴をまとめたレガシーチェックリストとして保持しており、統合テスト本体は `test_pipeline_weather.py`・`test_pipeline_news.py`・`test_pipeline_omikuji.py`・`test_pipeline_dm_digest.py`・`test_pipeline_weekly_report.py` へ移行済み。
+  - `tests/integration/runtime_multicontent/test_pipeline.py`: runtime_multicontent パイプラインの LEGACY チェックリスト。Weather/News/おみくじ/DM/週次レポート各テストが後述の `test_pipeline_*.py` へ分割された後も、後継テスト群が網羅している登録・dispatch 条件を退避用スナップショットで追跡する。
+  - `tests/integration/runtime_multicontent/test_pipeline_weather.py`: Weather ジョブが設定された複数チャンネルへエンキューされ、Permit 判定前後のバッチングを `setup_runtime` 越しに検証。
+  - `tests/integration/runtime_multicontent/test_pipeline_news.py`: News サマリがニュース専用チャンネルへ配送され、Permit 拒否時の挙動が Weather と独立していることを確認。
+  - `tests/integration/runtime_multicontent/test_pipeline_omikuji.py`: おみくじ投稿がテンプレートローテーションとチャンネル振り分けを保ったまま、パイプライン経由で送信されることを確認。
+  - `tests/integration/runtime_multicontent/test_pipeline_dm_digest.py`: DM ダイジェストがスケジューラ監視経路に登録され、直接送信経路と併存する dispatch 監査が成立することを検証。
+  - `tests/integration/runtime_multicontent/test_pipeline_weekly_report.py`: 週次レポートジョブが `MetricsService.collect_weekly_snapshot` と `metrics_module.weekly_snapshot` を通じてテンプレート整形されたコンテンツを送出することを後継テストとして保証。
   - `tests/integration/runtime_multicontent/test_dm_digest.py`: DM 専用ジョブが Permit 通過後にキューへ積まず直接送信する経路を担保する（`tests/integration/test_runtime_dm_digest.py` で確認済みの dispatch キュー無汚染・Permit 拒否監査ログと責務分担）。
     - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、Permit 通過時に scheduler queue を経由しない直接送信保証を明示する。
 - `tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。

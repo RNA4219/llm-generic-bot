@@ -14,7 +14,7 @@
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
   - `tests/integration/runtime_weekly_report/`: 週次サマリジョブの曜日スケジュールおよびテンプレート整形を `weekly_snapshot` / `generate_weekly_summary` の協調呼び出しで検証。
     - `test_scheduler.py`:
-      - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が構成された平日スケジュールどおりにジョブを起動し、祝日・週末を除外できているかを確認して曜日順守を保証。
+      - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が `Tue,Thu 09:00` の設定で火曜・木曜の 09:00 にのみジョブを起動することを確認して曜日順守を保証。
       - `test_weekly_report_permit_override_applies_to_dispatch`: Permit 上書き設定が dispatch 送信先へ反映され、指定されたプラットフォーム/チャンネル/ジョブで実行されることを検証。
     - `test_templates.py`:
       - `test_weekly_report_config_template_regression`: テンプレート改変が週次サマリ生成へ確実に反映されることを保証。

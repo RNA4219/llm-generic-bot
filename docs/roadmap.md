@@ -41,11 +41,7 @@
 - `tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。
 - `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。→ 実装済み
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
-- 残課題は以下の運用チューニングに限定される（詳細は `docs/tasks/backlog.md` の OPS-B01〜OPS-B03 参照）:
-  - Permit/ジッタ/バッチ閾値のパラメータ調整。→ OPS-B01 で継続対応中。
-  - Permit 失敗時の再評価フロー整備。→ OPS-B02 で継続対応中。
-  - Permit クォータの多段構成設計とバッチ再送ガード強化。→ OPS-B03 で継続対応中。
-  - Engagement 指標の長期トレンド分析と Permit クォータ連動方針の確立。→ UX-B01 で継続対応中。
+- 残課題の詳細は直後の「### 残課題」節および最新バックログ（`docs/tasks/backlog.md`）を参照。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ（完了）
 - [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）は指数バックオフとリトライ上限ログを実装済みで、429/Retry-After と非リトライ判定を `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` / `::test_retry_policy_retries_until_limit` が固定化している。

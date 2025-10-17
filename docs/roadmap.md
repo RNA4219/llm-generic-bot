@@ -64,7 +64,20 @@
 - [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。
 
 ### 残課題
-- Engagement 指標の長期トレンド分析と、Permit クォータ変動時の通知頻度チューニング方針を整理する。（OPS-08～OPS-10 で異常系テスト強化は完了済み）
+- **OPS（運用・基盤）**
+  - [OPS-B01] Permit/ジッタ/バッチ閾値の運用チューニングを継続し、閾値変更時も `tests/integration/test_runtime_multicontent_failures.py` がグリーンであることと、追加メトリクス検証を `tests/infra/` に整備する。
+  - [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。
+  - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
+  - [OPS-B04] `tests/infra/test_metrics_reporting.py` の段階的廃止を進め、参照整理と CI グリーン化を確認する。
+  - [OPS-B05] `tests/infra/test_metrics_reporting.py` 撤去前チェックを実施し、旧テストファイルへの残存参照がないことと CI 通過を証明する。
+  - [OPS-B07] `tests/infra/test_metrics_reporting.py` 本削除を完了させ、撤去後の回帰防止とドキュメント更新を行う。
+  - [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。
+- **UX（体験・コンテンツ）**
+  - [UX-B01] Engagement 指標の長期トレンド分析と Permit クォータ変動時の通知頻度調整をテストダブルで検証し、`tests/features/test_weather_engagement.py` に新ケースを追加する。
+- **DOC（ドキュメント）**
+  - [DOC-B08] runtime_multicontent の DM ダイジェスト節を現行実装へ同期し、関連テスト（`tests/integration/runtime_multicontent/test_pipeline_dm_digest.py` と `tests/integration/runtime_multicontent/test_dm_digest.py`）の責務を明記する。
+  - [DOC-B09] 週次サマリ節のテンプレート差分説明を補完し、`tests/integration/runtime_weekly_report/` 配下テストの検証観点を整理する。
+  - [DOC-B10] デデュープ無効化テストと `cooldown.jobs` 検証内容をロードマップへ反映し、該当テスト（`tests/runtime/test_setup_runtime_dedupe.py` と `tests/config/test_settings_example_cooldown.py`）を完了条件として記録する。
 
 ## Sprint 3: 運用・可観測性
 - [OPS-02] 週次サマリ（`core/orchestrator.py`→`core/orchestrator/processor.py`, `features/report.py`）: 成果・失敗を集計し運用向けに通知。

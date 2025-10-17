@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-11-02: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を単一箇条書きへ統合し、曜日順守と「Tue,Thu 09:00」検証を一文へ集約。
 - 2025-11-01: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を平日スケジュール遵守へ更新し、祝日・週末除外未カバーであることを明示。
 - 2025-11-01: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を「Tue,Thu 09:00」設定で火曜・木曜のみ起動する内容へ更新し、祝日・週末への言及を整理。
 - 2025-10-31: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_weekly_report_job_uses_metrics_and_template` がメトリクススナップショット取得とタイトル/本文/フッター整形を確認している旨を追記。

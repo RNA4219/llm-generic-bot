@@ -137,7 +137,10 @@ def test_setup_runtime_rejects_descending_scheduler_jitter_range(
         "arbiter": {"jitter_sec": [180, 60]},
     }
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match=r"arbiter\.jitter_sec lower bound 180 must not exceed upper bound 60",
+    ):
         setup_runtime(settings)
 
 

@@ -12,7 +12,7 @@
 - integration テストは以下で運用経路をカバーしている:
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
-  - `tests/runtime/test_setup_runtime_dedupe.py`: `dedupe.enabled=False` 時は `_PassthroughDedupe` シムが選択され Permit 判定前にバッチ重複抑止を無効化し、連続送信が成功することを確認する。`tests/runtime/test_setup_runtime_dedupe.py::test_dedupe_disabled_allows_repeated_sends` で Permit 連携ログを固定化。
+  - `tests/runtime/test_setup_runtime_dedupe.py`: `dedupe.enabled=False` 時は `_PassthroughDedupe` シムが選択され Permit 判定前にバッチ重複抑止を無効化し、連続送信が成功することを確認する。`tests/runtime/test_setup_runtime_dedupe.py::test_dedupe_disabled_allows_repeated_sends` で Permit 連携ログを固定化し、`tests/runtime/test_setup_runtime_dedupe.py::test_setup_runtime_disables_dedupe_when_disabled` で設定が無効化された際に `_PassthroughDedupe` がセットアップ済みランタイムへ確実に適用されることを確認する。
   - `tests/integration/runtime_weekly_report/`: 週次サマリジョブの曜日スケジュールおよびテンプレート整形を `weekly_snapshot` / `generate_weekly_summary` の協調呼び出しで検証。
     - `test_scheduler.py`:
       - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が平日スケジュールを順守しつつ設定された「Tue/Thu 09:00」が火曜・木曜の 09:00 実行のみを許可することを 1 ケースで検証する。
@@ -37,7 +37,7 @@
   - `tests/integration/runtime_multicontent/test_pipeline_weekly_report.py`: 週次レポートジョブが `MetricsService.collect_weekly_snapshot` と `metrics_module.weekly_snapshot` を通じてテンプレート整形されたコンテンツを送出することを後継テストとして保証。
   - `tests/integration/runtime_multicontent/test_dm_digest.py`: DM 専用ジョブが Permit 通過後にキューへ積まず直接送信する経路を担保する（`tests/integration/test_runtime_dm_digest.py` で確認済みの dispatch キュー無汚染・Permit 拒否監査ログと責務分担）。
     - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、Permit 通過時に scheduler queue を経由しない直接送信保証を明示する。
-  - `tests/config/test_settings_example_cooldown.py`: `config/settings.example.json` の `cooldown.jobs` が Weather/News/Omikuji/DM Digest の 4 ジョブのみで構成されることを検証し、設定ファイルとランタイム挙動の整合を固定する。
+  - `tests/config/test_settings_example_cooldown.py`: `config/settings.example.json` の `cooldown.jobs` が Weather/News/Omikuji/DM Digest の 4 ジョブのみで構成されることを検証し、設定ファイルとランタイム挙動の整合を固定する。`tests/config/test_settings_example_cooldown.py::test_cooldown_jobs_match_expected_set` で設定ファイルのキー集合が想定セットに一致することを直接照合し、外れ値ジョブの混入を防止する。
 - `tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。
 - `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。→ 実装済み
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
@@ -83,7 +83,7 @@
   - 併合: `tests/core/test_coalesce_queue.py` で窓内併合、閾値即時フラッシュ、単発バッチを検証済み。残課題だった `CoalesceQueue` の優先度逆転ガードは `tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` で完了し、`llm_generic_bot.core.queue` のマルチチャンネル分離・`pop_ready` ソート安定性もテーブル駆動で確認済み。
   - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無と `next_slot` 呼び出しを制御できており、同テストでジッタ範囲の最小/最大境界と Permit 連携も固定済み（[OPS-08] 完了）。
   - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否のログイベントとメトリクス更新を確認済みで、`send_duplicate_skip` 経路と `send.duration` メトリクスの整合も同テストで固定済み（[OPS-09] 完了）。
-- Sprint 1（完了）: `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` で JSON 監査フィールドを固定し、`tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` などのテーブル駆動ケースで優先度逆転ガードを拡張済み。Permit 拒否理由タグは `tests/core/test_quota_gate.py::test_quota_gate_records_denials_with_reason` と `tests/integration/test_permit_bridge.py` が `llm_generic_bot.core.arbiter` のタグ整合を保証している。
+- Sprint 1（完了）: `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` で JSON 監査フィールドを固定し、`tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` などのテーブル駆動ケースで優先度逆転ガードを拡張済み。Permit 拒否理由タグは `tests/core/test_quota_gate.py::test_quota_gate_records_denials_with_reason` と `tests/integration/test_permit_bridge.py` が `llm_generic_bot.core.arbiter` のタグ整合を保証している。また、`tests/runtime/test_setup_runtime_dedupe.py::test_setup_runtime_disables_dedupe_when_disabled` と `tests/config/test_settings_example_cooldown.py::test_cooldown_jobs_match_expected_set` が設定値に応じたランタイム差し替えと設定ファイル整合を完了済みとして記録する。
 - Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携はカバーしており、ジッタ境界と異常系結合テストは OPS-08/OPS-10 で完遂。
 - Sprint 3: ランタイムメトリクスの結合テストは `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` へ分割済みで、旧単一ファイル版はレガシーシムとして互換維持用に残存。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
 

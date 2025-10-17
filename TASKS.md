@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-11-01: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を「Tue,Thu 09:00」設定で火曜・木曜のみ起動する内容へ更新し、祝日・週末への言及を整理。
 - 2025-10-31: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_weekly_report_job_uses_metrics_and_template` がメトリクススナップショット取得とタイトル/本文/フッター整形を確認している旨を追記。
 - 2025-10-30: docs/roadmap.md の runtime_multicontent パイプライン節へ `test_weekly_report_job_uses_metrics_and_template` の役割追記を実施し、週次サマリのメトリクス/テンプレート保証を明文化。
 - 2025-10-29: docs/roadmap.md の DM ダイジェスト節で `tests/integration/test_runtime_dm_digest.py` をキュー無汚染確認テストとして位置付け直し、直接送信経路は `tests/integration/runtime_multicontent/test_dm_digest.py` が担保する旨を記録。

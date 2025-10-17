@@ -70,6 +70,9 @@ def _parse_positive_int_pair(raw: object) -> tuple[int, int]:
             raise ValueError("arbiter.jitter_sec values must be positive integers")
         parsed.append(value)
 
+    if parsed[0] > parsed[1]:
+        raise ValueError("arbiter.jitter_sec range must be ascending")
+
     return parsed[0], parsed[1]
 
 

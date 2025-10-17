@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-11-06: docs/roadmap.md の runtime_multicontent 節で LEGACY チェックリスト説明を 1 行へ集約し後継テスト群の追跡役割を明示。
 - 2025-11-05: docs/roadmap.md の runtime_multicontent 節へ `test_pipeline.py` が LEGACY チェックリストのみを保持し統合テスト本体が `test_pipeline_*.py` へ移動済みである旨を追記。
 - 2025-11-05: tests/config/test_settings_example_cooldown.py を追加し、`config/settings.example.json` の cooldown.jobs ジョブ集合が weather/news/omikuji/dm_digest のみであることを検証。
 - 2025-11-05: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_pipeline.py` レガシーチェックリスト化と `test_pipeline_*`.py への移行完了を記録。

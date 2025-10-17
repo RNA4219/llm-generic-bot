@@ -3,7 +3,8 @@ from __future__ import annotations
 import datetime as dt
 import zoneinfo
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -31,21 +32,15 @@ async def test_dm_digest_job_registers_without_enqueue(
     async def dummy_summarize(*_: Any, **__: Any) -> str:
         return "summary"
 
-    async def dummy_send(
-        _text: str,
-        _channel: Optional[str] = None,
-        *,
-        correlation_id: Optional[str] = None,
-        job: Optional[str] = None,
-        recipient_id: Optional[str] = None,
-    ) -> None:  # noqa: ARG001
-        del correlation_id, job, recipient_id
-        return None
-
     dm_calls: List[Dict[str, Any]] = []
+    sender_spy: AsyncMock = AsyncMock()
 
     async def fake_dm_digest(cfg: Dict[str, Any], **kwargs: Any) -> str:
         dm_calls.append({"cfg": cfg, **kwargs})
+        sender = kwargs["sender"]
+        job_name = str(cfg.get("job", "dm_digest"))
+        recipient_id = str(cfg["recipient_id"])
+        await sender.send("dm-post", None, job=job_name, recipient_id=recipient_id)
         return "dm-post"
 
     monkeypatch.setattr(main_module, "build_dm_digest", fake_dm_digest)
@@ -59,7 +54,7 @@ async def test_dm_digest_job_registers_without_enqueue(
             "recipient_id": "recipient-1",
             "log_provider": SimpleNamespace(collect=dummy_collect),
             "summary_provider": SimpleNamespace(summarize=dummy_summarize),
-            "sender": SimpleNamespace(send=dummy_send),
+            "sender": SimpleNamespace(send=sender_spy),
         },
     }
 
@@ -79,5 +74,6 @@ async def test_dm_digest_job_registers_without_enqueue(
         assert dm_calls
         assert [call.job for call in pushed_jobs] == []
         assert enqueue_calls == []
+        sender_spy.assert_awaited()
     finally:
         await orchestrator.close()

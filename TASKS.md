@@ -3,8 +3,6 @@
 - 2025-11-05: docs/roadmap.md の runtime_multicontent 節で `test_pipeline.py` 説明を 1 行に集約し、LEGACY チェックリストと後継テスト追跡の役割を統合記述した。
 - 2025-11-05: docs/roadmap.md の runtime_multicontent 節へ `test_pipeline.py` が LEGACY チェックリストのみを保持し統合テスト本体が `test_pipeline_*.py` へ移動済みである旨を追記。
 - 2025-11-05: tests/config/test_settings_example_cooldown.py を追加し、`config/settings.example.json` の cooldown.jobs ジョブ集合が weather/news/omikuji/dm_digest のみであることを検証。
-- 2025-11-05: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_pipeline.py` レガシーチェックリスト化と `test_pipeline_*`.py への移行完了を記録。
-- 2025-11-05: docs/roadmap.md の runtime_multicontent パイプライン節を LEGACY チェックリストと `test_pipeline_*.py` 分割状況へ更新。
 - 2025-11-05: tests/integration/runtime_multicontent/test_pipeline.py の天気/ニュース/おみくじ/DM/週次レポート各テストを機能別ファイルへ分割し、共通シムを `_helpers.py` へ集約、LEGACY チェックリストで移行完了を明示した。
 - 2025-11-05: config/settings.example.json の `cooldown.jobs` を現行ジョブセット（weather/news/omikuji/dm_digest）へ合わせて整理。
 - 2025-11-05: runtime/setup/_parse_positive_int_pair の降順 jitter 例外メッセージ強化と対応テストを追加。

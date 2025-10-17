@@ -29,10 +29,10 @@
     - `tests/integration/test_runtime_reload.py`: 設定リロード時の差分検出と監査ログ出力をファイル I/O 越しに確認し、リロードシグナル後にランタイムへ副作用なく設定差分を適用できることを担保する。
       - 設定再読込時の差分ログ出力（差分なしケースはログ抑止）。
   - `tests/integration/runtime_multicontent/test_pipeline.py`: runtime_multicontent パイプライン移行履歴の LEGACY チェックリストであり、後継となる `test_pipeline_weather.py`・`test_pipeline_news.py`・`test_pipeline_omikuji.py`・`test_pipeline_dm_digest.py`・`test_pipeline_weekly_report.py` を追跡しつつ登録・dispatch 条件の移行完了スナップショットを同一段落で記録する。
-  - `tests/integration/runtime_multicontent/test_pipeline_weather.py`: Weather ビルダー呼び出しでチャンネル上書きとカスタムジョブ名が伝播し、スケジューラ登録・キュー投入・オーケストレータ enqueue が単一ジョブ名に揃うこと、および無効化設定時に登録されないことを保証。
-  - `tests/integration/runtime_multicontent/test_pipeline_news.py`: ニュースジョブが 1 つのニュースチャンネルへ登録され、ビルダー呼び出し・スケジューラキュー投入・オーケストレータ enqueue が同一ジョブ/チャンネルで行われることを確認。
-  - `tests/integration/runtime_multicontent/test_pipeline_omikuji.py`: おみくじビルダーへユーザー ID が渡り、既定チャンネルで単一ジョブとして登録・キュー投入・オーケストレータ enqueue が行われることを固定。
-  - `tests/integration/runtime_multicontent/test_pipeline_dm_digest.py`: DM ダイジェストジョブがスケジューラへ登録されつつビルダーのみ呼び出され、dispatch キューや enqueue を発生させず直接送信経路専用であることを保証。
+  - `tests/integration/runtime_multicontent/test_pipeline_weather.py`: Weather ビルダーがチャンネル override（`weather-alerts`）付きで呼び出され、そのチャンネルを指定したままキューへ積まれることを追跡。
+  - `tests/integration/runtime_multicontent/test_pipeline_news.py`: News ビルダーがニュース専用チャンネルを渡されて実行され、`news` ジョブとしてキューおよびオーケストレータ enqueue が発生することを保証。
+  - `tests/integration/runtime_multicontent/test_pipeline_omikuji.py`: おみくじビルダーが `user_id="fortune-user"` で呼び出され、一般チャンネルへの `omikuji` ジョブ enqueue を確認。
+  - `tests/integration/runtime_multicontent/test_pipeline_dm_digest.py`: DM ダイジェストがスケジューラ監視経路に登録され、直接送信経路と併存する dispatch 監査が成立することを検証。
   - `tests/integration/runtime_multicontent/test_pipeline_weekly_report.py`: 週次レポートジョブが `MetricsService.collect_weekly_snapshot` と `metrics_module.weekly_snapshot` を通じてテンプレート整形されたコンテンツを送出することを後継テストとして保証。
   - `tests/integration/runtime_multicontent/test_dm_digest.py`: DM 専用ジョブが Permit 通過後にキューへ積まず直接送信する経路を担保する（`tests/integration/test_runtime_dm_digest.py` で確認済みの dispatch キュー無汚染・Permit 拒否監査ログと責務分担）。
     - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、Permit 通過時に scheduler queue を経由しない直接送信保証を明示する。

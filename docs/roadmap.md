@@ -12,6 +12,7 @@
 - integration テストは以下で運用経路をカバーしている:
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
+  - `tests/runtime/test_setup_runtime_dedupe.py`: `dedupe.enabled=False` 時は `_PassthroughDedupe` シムが選択され Permit 判定前にバッチ重複抑止を無効化し、連続送信が成功することを確認する。`tests/runtime/test_setup_runtime_dedupe.py::test_dedupe_disabled_allows_repeated_sends` で Permit 連携ログを固定化。
   - `tests/integration/runtime_weekly_report/`: 週次サマリジョブの曜日スケジュールおよびテンプレート整形を `weekly_snapshot` / `generate_weekly_summary` の協調呼び出しで検証。
     - `test_scheduler.py`:
       - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が平日スケジュールを順守しつつ設定された「Tue/Thu 09:00」が火曜・木曜の 09:00 実行のみを許可することを 1 ケースで検証する。
@@ -36,6 +37,7 @@
   - `tests/integration/runtime_multicontent/test_pipeline_weekly_report.py`: 週次レポートジョブが `MetricsService.collect_weekly_snapshot` と `metrics_module.weekly_snapshot` を通じてテンプレート整形されたコンテンツを送出することを後継テストとして保証。
   - `tests/integration/runtime_multicontent/test_dm_digest.py`: DM 専用ジョブが Permit 通過後にキューへ積まず直接送信する経路を担保する（`tests/integration/test_runtime_dm_digest.py` で確認済みの dispatch キュー無汚染・Permit 拒否監査ログと責務分担）。
     - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、Permit 通過時に scheduler queue を経由しない直接送信保証を明示する。
+  - `tests/config/test_settings_example_cooldown.py`: `config/settings.example.json` の `cooldown.jobs` が Weather/News/Omikuji/DM Digest の 4 ジョブのみで構成されることを検証し、設定ファイルとランタイム挙動の整合を固定する。
 - `tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。
 - `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。→ 実装済み
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
@@ -45,14 +47,14 @@
   - Permit クォータの多段構成設計とバッチ再送ガード強化。→ OPS-B03 で継続対応中。
   - Engagement 指標の長期トレンド分析と Permit クォータ連動方針の確立。→ UX-B01 で継続対応中。
 
-## Sprint 1: Sender堅牢化 & オーケストレータ
-- [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）: 429/5xx を指数バックオフ付きで再送し、上限回数で失敗をロギング。
-- [SND-02] Permit ゲート導入（`core/arbiter.py` など）: チャンネル別クォータをチェックし、拒否時はメトリクスを更新。
-- [SCH-01] CoalesceQueue（`core/scheduler.py`）: 近接メッセージを併合し、送信処理にバッチで渡す。
-- [SCH-02] ジッタ適用（`core/scheduler.py`）: 送信時刻にランダムオフセットを付与し突発集中を緩和。
-- [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator.py`→`core/orchestrator/processor.py`）: 送信結果とコンテキストを JSON ログで記録。
-- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）: `ruff check`、`mypy src`、`pytest -q` を独立ジョブとして並列運用している現行構成を維持しつつ、Lint/Type/Test 各ジョブに `Notify Slack on failure` ガードレールを追加済み。依存: 共通セットアップを各ジョブで手動繰り返し適用している暫定運用の解消。→ 実装済み
-- [OPS-06] セキュリティスキャン拡充（`.github/workflows/ci.yml`）: CodeQL 解析と `pip-audit` を週次ジョブで追加し、依存ライブラリの脆弱性検出を自動化する。依存: [OPS-05] の共通セットアップ整備。→ 実装済み
+## Sprint 1: Sender堅牢化 & オーケストレータ（完了）
+- [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）は指数バックオフとリトライ上限ログを実装済みで、429/Retry-After と非リトライ判定を `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` / `::test_retry_policy_retries_until_limit` が固定化している。
+- [SND-02] Permit ゲート導入（`core/arbiter.py` など）はチャンネル別クォータ・メトリクスタグの更新を実装済みで、`tests/core/test_quota_gate.py` と `tests/integration/test_permit_bridge.py` が拒否理由タグと Permit 通過メトリクスを検証している。
+- [SCH-01] CoalesceQueue（`core/scheduler.py`）は近接メッセージ併合と即時フラッシュを完了しており、`tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` ほかテーブル駆動ケースで優先度逆転ガードを保証している。
+- [SCH-02] ジッタ適用（`core/scheduler.py`）は送信時刻へランダムオフセットを付与する実装が完了し、`tests/core/test_scheduler_jitter.py::test_scheduler_applies_jitter` / `::test_scheduler_immediate_when_jitter_disabled` / `::test_scheduler_jitter_respects_range` が境界レンジと有効/無効切替を確認している。
+- [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator.py`→`core/orchestrator/processor.py`）は送信結果と Permit 連携ログを JSON へ記録する実装を完了し、`tests/core/test_structured_logging.py` が成功/失敗/Permit 拒否/重複スキップの各イベントとメトリクス整合をスナップショットしている。
+- [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）は `ruff check`・`mypy src`・`pytest -q` の並列運用と Slack 通知ガードを導入済みで、ワークフロー YAML の共通セットアップ重複解消まで反映済み。
+- [OPS-06] セキュリティスキャン拡充（`.github/workflows/ci.yml`）は週次 CodeQL・`pip-audit` を追加済みで、Slack 通知ガードと連動した異常検知運用へ移行済み。
 
 ## Sprint 2: UX & コンテンツ
 ### 完了済み
@@ -81,7 +83,7 @@
   - 併合: `tests/core/test_coalesce_queue.py` で窓内併合、閾値即時フラッシュ、単発バッチを検証済み。残課題だった `CoalesceQueue` の優先度逆転ガードは `tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` で完了し、`llm_generic_bot.core.queue` のマルチチャンネル分離・`pop_ready` ソート安定性もテーブル駆動で確認済み。
   - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無と `next_slot` 呼び出しを制御できており、同テストでジッタ範囲の最小/最大境界と Permit 連携も固定済み（[OPS-08] 完了）。
   - 構造化ログ: `tests/core/test_structured_logging.py` で送信成功/失敗/Permit 拒否のログイベントとメトリクス更新を確認済みで、`send_duplicate_skip` 経路と `send.duration` メトリクスの整合も同テストで固定済み（[OPS-09] 完了）。
-- Sprint 1: `tests/adapters/test_retry_policy.py` に JSON ログのスナップショットケースを追加し、`tests/core/test_coalesce_queue.py` へ優先度逆転ガードの境界ケースを拡張する。同時に `tests/core/test_quota_gate.py` では Permit 拒否理由の種類ごとに `llm_generic_bot.core.arbiter` のタグ付けを検証し、構造化ログ側と整合させる。
+- Sprint 1（完了）: `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` で JSON 監査フィールドを固定し、`tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` などのテーブル駆動ケースで優先度逆転ガードを拡張済み。Permit 拒否理由タグは `tests/core/test_quota_gate.py::test_quota_gate_records_denials_with_reason` と `tests/integration/test_permit_bridge.py` が `llm_generic_bot.core.arbiter` のタグ整合を保証している。
 - Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携はカバーしており、ジッタ境界と異常系結合テストは OPS-08/OPS-10 で完遂。
 - Sprint 3: ランタイムメトリクスの結合テストは `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` へ分割済みで、旧単一ファイル版はレガシーシムとして互換維持用に残存。並行して `tests/core/test_structured_logging.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。
 

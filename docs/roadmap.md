@@ -31,7 +31,7 @@
   - `tests/integration/runtime_multicontent/test_pipeline.py`: `setup_runtime` が Weather/News/おみくじ/DM ダイジェストの 4 ジョブを登録し、
     - Weather/News/おみくじは設定どおりのチャンネルへエンキューされることを確認。
     - スケジューラ dispatch 中の DM ダイジェスト監視を担い、オーケストレータ経由での配送状況を確認する（直接送信の保証は専用ジョブテストに委譲）。
-    - `test_weekly_report_job_uses_metrics_and_template`: 週次サマリのメトリクスサービス呼び出しとテンプレート整形が統合パイプラインで行われることを保証。
+    - `test_weekly_report_job_uses_metrics_and_template`: 週次サマリのメトリクスサービス（`collect_weekly_snapshot`）呼び出しとタイトル/本文/フッター各テンプレート整形が統合パイプラインで行われることを保証。
   - `tests/integration/runtime_multicontent/test_dm_digest.py`: DM 専用ジョブが Permit 通過後にキューへ積まず直接送信する経路を担保する（`tests/integration/test_runtime_dm_digest.py` で確認済みの dispatch キュー無汚染・Permit 拒否監査ログと責務分担）。
     - `test_dm_digest_job_sends_without_scheduler_queue`: スケジューラキューの件数が変化しないまま sender が DM を送ることを検証し、Permit 通過時に scheduler queue を経由しない直接送信保証を明示する。
 - `tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。

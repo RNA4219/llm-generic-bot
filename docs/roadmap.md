@@ -12,7 +12,7 @@
 - integration テストは以下で運用経路をカバーしている:
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
-  - `tests/runtime/test_setup_runtime_dedupe.py`: `dedupe.enabled=False` 時は `_PassthroughDedupe` シムが選択され Permit 判定前にバッチ重複抑止を無効化し、連続送信が成功することを確認する。`tests/runtime/test_setup_runtime_dedupe.py::test_dedupe_disabled_allows_repeated_sends` で Permit 連携ログを固定化し、`tests/runtime/test_setup_runtime_dedupe.py::test_setup_runtime_disables_dedupe_when_disabled` で設定が無効化された際に `_PassthroughDedupe` がセットアップ済みランタイムへ確実に適用されることを確認する。
+  - `tests/runtime/test_setup_runtime_dedupe.py`: `dedupe.enabled=False` 時は `_PassthroughDedupe` シムが選択され、`tests/runtime/test_setup_runtime_dedupe.py::test_setup_runtime_disables_dedupe_when_disabled` で Permit 判定前段の `_PassthroughDedupe.permit` が任意のメッセージに対して常に `True` を返し、重複抑止が完全にバイパスされることを確認する。
   - `tests/integration/runtime_weekly_report/`: 週次サマリジョブの曜日スケジュールおよびテンプレート整形を `weekly_snapshot` / `generate_weekly_summary` の協調呼び出しで検証。
     - `test_scheduler.py`:
       - `test_weekly_report_respects_weekday_schedule`: `Scheduler` が平日スケジュールを順守しつつ設定された「Tue/Thu 09:00」が火曜・木曜の 09:00 実行のみを許可することを 1 ケースで検証する。

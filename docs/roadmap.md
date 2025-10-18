@@ -78,6 +78,7 @@
 
 #### DOC（ドキュメント）
 - [DOC-B09] 週次サマリ節のテンプレート差分説明を補完し、`tests/integration/runtime_weekly_report/` 配下テストの検証観点を整理する。
+  - 備考: 2025-10-18 時点で DOC 系タスクが複数並行しているため、詳細整理はバックログ DOC-B11 を TASKS.md 側へ記録し、docs/roadmap.md では概要管理のみに留める。
 
 ## Sprint 3: 運用・可観測性
 - [OPS-02] 週次サマリ（`core/orchestrator.py`→`core/orchestrator/processor.py`, `features/report.py`）: 成果・失敗を集計し運用向けに通知。

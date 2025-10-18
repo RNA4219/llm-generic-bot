@@ -1,5 +1,6 @@
 # タスク記録
 
+- 2025-11-05: docs/tasks/backlog.md の Frontmatter `updated` を 2025-11-05 へ補正し、`markdownlint docs/tasks/backlog.md` 実行で CLI 未導入を確認。
 - 2025-11-05: docs/roadmap.md の統合テスト一覧にある残課題記述を最新バックログ参照へ差し替え、重複説明を排除。
 - 2025-11-05: docs/roadmap.md runtime_multicontent Weather〜DM ダイジェスト各テスト説明を実保証へ合わせて再記述。
 - 2025-11-05: docs/roadmap.md の Sprint2 残課題節を OPS/UX/DOC カテゴリ別に整理し、バックログ OPS-B01〜OPS-B07・UX-B01・DOC-B08〜DOC-B10 を同期。

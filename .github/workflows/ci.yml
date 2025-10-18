@@ -32,9 +32,8 @@ jobs:
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
         with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
           payload: >-
             {"text": ":rotating_light: lint job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}
 
@@ -61,9 +60,8 @@ jobs:
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
         with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
           payload: >-
             {"text": ":rotating_light: type job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}
 
@@ -90,9 +88,8 @@ jobs:
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
         with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
           payload: >-
             {"text": ":rotating_light: test job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}
 
@@ -119,9 +116,8 @@ jobs:
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
         with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
           payload: >-
             {"text": ":rotating_light: codeql job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}
 
@@ -152,8 +148,7 @@ jobs:
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
         with:
+          webhook-url: ${{ secrets.SLACK_CI_WEBHOOK_URL }} # Secret for CI failure alerts
           payload: >-
             {"text": ":rotating_light: pip-audit job failed for ${{ github.repository }} • <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open run>"}

@@ -1,56 +1,56 @@
 # タスク記録
 
-- 2025-11-05: docs/tasks/backlog.md の Frontmatter `updated` を 2025-11-05 へ補正し、`markdownlint docs/tasks/backlog.md` 実行で CLI 未導入を確認。
-- 2025-11-05: docs/roadmap.md の統合テスト一覧にある残課題記述を最新バックログ参照へ差し替え、重複説明を排除。
-- 2025-11-05: docs/roadmap.md の残課題サマリ行と DOC-B10 の表現を完了済みに更新し、未完了扱いを解消。
-- 2025-11-05: docs/roadmap.md runtime_multicontent Weather〜DM ダイジェスト各テスト説明を実保証へ合わせて再記述。
-- 2025-11-05: docs/roadmap.md の Sprint2 残課題節を OPS/UX/DOC カテゴリ別に整理し、バックログ OPS-B01〜OPS-B07・UX-B01・DOC-B08〜DOC-B10 を同期。
-- 2025-11-05: docs/roadmap.md へ runtime デデュープ無効化シム・設定サンプルクールダウン検証の説明を追加し、Sprint1 完了記述とテストロードマップの反映状況を更新。
-- 2025-11-05: docs/tasks/backlog.md へ DOC-B08/DOC-B09 を追加し、docs/roadmap.md の DM ダイジェスト節・週次サマリ節更新タスクを明文化。
-- 2025-11-05: docs/roadmap.md の `test_pipeline_dm_digest.py` 説明をジョブ登録後にキューと dispatch が発生しない保証へ統合。
-- 2025-11-05: docs/roadmap.md runtime_multicontent Weather/News/おみくじ説明を実テストのチャンネル/ビルダー保証に沿うよう更新。
-- 2025-11-05: docs/roadmap.md の runtime_multicontent 節で `test_pipeline.py` 説明を 1 行に集約し、LEGACY チェックリストと後継テスト追跡の役割を統合記述した。
-- 2025-11-05: docs/roadmap.md の runtime_multicontent 節で Weather/News/おみくじ/DM ダイジェスト各パイプラインテストの保証範囲（登録・キュー・ビルダー伝播）を精緻化。
-- 2025-11-05: docs/roadmap.md の runtime_multicontent 節へ `test_pipeline.py` が LEGACY チェックリストのみを保持し統合テスト本体が `test_pipeline_*.py` へ移動済みである旨を追記。
-- 2025-11-05: docs/roadmap.md のデデュープ統合テスト説明を `_PassthroughDedupe.permit` が常に `True` を返す挙動へ更新。
-- 2025-11-05: tests/config/test_settings_example_cooldown.py を追加し、`config/settings.example.json` の cooldown.jobs ジョブ集合が weather/news/omikuji/dm_digest のみであることを検証。
-- 2025-11-05: tests/integration/runtime_multicontent/test_pipeline.py の天気/ニュース/おみくじ/DM/週次レポート各テストを機能別ファイルへ分割し、共通シムを `_helpers.py` へ集約、LEGACY チェックリストで移行完了を明示した。
-- 2025-11-05: config/settings.example.json の `cooldown.jobs` を現行ジョブセット（weather/news/omikuji/dm_digest）へ合わせて整理。
-- 2025-11-05: runtime/setup/_parse_positive_int_pair の降順 jitter 例外メッセージ強化と対応テストを追加。
-- 2025-11-03: runtime/setup/gates.py の `is_enabled` へ `dedupe.enable` 判定を追加し、`tests/runtime/test_setup_runtime_dedupe.py` で無効化時の連続 permit 成功を記録。
-- 2025-11-04: docs/roadmap.md の週次サマリ箇条書きを平日順守と「Tue/Thu 09:00」検証を単一文へ統合する調整を実施。
-- 2025-11-03: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 箇条書きを平日順守と「Tue,Thu 09:00」検証をまとめた一文へ再整理。
-- 2025-11-02: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を単一箇条書きへ統合し、曜日順守と「Tue,Thu 09:00」検証を一文へ集約。
-- 2025-11-02: runtime/setup/gates.py のデデュープ無効化経路を `_PassthroughDedupe` で追加し、`tests/runtime/test_setup_runtime_dedupe.py` で `dedupe.enabled=False` の連続 permit 成功を記録。
-- 2025-11-01: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を平日スケジュール遵守へ更新し、祝日・週末除外未カバーであることを明示。
-- 2025-11-01: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を「Tue,Thu 09:00」設定で火曜・木曜のみ起動する内容へ更新し、祝日・週末への言及を整理。
-- 2025-10-31: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_weekly_report_job_uses_metrics_and_template` がメトリクススナップショット取得とタイトル/本文/フッター整形を確認している旨を追記。
-- 2025-10-31: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を Tue/Thu 09:00 の起動確認へ改め、祝日・週末記述を整理。
-- 2025-10-30: docs/roadmap.md の runtime_multicontent パイプライン節へ `test_weekly_report_job_uses_metrics_and_template` の役割追記を実施し、週次サマリのメトリクス/テンプレート保証を明文化。
-- 2025-10-29: docs/roadmap.md の DM ダイジェスト節で `tests/integration/test_runtime_dm_digest.py` をキュー無汚染確認テストとして位置付け直し、直接送信経路は `tests/integration/runtime_multicontent/test_dm_digest.py` が担保する旨を記録。
-- 2025-10-29: docs/roadmap.md の runtime_multicontent DM ダイジェスト節へ runtime_multicontent DM ダイジェストの最新ダイジェスト情報を追記し、docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-29 に補正する作業を予定（関連: OPS-B07）。
-- 2025-10-29: docs/roadmap.md の DM ダイジェスト節を再調整し、`test_dm_digest_job_returns_none_and_skips_dispatch` の記述をキュー未追加と送信スキップ確認へ限定したことを共有。
-- 2025-10-29: docs/roadmap.md の DM ダイジェスト節から Permit 拒否ログの重複表現を整理し、`test_dm_digest_job_returns_none_and_skips_dispatch` が担保するキュー未追加/dispatch スキップと `test_dm_digest_job_denied_by_permit` の Permit 拒否ログ検証を再確認。
+- 2025-10-18: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-18 へ補正し、`markdownlint docs/tasks/backlog.md` と `markdownlint TASKS.md` を実行して整形確認を完了。
+- 2025-10-18: docs/roadmap.md の統合テスト一覧にある残課題記述を最新バックログ参照へ差し替え、重複説明を排除。
+- 2025-10-18: docs/roadmap.md の残課題サマリ行と DOC-B10 の表現を完了済みに更新し、未完了扱いを解消。
+- 2025-10-18: docs/roadmap.md runtime_multicontent Weather〜DM ダイジェスト各テスト説明を実保証へ合わせて再記述。
+- 2025-10-18: docs/roadmap.md の Sprint2 残課題節を OPS/UX/DOC カテゴリ別に整理し、バックログ OPS-B01〜OPS-B07・UX-B01・DOC-B08〜DOC-B10 を同期。
+- 2025-10-18: docs/roadmap.md へ runtime デデュープ無効化シム・設定サンプルクールダウン検証の説明を追加し、Sprint1 完了記述とテストロードマップの反映状況を更新。
+- 2025-10-18: docs/tasks/backlog.md へ DOC-B08/DOC-B09 を追加し、docs/roadmap.md の DM ダイジェスト節・週次サマリ節更新タスクを明文化。
+- 2025-10-18: docs/roadmap.md の `test_pipeline_dm_digest.py` 説明をジョブ登録後にキューと dispatch が発生しない保証へ統合。
+- 2025-10-18: docs/roadmap.md runtime_multicontent Weather/News/おみくじ説明を実テストのチャンネル/ビルダー保証に沿うよう更新。
+- 2025-10-18: docs/roadmap.md の runtime_multicontent 節で `test_pipeline.py` 説明を 1 行に集約し、LEGACY チェックリストと後継テスト追跡の役割を統合記述した。
+- 2025-10-18: docs/roadmap.md の runtime_multicontent 節で Weather/News/おみくじ/DM ダイジェスト各パイプラインテストの保証範囲（登録・キュー・ビルダー伝播）を精緻化。
+- 2025-10-18: docs/roadmap.md の runtime_multicontent 節へ `test_pipeline.py` が LEGACY チェックリストのみを保持し統合テスト本体が `test_pipeline_*.py` へ移動済みである旨を追記。
+- 2025-10-18: docs/roadmap.md のデデュープ統合テスト説明を `_PassthroughDedupe.permit` が常に `True` を返す挙動へ更新。
+- 2025-10-18: tests/config/test_settings_example_cooldown.py を追加し、`config/settings.example.json` の cooldown.jobs ジョブ集合が weather/news/omikuji/dm_digest のみであることを検証。
+- 2025-10-18: tests/integration/runtime_multicontent/test_pipeline.py の天気/ニュース/おみくじ/DM/週次レポート各テストを機能別ファイルへ分割し、共通シムを `_helpers.py` へ集約、LEGACY チェックリストで移行完了を明示した。
+- 2025-10-18: config/settings.example.json の `cooldown.jobs` を現行ジョブセット（weather/news/omikuji/dm_digest）へ合わせて整理。
+- 2025-10-18: runtime/setup/_parse_positive_int_pair の降順 jitter 例外メッセージ強化と対応テストを追加。
+- 2025-10-18: runtime/setup/gates.py の `is_enabled` へ `dedupe.enable` 判定を追加し、`tests/runtime/test_setup_runtime_dedupe.py` で無効化時の連続 permit 成功を記録。
+- 2025-10-18: docs/roadmap.md の週次サマリ箇条書きを平日順守と「Tue/Thu 09:00」検証を単一文へ統合する調整を実施。
+- 2025-10-18: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 箇条書きを平日順守と「Tue,Thu 09:00」検証をまとめた一文へ再整理。
+- 2025-10-18: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を単一箇条書きへ統合し、曜日順守と「Tue,Thu 09:00」検証を一文へ集約。
+- 2025-10-18: runtime/setup/gates.py のデデュープ無効化経路を `_PassthroughDedupe` で追加し、`tests/runtime/test_setup_runtime_dedupe.py` で `dedupe.enabled=False` の連続 permit 成功を記録。
+- 2025-10-18: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を平日スケジュール遵守へ更新し、祝日・週末除外未カバーであることを明示。
+- 2025-10-18: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を「Tue,Thu 09:00」設定で火曜・木曜のみ起動する内容へ更新し、祝日・週末への言及を整理。
+- 2025-10-18: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_weekly_report_job_uses_metrics_and_template` がメトリクススナップショット取得とタイトル/本文/フッター整形を確認している旨を追記。
+- 2025-10-18: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を Tue/Thu 09:00 の起動確認へ改め、祝日・週末記述を整理。
+- 2025-10-18: docs/roadmap.md の runtime_multicontent パイプライン節へ `test_weekly_report_job_uses_metrics_and_template` の役割追記を実施し、週次サマリのメトリクス/テンプレート保証を明文化。
+- 2025-10-18: docs/roadmap.md の DM ダイジェスト節で `tests/integration/test_runtime_dm_digest.py` をキュー無汚染確認テストとして位置付け直し、直接送信経路は `tests/integration/runtime_multicontent/test_dm_digest.py` が担保する旨を記録。
+- 2025-10-18: docs/roadmap.md の runtime_multicontent DM ダイジェスト節へ runtime_multicontent DM ダイジェストの最新ダイジェスト情報を追記し、docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-18 に補正する作業を予定（関連: OPS-B07）。
+- 2025-10-18: docs/roadmap.md の DM ダイジェスト節を再調整し、`test_dm_digest_job_returns_none_and_skips_dispatch` の記述をキュー未追加と送信スキップ確認へ限定したことを共有。
+- 2025-10-18: docs/roadmap.md の DM ダイジェスト節から Permit 拒否ログの重複表現を整理し、`test_dm_digest_job_returns_none_and_skips_dispatch` が担保するキュー未追加/dispatch スキップと `test_dm_digest_job_denied_by_permit` の Permit 拒否ログ検証を再確認。
 - 2025-10-18: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-18 に補正し、OPS-B07 行の備考も同日付へ再同期してメタデータ整合を確認（完了）。
-- 2025-10-28: docs/roadmap.md の DM ダイジェスト節に `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` が送信抑止と `dm_digest_permit_denied` ログ（`retryable=False`・`job="dm_digest-denied"` サフィックス）を検証する旨を追記し、記録を更新。
-- 2025-10-27: docs/roadmap.md の DM ダイジェスト節へ Permit 拒否時ログ（`dm_digest_permit_denied`・`job="dm_digest-denied"`・`retryable=False`）を明示し、`tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` の送信抑止と PermitDecision 由来サフィックス保証をドキュメント化。
-- 2025-10-26: docs/roadmap.md の DM ダイジェスト節へ `test_dm_digest_job_denied_by_permit` の Permit 拒否時送信抑止と `dm_digest_permit_denied` ログ検証を追記し、tests/integration/test_runtime_dm_digest.py の挙動と整合を確認。
-- 2025-10-25: `tests/infra/test_metrics_reporting.py` を最終撤去する OPS-B07 をバックログへ追加し、完了条件（ファイル削除・参照最終確認・CI `pytest`/`mypy`/`ruff` 緑化・関連ドキュメント更新）を明文化。背景は OPS-B05 での撤去前チェック完了後に本削除へ進むための仕上げ作業として設定し、他タスクとの重複はなし。
-- 2025-10-24: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を曜日スロット準拠へ更新し、重複箇条書きを統合。
-- 2025-10-24: (a) docs/roadmap.md の週次サマリ節重複を解消し、(b) docs/tasks/backlog.md へ OPS-B07 を追加した記録を追記。
-- 2025-10-24: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節で週次サマリ統合テストをファイル単位へ整理し、`test_weekly_report_permit_override_applies_to_dispatch` の重複表記を単一化。
-- 2025-10-24: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へ曜日スケジュール遵守の説明を追加し、週次サマリ検証記述を最新状態へ更新。
-- 2025-10-24: docs/roadmap.md の週次サマリ節を最新テンプレートへ更新し、`tests/integration/runtime_weekly_report/` の検証観点差分を反映予定。
-- 2025-10-24: docs/tasks/backlog.md へオーケストレータシム撤去タスクを追加し、`tests/infra/test_metrics_reporting.py` 依存解消のチェックリストを整備予定。
+- 2025-10-18: docs/roadmap.md の DM ダイジェスト節に `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` が送信抑止と `dm_digest_permit_denied` ログ（`retryable=False`・`job="dm_digest-denied"` サフィックス）を検証する旨を追記し、記録を更新。
+- 2025-10-18: docs/roadmap.md の DM ダイジェスト節へ Permit 拒否時ログ（`dm_digest_permit_denied`・`job="dm_digest-denied"`・`retryable=False`）を明示し、`tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` の送信抑止と PermitDecision 由来サフィックス保証をドキュメント化。
+- 2025-10-18: docs/roadmap.md の DM ダイジェスト節へ `test_dm_digest_job_denied_by_permit` の Permit 拒否時送信抑止と `dm_digest_permit_denied` ログ検証を追記し、tests/integration/test_runtime_dm_digest.py の挙動と整合を確認。
+- 2025-10-18: `tests/infra/test_metrics_reporting.py` を最終撤去する OPS-B07 をバックログへ追加し、完了条件（ファイル削除・参照最終確認・CI `pytest`/`mypy`/`ruff` 緑化・関連ドキュメント更新）を明文化。背景は OPS-B05 での撤去前チェック完了後に本削除へ進むための仕上げ作業として設定し、他タスクとの重複はなし。
+- 2025-10-18: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を曜日スロット準拠へ更新し、重複箇条書きを統合。
+- 2025-10-18: (a) docs/roadmap.md の週次サマリ節重複を解消し、(b) docs/tasks/backlog.md へ OPS-B07 を追加した記録を追記。
+- 2025-10-18: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節で週次サマリ統合テストをファイル単位へ整理し、`test_weekly_report_permit_override_applies_to_dispatch` の重複表記を単一化。
+- 2025-10-18: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へ曜日スケジュール遵守の説明を追加し、週次サマリ検証記述を最新状態へ更新。
+- 2025-10-18: docs/roadmap.md の週次サマリ節を最新テンプレートへ更新し、`tests/integration/runtime_weekly_report/` の検証観点差分を反映予定。
+- 2025-10-18: docs/tasks/backlog.md へオーケストレータシム撤去タスクを追加し、`tests/infra/test_metrics_reporting.py` 依存解消のチェックリストを整備予定。
 - 2025-10-18: docs/tasks/backlog.md の DOC-B10 行で完了チェックと備考整備を追記し、反映日を揃えた記録。
-- 2025-10-22: docs/tasks/sprint3.md の OPS-04 行で確認テスト列を `tests/infra/metrics/test_reporting_freeze_time.py`・`test_reporting_recording_metrics.py`・`test_reporting_service.py` へ差し替え、備考に旧 `tests/infra/test_metrics_reporting` シム継続を追記。
-- 2025-10-23: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へテンプレート改変・行整形・自己スコア除外を担保する統合テストを追記し、週次サマリ検証範囲の明示を更新。
-- 2025-10-23: (a) docs/roadmap.md に週次サマリ追加テストの検証観点を追記する作業を予定し、(b) docs/tasks/backlog.md へ Orchestrator シム撤去タスクを登録して影響範囲の移行手順を整理。
-- 2025-10-23: docs/roadmap.md の Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` へ差し替え、旧 `tests/infra/test_metrics_reporting.py` がレガシーシムである旨を追記。
-- 2025-10-22: docs/roadmap.md の統合テスト一覧に DM ダイジェスト/Weather Engagement/設定リロードの役割を追記し、Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_*` 分割済み・`tests/infra/test_metrics_reporting.py` シム継続へ更新。
-- 2025-10-23: docs/tasks/backlog.md に OPS-B04 を追加し、`tests/infra/test_metrics_reporting.py` 廃止手順（参照整理・CI 緑化・ドキュメント更新）を完了条件へ明記。次担当者は `tests/infra/metrics/*` への移行確認を優先すること。
-- 2025-10-23: docs/tasks/backlog.md に OPS-B05 を追加し、`tests/infra/test_metrics_reporting.py` 撤去前チェックリスト（参照確認・CI 緑化・ドキュメント更新）を完了条件へ追記。
-- 2025-10-21: docs/roadmap.md の runtime_multicontent 統合テスト紹介を現行ディレクトリ構成（`tests/integration/runtime_multicontent/test_pipeline.py`）へ更新し、DM ダイジェスト検証説明との整合を確認。
+- 2025-10-18: docs/tasks/sprint3.md の OPS-04 行で確認テスト列を `tests/infra/metrics/test_reporting_freeze_time.py`・`test_reporting_recording_metrics.py`・`test_reporting_service.py` へ差し替え、備考に旧 `tests/infra/test_metrics_reporting` シム継続を追記。
+- 2025-10-18: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へテンプレート改変・行整形・自己スコア除外を担保する統合テストを追記し、週次サマリ検証範囲の明示を更新。
+- 2025-10-18: (a) docs/roadmap.md に週次サマリ追加テストの検証観点を追記する作業を予定し、(b) docs/tasks/backlog.md へ Orchestrator シム撤去タスクを登録して影響範囲の移行手順を整理。
+- 2025-10-18: docs/roadmap.md の Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` へ差し替え、旧 `tests/infra/test_metrics_reporting.py` がレガシーシムである旨を追記。
+- 2025-10-18: docs/roadmap.md の統合テスト一覧に DM ダイジェスト/Weather Engagement/設定リロードの役割を追記し、Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_*` 分割済み・`tests/infra/test_metrics_reporting.py` シム継続へ更新。
+- 2025-10-18: docs/tasks/backlog.md に OPS-B04 を追加し、`tests/infra/test_metrics_reporting.py` 廃止手順（参照整理・CI 緑化・ドキュメント更新）を完了条件へ明記。次担当者は `tests/infra/metrics/*` への移行確認を優先すること。
+- 2025-10-18: docs/tasks/backlog.md に OPS-B05 を追加し、`tests/infra/test_metrics_reporting.py` 撤去前チェックリスト（参照確認・CI 緑化・ドキュメント更新）を完了条件へ追記。
+- 2025-10-18: docs/roadmap.md の runtime_multicontent 統合テスト紹介を現行ディレクトリ構成（`tests/integration/runtime_multicontent/test_pipeline.py`）へ更新し、DM ダイジェスト検証説明との整合を確認。
 - 2025-10-16: docs/roadmap.md の integration テスト一覧へ DM ダイジェスト/Weather Engagement/設定リロードの各結合テスト概要を追記し、検証観点（直接送信スキップ・履歴連携・差分ログ）を補足。
 - 2025-10-16: config/settings.example.json の `limits` / `metrics._usage` / `metrics.export` コメントを更新済みとし、サンプル構成の整合を確認。
 - 2025-10-16: tests/runtime/test_weekly_report_setup.py での同一ファイル追加入力タスク（`is_enabled` 判定統一対応の継続）を記録。
@@ -72,11 +72,11 @@
 - 2025-10-16: `core/orchestrator_metrics.py` の `suppress_backend` 差し替え保護を追記し、`pytest tests/core/test_metrics_boundary.py -q` → `mypy src/llm_generic_bot/core/orchestrator_metrics.py` → `ruff check src/llm_generic_bot/core/orchestrator_metrics.py` を順に実施済み。
 - 2025-10-18: docs/tasks/backlog.md の DOC-B10 を完了へ更新し、備考へ完了日と整形確認済みである旨を追記。
 - 2025-10-18: バックログ OPS-B01/B02/B03・UX-B01 ほか未完了タスクが残存しており、開発継続が必要であることを確認。
-- 2025-10-19: docs/roadmap.md と docs/tasks/backlog.md を照合し、OPS-B01〜OPS-B03・UX-B01 が未完了である旨を双方に明示した。
+- 2025-10-18: docs/roadmap.md と docs/tasks/backlog.md を照合し、OPS-B01〜OPS-B03・UX-B01 が未完了である旨を双方に明示した。
 - 2025-10-18: src/llm_generic_bot/infra/metrics/aggregator.py の LEGACY_METRICS_AGGREGATOR_CHECKLIST が全項目完了済みで、docs/roadmap.md・docs/tasks/backlog.md の記述と整合していることを確認。
 - 2025-10-17: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を Tue/Thu 09:00 例へ更新し、tests/integration/runtime_weekly_report/test_scheduler.py の呼び出し検証と整合を確認した記録。
 - 2025-10-17: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_weekly_report_job_uses_metrics_and_template` が `MetricsService.collect_weekly_snapshot` と `metrics_module.weekly_snapshot` の双方を通じて週次サマリを整形する保証を記録。
-- 2025-10-20: OPS-B01 Permit/ジッタ/バッチ閾値の調整タスクを着手用にスタブ化。`pytest tests/integration/test_runtime_multicontent_failures.py -q` を先に実行し現状を固定、その後 `tests/infra/` にメトリクス検証を追加するサブタスクを設定。
-- 2025-10-20: OPS-B02 Permit 再評価フロー整備タスクをスタブ化。`pytest tests/integration/test_runtime_multicontent_failures.py -k permit -q` を再現シナリオとして先に追加し、再評価時のメトリクス/ログ記録を実装するタスクを設定。
-- 2025-10-20: OPS-B03 Permit クォータ多段構成タスクをスタブ化。`pytest tests/core/test_quota_gate.py -q` の拡張テストを先行実装し、再送ガード強化を段階的に適用するタスクを設定。
-- 2025-10-20: UX-B01 Engagement 長期トレンド分析タスクをスタブ化。`pytest tests/features/test_weather_engagement.py -q` にトレンド用ケースを先に追加し、Permit クォータ連動ロジックの調整タスクを設定。
+- 2025-10-18: OPS-B01 Permit/ジッタ/バッチ閾値の調整タスクを着手用にスタブ化。`pytest tests/integration/test_runtime_multicontent_failures.py -q` を先に実行し現状を固定、その後 `tests/infra/` にメトリクス検証を追加するサブタスクを設定。
+- 2025-10-18: OPS-B02 Permit 再評価フロー整備タスクをスタブ化。`pytest tests/integration/test_runtime_multicontent_failures.py -k permit -q` を再現シナリオとして先に追加し、再評価時のメトリクス/ログ記録を実装するタスクを設定。
+- 2025-10-18: OPS-B03 Permit クォータ多段構成タスクをスタブ化。`pytest tests/core/test_quota_gate.py -q` の拡張テストを先行実装し、再送ガード強化を段階的に適用するタスクを設定。
+- 2025-10-18: UX-B01 Engagement 長期トレンド分析タスクをスタブ化。`pytest tests/features/test_weather_engagement.py -q` にトレンド用ケースを先に追加し、Permit クォータ連動ロジックの調整タスクを設定。

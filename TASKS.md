@@ -1,6 +1,7 @@
 # タスク記録
 
 - 2025-11-05: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-29 へ更新し、最新のタスク追加日と整合させた。
+- 2025-11-05: docs/roadmap.md の統合テスト一覧にある残課題記述を最新バックログ参照へ差し替え、重複説明を排除。
 - 2025-11-05: docs/roadmap.md runtime_multicontent Weather〜DM ダイジェスト各テスト説明を実保証へ合わせて再記述。
 - 2025-11-05: docs/roadmap.md の Sprint2 残課題節を OPS/UX/DOC カテゴリ別に整理し、バックログ OPS-B01〜OPS-B07・UX-B01・DOC-B08〜DOC-B10 を同期。
 - 2025-11-05: docs/roadmap.md へ runtime デデュープ無効化シム・設定サンプルクールダウン検証の説明を追加し、Sprint1 完了記述とテストロードマップの反映状況を更新。

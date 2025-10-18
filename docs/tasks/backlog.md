@@ -24,6 +24,7 @@ updated: "2025-10-18"
 | [x] | DOC-B11 | Weather キャッシュローテーション/週次サマリ設定テスト反映 | `docs/roadmap.md` | Weather キャッシュローテーションと週次サマリ設定テストの反映が完了し、ロードマップへ検証観点が整備されている。 | 関連テスト: `tests/features/test_weather_cache_rotation.py`、`tests/features/test_report.py`、`tests/config/test_settings_example_report.py`。検証: `pytest tests/features/test_weather_cache_rotation.py tests/features/test_report.py tests/config/test_settings_example_report.py -q` を実行して反映内容を確認する。<br>完了日: 2025-10-18。`docs/roadmap.md` 反映済み。 | OPS-B07 |
 | [ ] | DOC-B12 | 構造化ログ節のロードマップ同期 | `docs/roadmap.md` | `docs/roadmap.md` の構造化ログ節を `tests/core/structured_logging/test_*.py` 群の最新仕様へ同期し、成功/失敗/Permit/重複/メトリクス各モジュールの検証観点を明文化する。 | 関連テスト: `tests/core/structured_logging/test_success.py`、`test_failure.py`、`test_permit.py`、`test_duplicate.py`、`test_metrics.py`。テスト先行実行: `pytest tests/core/structured_logging -q` を完了条件に含める。 | OPS-B07 |
 | [ ] | DOC-B12 | SND-01 RetryPolicy の test_max_attempts 同期 | `docs/roadmap.md` | ロードマップの SND-01 節を `tests/adapters/test_retry_policy.py::test_max_attempts` の仕様に揃え、検証手順として `pytest tests/adapters/test_retry_policy.py::test_max_attempts -q` 実行を明記する。 | Sprint1 SND-01 の記述が retry 最大試行検証へ追随していないため、`test_max_attempts` 観点で同期する更新。 | SND-01 |
+| [ ] | DOC-B13 | SND-01 RetryPolicy のテスト参照修正 | `docs/roadmap.md` | SND-01 節のテスト参照を最新の `tests/adapters/test_retry_policy.py::test_max_attempts` へ更新し、ロードマップ記載の検証手順を整合させる。 | 関連テスト: `tests/adapters/test_retry_policy.py::test_max_attempts`。実行コマンド: `pytest tests/adapters/test_retry_policy.py::test_max_attempts -q`。 | SND-01 |
 
 ## 進行手順
 

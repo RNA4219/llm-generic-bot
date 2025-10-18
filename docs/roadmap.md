@@ -87,7 +87,12 @@
 
 ## Sprint 4: テスト強化 & 異常系整備
 - [OPS-08] ジッタ境界と Permit 連携テスト: `tests/core/test_scheduler_jitter.py` の 3 ケース（`test_scheduler_applies_jitter`、`test_scheduler_immediate_when_jitter_disabled`、`test_scheduler_jitter_respects_range`）でジッタ有無の分岐と遅延レンジ境界を固定し、Permit 判定後のジョブ名維持は `test_scheduler_jitter_respects_range` が担保する。→ 実装済み
-- [OPS-09] `send_duplicate_skip` のログ/メトリクス整合: `tests/core/structured_logging/test_success.py::test_orchestrator_logs_success_with_correlation_id` / `tests/core/structured_logging/test_failure.py::test_orchestrator_logs_failure_and_metrics` / `tests/core/structured_logging/test_permit.py::test_orchestrator_logs_permit_denial` / `tests/core/structured_logging/test_duplicate.py::test_orchestrator_logs_duplicate_skip` が重複抑止時の構造化ログ、Permit 拒否・失敗・成功経路の JSON ログ、および `send.duration` の秒単位タグを検証。→ 実装済み
+- [OPS-09] `send_duplicate_skip` のログ/メトリクス整合: 構造化ログ検証を成功/失敗/Permit 拒否/重複スキップ/メトリクスへ分割し、
+  - `tests/core/structured_logging/test_success.py` が成功ログと相関 ID・Permit 判定後のメトリクスタグを固定し、
+  - `tests/core/structured_logging/test_failure.py` が失敗ログとエラー種別タグ、リトライ可否の記録を保証し、
+  - `tests/core/structured_logging/test_permit.py` が Permit 拒否ログ・拒否理由タグ・メトリクス増分を検証し、
+  - `tests/core/structured_logging/test_duplicate.py` が重複スキップ時の構造化ログと `send_duplicate_skip` メトリクスタグ整合を担保し、
+  - `tests/core/structured_logging/test_metrics.py` が `send.duration` などメトリクス観測値の秒単位タグを固定する。分割後も `tests/core/test_structured_logging.py` はチェックリスト保持用シムとして残し、分担状況のレガシー互換性を追跡する。→ 実装済み
 - [OPS-10] News/おみくじ/DM 異常系結合テスト: `tests/integration/test_runtime_multicontent_failures.py` の `test_permit_denied_records_metrics` / `test_cooldown_resume_allows_retry` / `test_summary_provider_retry_and_fallback` / `test_dm_digest_permit_denied_records_metrics` が Permit 拒否メトリクス、クールダウン解除後の再送成功、サマリーリトライとフォールバック記録、DM ダイジェスト拒否時の送信スキップを週次スナップショットまで確認。→ 実装済み
 
 ## テストロードマップ
@@ -95,7 +100,7 @@
   - リトライ: `tests/adapters/test_retry_policy.py` で Discord/Misskey の 429/Retry-After、指数バックオフ、非リトライ判定までカバー済み。残課題だった `_structured_log` の JSON フィールド（`llm_generic_bot.adapters._retry`）スナップショットは `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` で完了し、リトライ限界到達時の監査属性欠落を防止済み。
   - 併合: `tests/core/test_coalesce_queue.py` で窓内併合、閾値即時フラッシュ、単発バッチを検証済み。残課題だった `CoalesceQueue` の優先度逆転ガードは `tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` で完了し、`llm_generic_bot.core.queue` のマルチチャンネル分離・`pop_ready` ソート安定性もテーブル駆動で確認済み。
   - ジッタ: `tests/core/test_scheduler_jitter.py` で `Scheduler` のジッタ有無と `next_slot` 呼び出しを制御できており、同テストでジッタ範囲の最小/最大境界と Permit 連携も固定済み（[OPS-08] 完了）。
-  - 構造化ログ: `tests/core/structured_logging/test_success.py`・`tests/core/structured_logging/test_failure.py`・`tests/core/structured_logging/test_permit.py`・`tests/core/structured_logging/test_duplicate.py` で送信成功/失敗/Permit 拒否/重複スキップのログイベントとメトリクス更新を確認済みで、`tests/core/structured_logging/test_metrics.py` が `send.duration` メトリクスの秒単位タグを固定済み（[OPS-09] 完了）。
+  - 構造化ログ: `tests/core/structured_logging/test_success.py` が成功ログと相関 ID、`tests/core/structured_logging/test_failure.py` が失敗ログとエラー種別タグ、`tests/core/structured_logging/test_permit.py` が Permit 拒否ログと拒否理由タグ、`tests/core/structured_logging/test_duplicate.py` が重複スキップ時のログと `send_duplicate_skip` メトリクスタグ、`tests/core/structured_logging/test_metrics.py` が `send.duration` を含む秒単位タグをそれぞれ固定済み（[OPS-09] 完了）。分割前の互換追跡にはチェックリスト保持用シム `tests/core/test_structured_logging.py` を残置し、役割分担の進捗を記録している。
 - Sprint 1（完了）: `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` で JSON 監査フィールドを固定し、`tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` などのテーブル駆動ケースで優先度逆転ガードを拡張済み。Permit 拒否理由タグは `tests/core/test_quota_gate.py::test_quota_denial_records_metrics_and_logs` と `tests/integration/test_permit_bridge.py::test_orchestrator_accepts_permit_gate_with_retryable` が `llm_generic_bot.core.arbiter` のタグ整合を保証している。また、`tests/runtime/test_setup_runtime_dedupe.py::test_setup_runtime_disables_dedupe_when_disabled` と `tests/config/test_settings_example_cooldown.py::test_cooldown_jobs_match_expected_set` が設定値に応じたランタイム差し替えと設定ファイル整合を完了済みとして記録する。
 - Sprint 2: `tests/features/test_news.py`, `tests/features/test_omikuji.py`, `tests/features/test_dm_digest.py` を追加済み。正常系とフォールバック、PermitGate 連携はカバーしており、ジッタ境界と異常系結合テストは OPS-08/OPS-10 で完遂。
 - Sprint 3: ランタイムメトリクスの結合テストは `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` へ分割済みで、旧単一ファイル版はレガシーシムとして互換維持用に残存。並行して `tests/core/structured_logging/test_metrics.py` を拡張し、`MetricsRecorder.observe` 呼び出しの単位検証を追加する。

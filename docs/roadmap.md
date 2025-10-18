@@ -5,6 +5,7 @@
 - `main.py` はプロキシ兼エントリーポイントとして `runtime.setup.setup_runtime` を呼び出し、スケジューラ起動と終了時のオーケストレータ停止のみを担う。ランタイム構築ロジックは `src/llm_generic_bot/runtime/setup/__init__.py` を公開エントリーポイントとしつつ、`src/llm_generic_bot/runtime/setup/reports.py` や `src/llm_generic_bot/runtime/setup/runtime_helpers.py` などの補助モジュールへ分割済み。
 - `setup_runtime` は `JobContext` を経由して各ジョブファクトリへ依存を渡し、プロバイダ参照は `src/llm_generic_bot/runtime/jobs/common.py` の `resolve_object` に集約された文字列解決ロジックで `module:attr` / `module.attr` 形式からロードされる。これにより設定差し替えだけでダミー実装や本番実装を切り替えつつ、共通のセットアップフローを維持できる。
 - `build_weather_jobs` は OpenWeather からの都市別現在値を配信する Weather 投稿ジョブを構築し、設定で指定された単一/複数スケジュールを 1 件の `ScheduledJob` に束ねる際のジョブ登録と依存解決のみを担う。キャッシュローテーションや 30℃/35℃ 閾値・前日比 ΔT の評価、警告メッセージ生成といった投稿本文のロジックは `features/weather.build_weather_post` に集約されている。
+  - `tests/features/test_weather_cache_rotation.py`: 気象レスポンスキャッシュのローテーションが期限切れ判定で確実に更新されることと、API 不達時に旧キャッシュへフォールバックする挙動を保証する。
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
 - PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
   - `src/llm_generic_bot/runtime/setup/__init__.py` の `setup_runtime` は `src/llm_generic_bot/runtime/setup/gates.py::build_permit` を呼び出して `PermitGate.permit` の結果を `PermitDecision` へ包み直した `PermitEvaluator` を構築し、同関数内で `Orchestrator` と `JobContext` へ共有している。
@@ -21,6 +22,8 @@
     - `test_templates.py`:
       - `test_weekly_report_config_template_regression`: テンプレート改変が週次サマリ生成へ確実に反映されることを保証。
       - `test_weekly_report_template_line_context`: テンプレート行整形（行コンテキストの付与）が期待どおりに適用されることを固定。
+    - `tests/features/test_report.py`: 週次サマリテンプレートのセクション整形とメトリクス描画を単体レベルで検証し、テンプレート更新時も文面構造が維持されることを担保する。
+    - `tests/config/test_settings_example_report.py`: `config/settings.example.json` の週次サマリ関連設定が期待どおりのテンプレートキーと通知先を保持することを確認し、設定リグレッションを防止する。
     - `test_fallbacks.py`:
       - `test_weekly_report_skips_self_success_rate`: 自身の成功率が週次サマリから除外されることを検証し、自己スコア混入を防止。
     - `tests/integration/test_runtime_dm_digest.py`: DM ダイジェストジョブが dispatch キューを汚さないことを確認する専用テスト（パイプライン経由の dispatch を通さず、スケジューラへの push 抑止にフォーカスする）。Permit 通過後に直接送信する経路は `tests/integration/runtime_multicontent/test_dm_digest.py` が多経路統合テストとして担保するため、本テストは責務を分離している。

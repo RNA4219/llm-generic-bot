@@ -67,6 +67,7 @@
 - 2025-10-15: runtime/setup/runtime_helpers.py の送信プロファイル判定を `is_enabled` へ統一し、`pytest tests/runtime/test_setup_sender.py -q` → `mypy` → `ruff` の順で緑化確認。
 - 2025-10-15: docs/tasks/sprint3.md の OPS-04 に新メトリクスファサード（`infra/metrics/aggregator*.py`）を追記し、集約経路説明を更新。
 - 2025-10-16: `core/orchestrator_metrics.py` の `suppress_backend` 差し替え保護を追記し、`pytest tests/core/test_metrics_boundary.py -q` → `mypy src/llm_generic_bot/core/orchestrator_metrics.py` → `ruff check src/llm_generic_bot/core/orchestrator_metrics.py` を順に実施済み。
+- 2025-10-18: docs/tasks/backlog.md の DOC-B10 を完了へ更新し、備考へ完了日と整形確認済みである旨を追記。
 - 2025-10-18: バックログ OPS-B01/B02/B03・UX-B01 ほか未完了タスクが残存しており、開発継続が必要であることを確認。
 - 2025-10-19: docs/roadmap.md と docs/tasks/backlog.md を照合し、OPS-B01〜OPS-B03・UX-B01 が未完了である旨を双方に明示した。
 - 2025-10-18: src/llm_generic_bot/infra/metrics/aggregator.py の LEGACY_METRICS_AGGREGATOR_CHECKLIST が全項目完了済みで、docs/roadmap.md・docs/tasks/backlog.md の記述と整合していることを確認。

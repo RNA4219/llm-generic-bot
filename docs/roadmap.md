@@ -42,7 +42,7 @@
 - `tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers`: 動的に生成した `tests.integration.fake_providers` モジュールへ `news_feed` / `news_summary` / `dm_logs` / `dm_summary` / `dm_sender` を束ねた `SimpleNamespace` を登録し、`monkeypatch.setitem(sys.modules, module_name, provider_module)` で差し込んだ状態で `module:attr` 形式のプロバイダ文字列が `resolve_object` により正しく解決されることを確認する。
 - `tests/integration/test_runtime_multicontent_failures.py`: [OPS-10] で追加された異常系結合テスト。Permit 拒否やプロバイダ障害時の再送挙動を再現し、News/おみくじ/DM ダイジェスト経路の例外処理を網羅済み。→ 実装済み
 - `tests/integration/test_runtime_news_cooldown.py`: News ジョブがクールダウン継続中はエンキューを抑止し、Permit 呼び出しを行わないことを確認。
-- 残課題（OPS-B01〜OPS-B07／UX-B01／DOC-B08〜DOC-B09）の詳細は直後の「### 残課題」節および最新バックログ（`docs/tasks/backlog.md`）を参照。
+- 残課題（OPS-B01〜OPS-B07／UX-B01／DOC-B09）の詳細は直後の「### 残課題」節および最新バックログ（`docs/tasks/backlog.md`）を参照。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ（完了）
 - [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）は指数バックオフとリトライ上限ログを実装済みで、429/Retry-After と非リトライ判定を `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` / `::test_retry_policy_retries_until_limit` が固定化している。
@@ -74,7 +74,6 @@
 - [UX-B01] Engagement 指標の長期トレンド分析と Permit クォータ変動時の通知頻度調整をテストダブルで検証し、`tests/features/test_weather_engagement.py` に新ケースを追加する。
 
 #### DOC（ドキュメント）
-- [DOC-B08] runtime_multicontent の DM ダイジェスト節を現行実装へ同期し、関連テスト（`tests/integration/runtime_multicontent/test_pipeline_dm_digest.py` と `tests/integration/runtime_multicontent/test_dm_digest.py`）の責務を明記する。
 - [DOC-B09] 週次サマリ節のテンプレート差分説明を補完し、`tests/integration/runtime_weekly_report/` 配下テストの検証観点を整理する。
 
 ## Sprint 3: 運用・可観測性

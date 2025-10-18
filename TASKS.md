@@ -48,6 +48,7 @@
 - 2025-10-18: (a) docs/roadmap.md に週次サマリ追加テストの検証観点を追記する作業を予定し、(b) docs/tasks/backlog.md へ Orchestrator シム撤去タスクを登録して影響範囲の移行手順を整理。
 - 2025-10-18: docs/roadmap.md の Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` へ差し替え、旧 `tests/infra/test_metrics_reporting.py` がレガシーシムである旨を追記。
 - 2025-10-18: docs/roadmap.md の統合テスト一覧に DM ダイジェスト/Weather Engagement/設定リロードの役割を追記し、Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_*` 分割済み・`tests/infra/test_metrics_reporting.py` シム継続へ更新。
+- 2025-10-18: DOC-B11 を追加し、docs/roadmap.md の残課題節と二重登録しないよう TASKS.md 側で管理継続するメモを共有。
 - 2025-10-18: docs/tasks/backlog.md に OPS-B04 を追加し、`tests/infra/test_metrics_reporting.py` 廃止手順（参照整理・CI 緑化・ドキュメント更新）を完了条件へ明記。次担当者は `tests/infra/metrics/*` への移行確認を優先すること。
 - 2025-10-18: docs/tasks/backlog.md に OPS-B05 を追加し、`tests/infra/test_metrics_reporting.py` 撤去前チェックリスト（参照確認・CI 緑化・ドキュメント更新）を完了条件へ追記。
 - 2025-10-18: docs/roadmap.md の runtime_multicontent 統合テスト紹介を現行ディレクトリ構成（`tests/integration/runtime_multicontent/test_pipeline.py`）へ更新し、DM ダイジェスト検証説明との整合を確認。

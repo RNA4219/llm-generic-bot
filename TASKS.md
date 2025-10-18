@@ -2,10 +2,9 @@
 # タスク記録
 
 - 2025-10-18: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-18 へ補正し、`markdownlint docs/tasks/backlog.md` と `markdownlint TASKS.md` を実行して整形確認を完了。
-- 2025-10-18: DOC-B14 をバックログへ追加し、docs/roadmap.md の SND-01 記述修正を対象として追跡開始（旧 DOC-B12 から改番）。
-- 2025-10-18: DOC-B12 を完了扱いへ更新し、docs/tasks/backlog.md の SND-01 行をチェック済みに変更。重複タスク運用ルールに従い、同系統の DOC-B13 は参照修正タスクとして継続中であることを明記。
-- 2025-10-18: DOC-B12 をバックログへ追加し、docs/roadmap.md の SND-01 記述修正を対象として追跡開始。
-- 2025-10-18: DOC-B13 をバックログへ追加し、docs/roadmap.md の SND-01 修正を対象とする追跡を開始。
+- 2025-10-18: DOC-B14 をバックログへ追加し、docs/roadmap.md の DOC-B14 記述修正を対象として追跡開始（旧 DOC-B12 から改番）。
+- 2025-10-18: DOC-B14 へ改番した旧 DOC-B12 の完了扱いを docs/tasks/backlog.md に反映し、チェック済みへ更新。重複タスク運用ルールに従い、同系統の DOC-B13 は参照修正タスクとして継続中であることを明記。
+- 2025-10-18: DOC-B13 をバックログへ追加し、docs/roadmap.md の DOC-B14 参照修正を対象とする追跡を開始。
 - 2025-10-18: DOC-B12 追加理由と docs/roadmap.md の構造化ログ節同期作業を追記対象として管理開始。
 - 2025-10-18: docs/roadmap.md の統合テスト一覧にある残課題記述を最新バックログ参照へ差し替え、重複説明を排除。
 - 2025-10-18: docs/roadmap.md の残課題サマリ行と DOC-B10 の表現を完了済みに更新し、未完了扱いを解消。

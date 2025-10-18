@@ -1,25 +1,30 @@
 # llm-generic-bot
 
 プラットフォーム非依存の **LLM 汎用 BOT**。Discord / Misskey などへ自律投稿・応答。
-- ドメインロジックと I/O を完全分離（Ports & Adapters）
-- 適応型クールタイム (Anti-spam)
-- ジョブ優先度・衝突回避アービタ
-- 近傍重複デデュープ
-- 天気要約（30℃/35℃しきい値アイコン、前日比 ΔT アラート）
-- ニュース自動配信
-- おみくじ生成
-- DM ダイジェスト編纂
-- 週次サマリ/メトリクス連携（`src/llm_generic_bot/runtime/setup/__init__.py` で週次レポート登録、`tests/integration/runtime_weekly_report/` 配下で検証）
+
+## 主な機能
+
+- **アーキテクチャ**: ドメインロジックと I/O を完全分離（Ports & Adapters）。
+- **送信制御**: 適応型クールタイム、ジョブ優先度アービタ、近傍重複デデュープでスパムを抑制。
+- **自動配信**: 天気（30℃/35℃アイコン・前日比 ΔT アラート）、ニュース、おみくじ、DM ダイジェストを定期生成。
+- **レポート**: 週次サマリとメトリクス連携（登録は `src/llm_generic_bot/runtime/setup/__init__.py`、検証は `tests/integration/runtime_weekly_report/`）。
 
 ## Quick start
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
-cp config/settings.example.json config/settings.json
-cp .env.example .env
-python -m llm_generic_bot.main
-```
+1. 依存関係をインストールします。
+   ```bash
+   python -m venv .venv && source .venv/bin/activate
+   pip install -e .
+   ```
+2. 設定と環境変数のテンプレートをコピーします。
+   ```bash
+   cp config/settings.example.json config/settings.json
+   cp .env.example .env
+   ```
+3. BOT を起動します。
+   ```bash
+   python -m llm_generic_bot.main
+   ```
 
 ## Structure
 ```

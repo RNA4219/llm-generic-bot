@@ -1,7 +1,7 @@
 ---
 category: backlog
 status: in_progress
-updated: 2025-10-23
+updated: 2025-10-18
 ---
 
 # 残課題バックログ

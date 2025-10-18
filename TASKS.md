@@ -10,6 +10,7 @@
 - 2025-10-18: docs/roadmap.md の `test_pipeline_dm_digest.py` 説明をジョブ登録後にキューと dispatch が発生しない保証へ統合。
 - 2025-10-18: docs/roadmap.md runtime_multicontent Weather/News/おみくじ説明を実テストのチャンネル/ビルダー保証に沿うよう更新。
 - 2025-10-18: docs/roadmap.md の runtime_multicontent 節で `test_pipeline.py` 説明を 1 行に集約し、LEGACY チェックリストと後継テスト追跡の役割を統合記述した。
+- 2025-10-18: DOC-B09 を完了し、docs/tasks/backlog.md の週次サマリ節が最新内容と同期済みであることを記録。
 - 2025-10-18: docs/roadmap.md の runtime_multicontent 節で Weather/News/おみくじ/DM ダイジェスト各パイプラインテストの保証範囲（登録・キュー・ビルダー伝播）を精緻化。
 - 2025-10-18: docs/roadmap.md の runtime_multicontent 節へ `test_pipeline.py` が LEGACY チェックリストのみを保持し統合テスト本体が `test_pipeline_*.py` へ移動済みである旨を追記。
 - 2025-10-18: docs/roadmap.md のデデュープ統合テスト説明を `_PassthroughDedupe.permit` が常に `True` を返す挙動へ更新。

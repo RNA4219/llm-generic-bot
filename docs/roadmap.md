@@ -48,7 +48,7 @@
 - 残課題（OPS-B01〜OPS-B07／UX-B01）の詳細は直後の「### 残課題」節および最新バックログ（`docs/tasks/backlog.md`）を参照。
 
 ## Sprint 1: Sender堅牢化 & オーケストレータ（完了）
-- [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）は指数バックオフとリトライ上限ログを実装済みで、429/Retry-After と非リトライ判定を `tests/adapters/test_retry_policy.py::test_retry_logging_snapshot` / `::test_retry_after_header` / `::test_exponential_backoff` / `::test_max_attempts` が固定化している。
+- [SND-01] Discord/Misskey RetryPolicy（`adapters/discord.py`, `adapters/misskey.py`）は指数バックオフとリトライ上限ログを実装済みで、429/Retry-After と非リトライ判定を `tests/adapters/test_retry_policy.py::test_max_attempts` が固定化している。
 - [SND-02] Permit ゲート導入（`core/arbiter.py` など）はチャンネル別クォータ・メトリクスタグの更新を実装済みで、`tests/core/test_quota_gate.py` と `tests/integration/test_permit_bridge.py` が拒否理由タグと Permit 通過メトリクスを検証している。
 - [SCH-01] CoalesceQueue（`core/scheduler.py`）は近接メッセージ併合と即時フラッシュを完了しており、`tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` ほかテーブル駆動ケースで優先度逆転ガードを保証している。
 - [SCH-02] ジッタ適用（`core/scheduler.py`）は送信時刻へランダムオフセットを付与する実装が完了し、`tests/core/test_scheduler_jitter.py::test_scheduler_applies_jitter` / `::test_scheduler_immediate_when_jitter_disabled` / `::test_scheduler_jitter_respects_range` が境界レンジと有効/無効切替を確認している。

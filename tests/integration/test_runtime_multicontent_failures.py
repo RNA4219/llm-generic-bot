@@ -243,46 +243,58 @@ async def test_dm_digest_permit_denied_records_metrics() -> None:
     await orchestrator.close()
 
 
-async def test_scheduler_records_delay_and_permit_metrics(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_jitter_delay_records_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     aggregator_state.reset_for_test()
     settings = _settings()
-    settings["cooldown"]["window_sec"] = 0
+    queue = CoalesceQueue(window_seconds=1.0, threshold=1)
 
-    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
-    scheduler, orchestrator, _jobs = main_module.setup_runtime(settings, queue=queue)
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
 
-    try:
-        delays = await _dispatch_twice_with_jitter(
-            scheduler, orchestrator, base_ts=1200.0, monkeypatch=monkeypatch
-        )
-        assert delays == [0.0, 5.0]
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("title", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
 
-        snapshot = await orchestrator.weekly_snapshot()
-        permit_counters = snapshot.counters.get("scheduler.permit")
-        assert permit_counters is not None
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    scheduler.jitter_enabled = True
+    scheduler.jitter_range = (3, 3)
 
-        allow_tags = (
-            ("channel", "discord-news"),
-            ("decision", "allow"),
-            ("job", "news"),
-        )
-        defer_tags = (
-            ("channel", "discord-news"),
-            ("decision", "defer"),
-            ("job", "news"),
-        )
+    delays: list[float] = []
 
-        assert permit_counters[allow_tags].count == 1
-        assert permit_counters[defer_tags].count == 1
+    async def _capture_sleep(duration: float) -> None:
+        delays.append(duration)
 
-        delay_observations = snapshot.observations.get("scheduler.delay_seconds")
-        assert delay_observations is not None
-        delay_tags = (("channel", "discord-news"), ("job", "news"))
-        delay_snapshot = delay_observations[delay_tags]
-        assert delay_snapshot.count == 2
-        assert delay_snapshot.minimum == 0.0
-        assert delay_snapshot.maximum == pytest.approx(5.0)
-    finally:
-        await orchestrator.close()
+    monkeypatch.setattr(scheduler, "_sleep", _capture_sleep, raising=False)
+    scheduler._last_dispatch_ts = 1.0
+
+    text = await jobs["news"]()
+    assert text
+    _run_dispatch(scheduler, text, created_at=0.0)
+
+    await scheduler.dispatch_ready_batches(1.0)
+    await orchestrator.flush()
+
+    assert delays == [pytest.approx(3.0)]
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert snapshot["success_rate"]["news"] == {"success": 1, "failure": 0, "ratio": 1.0}
+
+    metrics_snapshot = await orchestrator.weekly_snapshot()
+    tags_key = (
+        ("channel", "discord-news"),
+        ("job", "news"),
+        ("platform", "discord"),
+        ("unit", "seconds"),
+    )
+    assert "send.delay_seconds" in metrics_snapshot.observations
+    delay_stats = metrics_snapshot.observations["send.delay_seconds"][tags_key]
+    assert delay_stats.count == 1
+    assert delay_stats.minimum == pytest.approx(3.0)
+    assert delay_stats.maximum == pytest.approx(3.0)
+    assert delay_stats.average == pytest.approx(3.0)
+
+    await orchestrator.close()

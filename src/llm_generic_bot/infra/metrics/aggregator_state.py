@@ -140,6 +140,19 @@ class _GlobalMetricsAggregator:
         )
         backend.increment("send.denied", tags=tags)
 
+    def report_send_delay(
+        self,
+        *,
+        job: str,
+        platform: str,
+        channel: str | None,
+        delay_seconds: float,
+    ) -> None:
+        tags = _base_tags(job, platform, channel)
+        observation_tags = {**tags, "unit": "seconds"}
+        backend = self._backend_for_delay()
+        backend.observe("send.delay_seconds", float(delay_seconds), tags=observation_tags)
+
     def weekly_snapshot(self) -> dict[str, object]:
         generated_at = _utcnow()
         cutoff = generated_at - timedelta(days=self._retention_days())
@@ -173,6 +186,10 @@ class _GlobalMetricsAggregator:
                 else:
                     self._permit_denials.append(record)
         return backend
+
+    def _backend_for_delay(self) -> MetricsRecorder:
+        with self.lock:
+            return self.backend
 
     def _trim_history(
         self, cutoff: datetime

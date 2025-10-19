@@ -11,6 +11,7 @@ import anyio
 from .arbiter import next_slot
 from .queue import CoalesceQueue, QueueBatch
 from .types import Sender
+from ..infra import metrics as metrics_module
 
 
 class _JobCallable(Protocol):
@@ -152,12 +153,15 @@ class Scheduler:
         job = batch.job
         channel = batch.channel
         text = batch.text
-        metrics = self._metrics
-        if metrics is not None:
-            tags = _metric_tags(job_name, channel)
-            metrics.observe("scheduler.delay_seconds", delay, tags=tags)
-            decision_tags = {**tags, "decision": "defer" if delay > 0.0 else "allow"}
-            metrics.increment("scheduler.permit", tags=decision_tags)
+        if delay > 0.0:
+            platform_value = getattr(self.sender, "platform", None)
+            platform = platform_value if isinstance(platform_value, str) and platform_value else "-"
+            await metrics_module.report_send_delay(
+                job=job_name,
+                platform=platform,
+                channel=channel,
+                delay_seconds=delay,
+            )
         await self._sleep(delay)
         await self.sender.send(text, channel, job=job_name)
         self._last_dispatch_ts = target_ts if delay > 0 else reference_ts

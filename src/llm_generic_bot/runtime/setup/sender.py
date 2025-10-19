@@ -43,5 +43,5 @@ def build_send_adapter(
             channel=resolved_channel,
         )
 
-    sender = cast(Sender, SimpleNamespace(send=send))
+    sender = cast(Sender, SimpleNamespace(send=send, platform=platform))
     return sender, permit_overrides

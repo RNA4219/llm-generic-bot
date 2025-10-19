@@ -3,7 +3,15 @@ import logging
 import pytest
 
 from llm_generic_bot.config.quotas import PerChannelQuotaConfig
-from llm_generic_bot.core.arbiter import PermitDecision, PermitGate
+from llm_generic_bot.core.arbiter import (
+    PermitDecision,
+    PermitGate,
+    PermitGateConfig,
+    PermitGateHooks,
+    PermitQuotaLevel,
+    PermitReevaluationOutcome,
+    PermitRejectionContext,
+)
 
 
 class DummyMetrics:
@@ -33,6 +41,7 @@ def test_quota_permit_allows_within_limits() -> None:
     assert decision.allowed is True
     assert decision.reason is None
     assert decision.retryable is True
+    assert decision.reevaluation is None
     assert metrics.calls == []
 
 
@@ -65,10 +74,17 @@ def test_quota_denial_records_metrics_and_logs(caplog: pytest.LogCaptureFixture)
     assert metrics.calls == [
         (
             "quota_denied",
-            {"platform": "discord", "channel": "ch", "code": "daily_limit"},
+            {
+                "platform": "discord",
+                "channel": "ch",
+                "code": "daily_limit",
+                "level": "per_channel",
+                "reeval_reason": "daily limit reached",
+            },
         )
     ]
     assert "daily limit" in caplog.text
+    assert "per_channel" in caplog.text
 
 
 def test_quota_reset_after_window() -> None:
@@ -94,6 +110,7 @@ def test_quota_reset_after_window() -> None:
     assert denied.allowed is False
     assert denied.retryable is True
     assert denied.reason is not None and "burst" in denied.reason
+    assert denied.reevaluation is None
 
     current[0] += 61
     allowed_again = gate.permit("discord", "reset")
@@ -103,3 +120,77 @@ def test_quota_reset_after_window() -> None:
 
     assert len(metrics.calls) == 1
     assert metrics.calls[0][1]["code"] == "burst_limit"
+
+
+def test_quota_multilevel_and_hooks(caplog: pytest.LogCaptureFixture) -> None:
+    metrics = DummyMetrics()
+    now = [0.0]
+
+    def time_fn() -> float:
+        return now[0]
+
+    hook_calls: list[PermitRejectionContext] = []
+
+    def on_rejection(context: PermitRejectionContext) -> PermitReevaluationOutcome:
+        hook_calls.append(context)
+        assert context.level == "platform"
+        assert context.code == "burst_limit"
+        return PermitReevaluationOutcome(
+            level=context.level,
+            reason="queued",
+            retry_after=15.0,
+            allowed=False,
+        )
+
+    config = PermitGateConfig(
+        levels=(
+            PermitQuotaLevel(
+                name="per_channel",
+                quota=PerChannelQuotaConfig(day=10, window_minutes=1, burst_limit=5),
+            ),
+            PermitQuotaLevel(
+                name="platform",
+                quota=PerChannelQuotaConfig(day=10, window_minutes=1, burst_limit=1),
+                key_fn=lambda platform, _channel, _job: (platform or "-", "-"),
+            ),
+        ),
+        hooks=PermitGateHooks(on_rejection=on_rejection),
+    )
+
+    gate = PermitGate(
+        per_channel=PerChannelQuotaConfig(day=10, window_minutes=1, burst_limit=5),
+        metrics=metrics.increment,
+        logger=logging.getLogger("quota"),
+        time_fn=time_fn,
+        config=config,
+    )
+
+    assert gate.permit("discord", "alpha").allowed is True
+    now[0] += 1
+    caplog.set_level(logging.WARNING)
+
+    denied = gate.permit("discord", "beta", job="news")
+    assert denied.allowed is False
+    assert denied.retryable is True
+    assert denied.reason == "burst limit reached"
+    assert denied.reevaluation is not None
+    assert denied.reevaluation.level == "platform"
+    assert denied.reevaluation.reason == "queued"
+    assert denied.reevaluation.retry_after == pytest.approx(15.0)
+    assert denied.reevaluation.allowed is False
+
+    assert hook_calls
+    context = hook_calls[0]
+    assert context.job == "news"
+    assert metrics.calls[-1] == (
+        "quota_denied",
+        {
+            "platform": "discord",
+            "channel": "beta",
+            "code": "burst_limit",
+            "level": "platform",
+            "reeval_reason": "queued",
+        },
+    )
+    assert "platform" in caplog.text
+    assert "queued" in caplog.text

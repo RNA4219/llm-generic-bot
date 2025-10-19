@@ -1,3 +1,4 @@
+- 2025-10-22: docs/tasks/sprint2.md の UX-01 対象モジュール参照を `core/orchestrator/__init__.py` へ更新し、`git diff docs/tasks/sprint2.md` を確認。環境に `markdownlint` が存在せず `command not found` を確認したため導入検討が必要。
 - 2025-10-19: OPS-B04/B05/B07 を `tests/infra/metrics/test_reporting_freeze_time.py`・`test_reporting_recording_metrics.py`・`test_reporting_service.py` 前提へ更新し、docs/tasks/backlog.md と docs/roadmap.md の旧 `tests/infra/test_metrics_reporting.py` 参照を除去して完了扱いへ整理。
 <!-- markdownlint-disable MD013 MD025 -->
 # タスク記録

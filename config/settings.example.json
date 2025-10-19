@@ -1,5 +1,26 @@
 {
   "timezone": "Asia/Tokyo",
+  "scheduler": {
+    "_usage": "スケジューラ共通設定サンプル。送信ジッタは `core/scheduler.py` で `jitter_range_seconds` の範囲からランダム遅延を適用する",
+    "jitter_range_seconds": [3, 15]
+  },
+  "permit": {
+    "_usage": "PermitGate 多段設定のサンプル。`tiers` で優先度ごとの通過条件を列挙し、上位 tier が先に評価される",
+    "tiers": [
+      {
+        "name": "default",
+        "priority": 100,
+        "channels": ["general"],
+        "jobs": ["news", "omikuji", "weather"]
+      },
+      {
+        "name": "elevated",
+        "priority": 200,
+        "channels": ["ops-weekly", "support-dm"],
+        "jobs": ["dm_digest", "weekly_report"]
+      }
+    ]
+  },
   "cooldown": {
     "window_sec": 1800,
     "mult_min": 1.0,

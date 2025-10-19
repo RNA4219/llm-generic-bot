@@ -62,7 +62,7 @@ class PermitDecision:
     reason: Optional[str]
     retryable: bool
     job: Optional[str] = None
-    reevaluation: Optional[PermitReevaluationOutcome] = None
+    reevaluation: PermitReevaluationOutcome | str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,7 @@ class PermitGate:
         else:
             levels = config.levels
         self._levels = levels
-        self._history: Dict[Tuple[str, str, str], Deque[float]] = {}
+        self._history: Dict[str, Dict[Tuple[str, str], Deque[float]]] = {}
         self._tiers_by_level: Dict[str, tuple[_QuotaTier, ...]] = {}
         retention_candidates: list[int] = []
         for level in self._levels:
@@ -119,8 +119,12 @@ class PermitGate:
         pending: list[Deque[float]] = []
         for level in self._levels:
             key_a, key_b = level.key_fn(platform, channel, job)
-            history_key = (level.name, key_a, key_b)
-            history = self._history.setdefault(history_key, deque())
+            level_history = self._history.setdefault(level.name, {})
+            history_key = (key_a, key_b)
+            history = level_history.get(history_key)
+            if history is None:
+                history = deque()
+                level_history[history_key] = history
             self._evict(history, now)
             for tier in self._tiers_by_level[level.name]:
                 if self._exceeds_tier(history, now, tier):
@@ -219,7 +223,7 @@ class PermitGate:
         job: Optional[str],
         level: str,
     ) -> PermitDecision:
-        reevaluation: Optional[PermitReevaluationOutcome] = None
+        reevaluation_outcome: Optional[PermitReevaluationOutcome] = None
         if self._hooks and self._hooks.on_rejection:
             context = PermitRejectionContext(
                 platform=platform,
@@ -229,9 +233,14 @@ class PermitGate:
                 code=tier.code,
                 message=tier.message,
             )
-            reevaluation = self._hooks.on_rejection(context)
-        if reevaluation is None and tier.reevaluation is not None:
-            reevaluation = PermitReevaluationOutcome(level=level, reason=tier.reevaluation)
+            reevaluation_outcome = self._hooks.on_rejection(context)
+        reevaluation_value: PermitReevaluationOutcome | str | None
+        if reevaluation_outcome is not None:
+            reevaluation_value = reevaluation_outcome
+        elif tier.reevaluation is not None:
+            reevaluation_value = tier.reevaluation
+        else:
+            reevaluation_value = None
         tags = {
             "platform": platform or "-",
             "channel": channel or "-",
@@ -241,8 +250,11 @@ class PermitGate:
             tags["reevaluation"] = tier.reevaluation
         else:
             reason_hint = tier.message
-            if reevaluation is not None and reevaluation.reason:
-                reason_hint = reevaluation.reason
+            if (
+                reevaluation_outcome is not None
+                and reevaluation_outcome.reason
+            ):
+                reason_hint = reevaluation_outcome.reason
             tags["level"] = level
             tags["reeval_reason"] = reason_hint
         if self._metrics is not None:
@@ -259,7 +271,7 @@ class PermitGate:
             reason=tier.message,
             retryable=tier.retryable,
             job=job,
-            reevaluation=reevaluation,
+            reevaluation=reevaluation_value,
         )
 
 

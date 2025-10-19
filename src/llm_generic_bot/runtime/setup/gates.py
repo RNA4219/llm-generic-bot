@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Optional, cast
 
-from ...config.quotas import QuotaSettings
+from ...config.quotas import PerChannelQuotaConfig, QuotaSettings
 from ...core.arbiter import PermitGate
 from ...core.cooldown import CooldownGate
 from ...core.dedupe import NearDuplicateFilter
@@ -73,8 +73,14 @@ def build_permit(
     quota: QuotaSettings,
     *,
     permit_gate: Optional[PermitGate],
+    tiers: Optional[Mapping[str, PerChannelQuotaConfig]] = None,
 ) -> PermitEvaluator:
-    gate = permit_gate or (PermitGate(per_channel=quota.per_channel) if quota.per_channel else None)
+    gate = permit_gate
+    if gate is None:
+        if quota.per_channel or tiers:
+            gate = PermitGate(per_channel=quota.per_channel, tiers=tiers)
+        else:
+            gate = None
 
     if gate is None:
 

@@ -17,7 +17,22 @@
     }
   },
   "quota": { "per_channel": { "day": 20, "window_min": 30, "burst_limit": 5 } },
+  "permit": {
+    "_usage": "PermitGate のレート制御設定サンプル。tiers にジョブ名ごとの閾値 (日次・バースト・時間窓) を指定すると、該当ジョブの送信頻度を個別に調整できる",
+    "tiers": {
+      "news": { "day": 12, "window_min": 20, "burst_limit": 3 }
+    }
+  },
   "arbiter": { "jitter_sec": [60, 180] },
+  "scheduler": {
+    "_usage": "スケジューラのジッタ範囲とバッチ閾値を調整するサンプル設定。ジッタは scheduler.jitter_range_seconds、バッチ併合は batch.threshold / batch.window_seconds で制御する",
+    "jitter_range_seconds": [60, 180],
+    "batch": {
+      "_usage": "CoalesceQueue の時間窓と閾値を調整するサンプル設定。threshold 以上のメッセージが揃うと即時フラッシュされる",
+      "window_seconds": 180,
+      "threshold": 3
+    }
+  },
   "dedupe": { "enabled": true, "recent_k": 20, "sim_threshold": 0.93 },
   "limits": {
     "_usage": "制限設定サンプル。⚠️ 現行実装では未対応のため、実装が揃うまでは有効化しないこと",

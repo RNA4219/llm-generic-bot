@@ -5,7 +5,7 @@ import random
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Callable, Deque, Dict, Optional, Tuple
+from typing import Callable, Deque, Dict, Mapping, Optional, Tuple
 
 from llm_generic_bot.config.quotas import PerChannelQuotaConfig
 
@@ -24,16 +24,18 @@ class PermitGate:
     def __init__(
         self,
         *,
-        per_channel: PerChannelQuotaConfig,
+        per_channel: Optional[PerChannelQuotaConfig],
+        tiers: Optional[Mapping[str, PerChannelQuotaConfig]] = None,
         metrics: Optional[Callable[[str, Dict[str, str]], None]] = None,
         logger: Optional[logging.Logger] = None,
         time_fn: Optional[Callable[[], float]] = None,
     ) -> None:
         self.per_channel = per_channel
+        self._tiers: Dict[str, PerChannelQuotaConfig] = dict(tiers) if tiers else {}
         self._metrics = metrics
         self._logger = logger or logging.getLogger(__name__)
         self._time = time_fn or time.time
-        self._history: Dict[Tuple[str, str], Deque[float]] = {}
+        self._history: Dict[Tuple[str, ...], Deque[float]] = {}
 
     def permit(
         self,
@@ -41,12 +43,15 @@ class PermitGate:
         channel: Optional[str],
         job: Optional[str] = None,
     ) -> PermitDecision:
-        key = (platform or "-", channel or "-")
+        config, key = self._resolve_quota(platform, channel, job)
+        if config is None:
+            return PermitDecision(allowed=True, reason=None, retryable=True, job=job)
+
         history = self._history.setdefault(key, deque())
         now = self._time()
         self._evict(history, now)
 
-        if self._exceeds_burst(history, now):
+        if self._exceeds_burst(history, now, config):
             return self._deny(
                 platform,
                 channel,
@@ -56,7 +61,7 @@ class PermitGate:
                 job=job,
             )
 
-        if self._exceeds_daily(history):
+        if self._exceeds_daily(history, config):
             return self._deny(
                 platform,
                 channel,
@@ -69,14 +74,23 @@ class PermitGate:
         history.append(now)
         return PermitDecision(allowed=True, reason=None, retryable=True, job=job)
 
-    def _exceeds_burst(self, history: Deque[float], now: float) -> bool:
-        window_start = now - self.per_channel.window_seconds
+    def _exceeds_burst(
+        self,
+        history: Deque[float],
+        now: float,
+        config: PerChannelQuotaConfig,
+    ) -> bool:
+        window_start = now - config.window_seconds
         count = sum(1 for ts in history if ts >= window_start)
-        return count >= self.per_channel.burst_limit
+        return count >= config.burst_limit
 
-    def _exceeds_daily(self, history: Deque[float]) -> bool:
+    def _exceeds_daily(
+        self,
+        history: Deque[float],
+        config: PerChannelQuotaConfig,
+    ) -> bool:
         count = len(history)
-        return count >= self.per_channel.day
+        return count >= config.day
 
     def _evict(self, history: Deque[float], now: float) -> None:
         cutoff = now - DAY_SECONDS
@@ -109,6 +123,21 @@ class PermitGate:
             retryable=retryable,
             job=job,
         )
+
+    def _resolve_quota(
+        self,
+        platform: str,
+        channel: Optional[str],
+        job: Optional[str],
+    ) -> tuple[Optional[PerChannelQuotaConfig], Tuple[str, ...]]:
+        base_key = (platform or "-", channel or "-")
+        if job:
+            tier = self._tiers.get(job)
+            if tier is not None:
+                return tier, base_key + (job,)
+        if self.per_channel is None:
+            return None, base_key
+        return self.per_channel, base_key
 
 
 def jitter_seconds(jitter_range: Tuple[int, int]) -> int:

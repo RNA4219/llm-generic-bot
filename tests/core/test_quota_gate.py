@@ -103,3 +103,29 @@ def test_quota_reset_after_window() -> None:
 
     assert len(metrics.calls) == 1
     assert metrics.calls[0][1]["code"] == "burst_limit"
+
+
+def test_quota_tier_overrides_limits() -> None:
+    metrics = DummyMetrics()
+    current = [0.0]
+
+    def time_fn() -> float:
+        return current[0]
+
+    default = PerChannelQuotaConfig(day=10, window_minutes=10, burst_limit=5)
+    tier = PerChannelQuotaConfig(day=1, window_minutes=1, burst_limit=1)
+
+    gate = PermitGate(
+        per_channel=default,
+        tiers={"news": tier},
+        metrics=metrics.increment,
+        logger=logging.getLogger("quota"),
+        time_fn=time_fn,
+    )
+
+    assert gate.permit("discord", "ch", job="news").allowed is True
+    assert gate.permit("discord", "ch", job="news").allowed is False
+
+    current[0] += 61
+    assert gate.permit("discord", "ch", job="other").allowed is True
+    assert gate.permit("discord", "ch", job="other").allowed is True

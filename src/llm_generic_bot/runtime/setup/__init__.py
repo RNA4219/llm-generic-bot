@@ -14,7 +14,7 @@ from collections.abc import Iterable, Sequence
 from functools import wraps
 from typing import Any, Awaitable, Callable, Mapping, Optional
 
-from ...config.quotas import QuotaSettings, load_quota_settings
+from ...config.quotas import PerChannelQuotaConfig, QuotaSettings, load_quota_settings
 from ...core.arbiter import PermitGate
 from ...core.orchestrator import Orchestrator, PermitEvaluator, Sender
 from ...core.queue import CoalesceQueue
@@ -79,6 +79,14 @@ def _parse_positive_int_pair(raw: object) -> tuple[int, int]:
     return lower, upper
 
 
+def _parse_positive_int(value: object, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be a positive integer")
+    if value <= 0:
+        raise ValueError(f"{field} must be a positive integer")
+    return value
+
+
 def setup_runtime(
     settings: Mapping[str, Any],
     *,
@@ -94,15 +102,74 @@ def setup_runtime(
     dedupe_cfg = as_mapping(cfg.get("dedupe"))
     dedupe = build_dedupe(dedupe_cfg)
 
-    arbiter_cfg = as_mapping(cfg.get("arbiter"))
+    scheduler_cfg = as_mapping(cfg.get("scheduler"))
     jitter_range_override: Optional[tuple[int, int]] = None
-    if arbiter_cfg:
+    batch_window_override: Optional[float] = None
+    batch_threshold_override: Optional[int] = None
+    if scheduler_cfg:
+        jitter_values = scheduler_cfg.get("jitter_range_seconds")
+        if jitter_values is not None:
+            jitter_range_override = _parse_positive_int_pair(jitter_values)
+        batch_cfg = as_mapping(scheduler_cfg.get("batch"))
+        if batch_cfg:
+            window_value = batch_cfg.get("window_seconds")
+            if window_value is not None:
+                window_candidate = get_float(window_value, 180.0)
+                if window_candidate <= 0.0:
+                    raise ValueError("scheduler.batch.window_seconds must be positive")
+                batch_window_override = float(window_candidate)
+            threshold_value = batch_cfg.get("threshold")
+            if threshold_value is not None:
+                batch_threshold_override = _parse_positive_int(
+                    threshold_value,
+                    field="scheduler.batch.threshold",
+                )
+
+    arbiter_cfg = as_mapping(cfg.get("arbiter"))
+    if jitter_range_override is None and arbiter_cfg:
         jitter_values = arbiter_cfg.get("jitter_sec")
         if jitter_values is not None:
             jitter_range_override = _parse_positive_int_pair(jitter_values)
 
     quota: QuotaSettings = load_quota_settings(cfg)
-    permit = build_permit(quota, permit_gate=permit_gate)
+    permit_cfg = as_mapping(cfg.get("permit"))
+    permit_tiers: dict[str, PerChannelQuotaConfig] = {}
+    if permit_cfg:
+        raw_tiers = permit_cfg.get("tiers")
+        if raw_tiers is not None:
+            if not isinstance(raw_tiers, Mapping):
+                raise ValueError("permit.tiers must be a mapping")
+            for job_name, tier_raw in raw_tiers.items():
+                if not isinstance(job_name, str) or not job_name.strip():
+                    raise ValueError("permit.tiers keys must be non-empty strings")
+                tier_cfg = as_mapping(tier_raw)
+                day_value = tier_cfg.get("day")
+                window_value = tier_cfg.get("window_min")
+                burst_value = tier_cfg.get("burst_limit")
+                if day_value is None or window_value is None or burst_value is None:
+                    raise ValueError(
+                        f"permit.tiers.{job_name}.day/window_min/burst_limit must be provided"
+                    )
+                day = _parse_positive_int(day_value, field=f"permit.tiers.{job_name}.day")
+                window_min = _parse_positive_int(
+                    window_value,
+                    field=f"permit.tiers.{job_name}.window_min",
+                )
+                burst_limit = _parse_positive_int(
+                    burst_value,
+                    field=f"permit.tiers.{job_name}.burst_limit",
+                )
+                permit_tiers[job_name] = PerChannelQuotaConfig(
+                    day=day,
+                    window_minutes=window_min,
+                    burst_limit=burst_limit,
+                )
+
+    permit = build_permit(
+        quota,
+        permit_gate=permit_gate,
+        tiers=permit_tiers or None,
+    )
 
     profiles = as_mapping(cfg.get("profiles"))
     discord_cfg = as_mapping(profiles.get("discord"))
@@ -176,10 +243,19 @@ def setup_runtime(
     if jitter_range_override is not None:
         scheduler_kwargs["jitter_range"] = jitter_range_override
 
+    scheduler_queue = queue
+    if scheduler_queue is None:
+        window_seconds = batch_window_override if batch_window_override is not None else 180.0
+        threshold = batch_threshold_override if batch_threshold_override is not None else 3
+        scheduler_queue = CoalesceQueue(
+            window_seconds=float(window_seconds),
+            threshold=threshold,
+        )
+
     scheduler = Scheduler(
         tz=tz,
         sender=scheduler_sender,
-        queue=queue,
+        queue=scheduler_queue,
         **scheduler_kwargs,
     )
 

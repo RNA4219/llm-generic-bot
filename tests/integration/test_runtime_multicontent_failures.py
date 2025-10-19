@@ -211,3 +211,64 @@ async def test_dm_digest_permit_denied_records_metrics() -> None:
     ]
 
     await orchestrator.close()
+
+
+async def test_scheduler_batch_threshold_from_settings() -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+
+    scheduler_cfg = settings.setdefault("scheduler", {})
+    scheduler_cfg["jitter_range_seconds"] = [1, 1]
+    scheduler_cfg["batch"] = {"window_seconds": 240, "threshold": 2}
+
+    class _StubSender:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str | None, str | None]] = []
+
+        async def send(
+            self,
+            text: str,
+            channel: str | None = None,
+            *,
+            job: str | None = None,
+        ) -> None:
+            self.calls.append((text, channel, job))
+
+    stub_sender = _StubSender()
+
+    scheduler, orchestrator, _jobs = main_module.setup_runtime(
+        settings,
+        sender=stub_sender,
+    )
+    scheduler.jitter_enabled = False
+
+    assert scheduler.jitter_range == (1, 1)
+    assert scheduler.queue.window_seconds == 240
+    assert getattr(scheduler.queue, "_threshold") == 2
+
+    job = scheduler._jobs[0]
+    scheduler.queue.push(
+        "first",
+        priority=job.priority,
+        job=job.name,
+        created_at=0.0,
+        channel=job.channel,
+    )
+    scheduler.queue.push(
+        "second",
+        priority=job.priority,
+        job=job.name,
+        created_at=0.0,
+        channel=job.channel,
+    )
+
+    await scheduler.dispatch_ready_batches(0.0)
+    await orchestrator.flush()
+
+    assert len(stub_sender.calls) == 1
+    sent_text, sent_channel, sent_job = stub_sender.calls[0]
+    assert sent_channel == job.channel
+    assert sent_job == job.name
+    assert "first" in sent_text and "second" in sent_text
+
+    await orchestrator.close()

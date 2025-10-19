@@ -52,13 +52,13 @@
 - [SND-02] Permit ゲート導入（`core/arbiter.py` など）はチャンネル別クォータ・メトリクスタグの更新を実装済みで、`tests/core/test_quota_gate.py` と `tests/integration/test_permit_bridge.py` が拒否理由タグと Permit 通過メトリクスを検証している。
 - [SCH-01] CoalesceQueue（`core/scheduler.py`）は近接メッセージ併合と即時フラッシュを完了しており、`tests/core/test_coalesce_queue.py::test_coalesce_queue_separates_incompatible_batches` ほかテーブル駆動ケースで優先度逆転ガードを保証している。
 - [SCH-02] ジッタ適用（`core/scheduler.py`）は送信時刻へランダムオフセットを付与する実装が完了し、`tests/core/test_scheduler_jitter.py::test_scheduler_applies_jitter` / `::test_scheduler_immediate_when_jitter_disabled` / `::test_scheduler_jitter_respects_range` が境界レンジと有効/無効切替を確認している。
-- [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator/__init__.py`・`core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から分割済み）は送信結果と Permit 連携ログを JSON へ記録する実装を完了し、`tests/core/structured_logging/test_success.py` が成功ログと相関 ID を検証し、`tests/core/structured_logging/test_failure.py` が失敗ログとエラー型タグを固定し、`tests/core/structured_logging/test_permit.py` が Permit 拒否ログとメトリクス増分を追跡し、`tests/core/structured_logging/test_duplicate.py` が重複スキップ時のログとメトリクスタグ整合を担保する。
+- [OPS-01] 構造化ログ/監査（`adapters/*`, `core/orchestrator/__init__.py` と `core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から分割済み）は送信結果と Permit 連携ログを JSON へ記録する実装を完了し、`tests/core/structured_logging/test_success.py` が成功ログと相関 ID を検証し、`tests/core/structured_logging/test_failure.py` が失敗ログとエラー型タグを固定し、`tests/core/structured_logging/test_permit.py` が Permit 拒否ログとメトリクス増分を追跡し、`tests/core/structured_logging/test_duplicate.py` が重複スキップ時のログとメトリクスタグ整合を担保する。
 - [OPS-05] CI パイプライン整備（`.github/workflows/ci.yml`）は `ruff check`・`mypy src`・`pytest -q` の並列運用と Slack 通知ガードを導入済みで、ワークフロー YAML の共通セットアップ重複解消まで反映済み。
 - [OPS-06] セキュリティスキャン拡充（`.github/workflows/ci.yml`）は週次 CodeQL・`pip-audit` を追加済みで、Slack 通知ガードと連動した異常検知運用へ移行済み。
 
 ## Sprint 2: UX & コンテンツ
 ### 完了済み
-- [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator/__init__.py`・`core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から移行済み）: リアクション履歴をもとに出力頻度を調整し、`tests/features/test_weather_engagement.py` で閾値・クールダウン・再開シナリオを固定。
+- [UX-01] Engagement 反映ロジック（`features/weather.py`, `core/orchestrator/__init__.py` と `core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から移行済み）: リアクション履歴をもとに出力頻度を調整し、`tests/features/test_weather_engagement.py` で閾値・クールダウン・再開シナリオを固定。
 - [UX-02] ニュース配信実装（`features/news.py`）: フィード取得・要約・クールダウンを統合し、`tests/features/test_news.py` で正常系とフォールバック・クールダウン抑止を検証。
 - [UX-03] おみくじ生成（`features/omikuji.py`）: テンプレートローテーションとユーザー別シードを実装し、`tests/features/test_omikuji.py` でローテーションとフォールバック挙動をカバー。
 - [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。
@@ -80,7 +80,7 @@
 - [DOC-B09] 週次サマリ節のテンプレート差分説明を補完し、`tests/integration/runtime_weekly_report/` 配下テストの検証観点を整理済み。→ 完了済み（残課題なし）
 
 ## Sprint 3: 運用・可観測性
-- [OPS-02] 週次サマリ（`core/orchestrator/__init__.py`・`core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から移行済み、`features/report.py`）: 成果・失敗を集計し運用向けに通知。
+- [OPS-02] 週次サマリ（`core/orchestrator/__init__.py` と `core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から移行済み、`features/report.py`）: 成果・失敗を集計し運用向けに通知。
 - [OPS-03] 設定再読込ログ（`src/llm_generic_bot/config/loader.py`, `src/llm_generic_bot/runtime/setup/__init__.py`, `config/*`）: リロード時の差分検出と監査ログ。
 - [OPS-04] ランタイムメトリクス（`src/llm_generic_bot/infra/metrics/aggregator.py`, `src/llm_generic_bot/infra/metrics/aggregator_state.py`, `src/llm_generic_bot/infra/metrics/reporting.py`, `src/llm_generic_bot/infra/metrics/service.py`）: `aggregator.py` が送信/Permit 事象の公開ファサードとなり、`aggregator_state.py` がロック付きの履歴保持と週次スナップショット生成を担いつつ、`service.py` のバックエンド構成と `reporting.py` の集約ロジックへ橋渡しする。
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。

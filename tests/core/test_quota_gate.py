@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 
 import pytest
 
@@ -21,6 +22,24 @@ class DummyMetrics:
     def increment(self, name: str, tags: dict[str, str]) -> None:
         self.calls.append((name, tags))
 
+
+@dataclass(frozen=True)
+class _FakeQuotaTier:
+    code: str
+    limit: int
+    window_minutes: int
+    message: str
+    retryable: bool
+    reevaluation: str
+
+    @property
+    def window_seconds(self) -> int:
+        return self.window_minutes * 60
+
+
+@dataclass(frozen=True)
+class _FakeQuotaConfig:
+    tiers: tuple[_FakeQuotaTier, ...]
 
 def test_quota_permit_allows_within_limits() -> None:
     metrics = DummyMetrics()
@@ -122,75 +141,86 @@ def test_quota_reset_after_window() -> None:
     assert metrics.calls[0][1]["code"] == "burst_limit"
 
 
-def test_quota_multilevel_and_hooks(caplog: pytest.LogCaptureFixture) -> None:
+@pytest.mark.parametrize(
+    (
+        "attempt_times",
+        "expected_reason",
+        "expected_code",
+        "expected_retryable",
+        "expected_reevaluation",
+    ),
+    (
+        (
+            (0.0, 10.0, 20.0),
+            "first tier reached",
+            "burst_tier1",
+            True,
+            "tier1",
+        ),
+        (
+            (0.0, 61.0, 122.0, 183.0),
+            "second tier reached",
+            "burst_tier2",
+            False,
+            "tier2",
+        ),
+    ),
+)
+def test_quota_hierarchical_denials_record_metrics(
+    attempt_times: tuple[float, ...],
+    expected_reason: str,
+    expected_code: str,
+    expected_retryable: bool,
+    expected_reevaluation: str,
+) -> None:
     metrics = DummyMetrics()
-    now = [0.0]
+    current = [0.0]
 
     def time_fn() -> float:
-        return now[0]
+        return current[0]
 
-    hook_calls: list[PermitRejectionContext] = []
-
-    def on_rejection(context: PermitRejectionContext) -> PermitReevaluationOutcome:
-        hook_calls.append(context)
-        assert context.level == "platform"
-        assert context.code == "burst_limit"
-        return PermitReevaluationOutcome(
-            level=context.level,
-            reason="queued",
-            retry_after=15.0,
-            allowed=False,
-        )
-
-    config = PermitGateConfig(
-        levels=(
-            PermitQuotaLevel(
-                name="per_channel",
-                quota=PerChannelQuotaConfig(day=10, window_minutes=1, burst_limit=5),
-            ),
-            PermitQuotaLevel(
-                name="platform",
-                quota=PerChannelQuotaConfig(day=10, window_minutes=1, burst_limit=1),
-                key_fn=lambda platform, _channel, _job: (platform or "-", "-"),
-            ),
+    tiers = (
+        _FakeQuotaTier(
+            code="burst_tier1",
+            limit=2,
+            window_minutes=1,
+            message="first tier reached",
+            retryable=True,
+            reevaluation="tier1",
         ),
-        hooks=PermitGateHooks(on_rejection=on_rejection),
+        _FakeQuotaTier(
+            code="burst_tier2",
+            limit=3,
+            window_minutes=5,
+            message="second tier reached",
+            retryable=False,
+            reevaluation="tier2",
+        ),
     )
-
     gate = PermitGate(
-        per_channel=PerChannelQuotaConfig(day=10, window_minutes=1, burst_limit=5),
+        per_channel=_FakeQuotaConfig(tiers=tiers),
         metrics=metrics.increment,
         logger=logging.getLogger("quota"),
         time_fn=time_fn,
-        config=config,
     )
 
-    assert gate.permit("discord", "alpha").allowed is True
-    now[0] += 1
-    caplog.set_level(logging.WARNING)
+    for ts in attempt_times[:-1]:
+        current[0] = ts
+        decision = gate.permit("discord", "tiered")
+        assert decision.allowed is True
 
-    denied = gate.permit("discord", "beta", job="news")
-    assert denied.allowed is False
-    assert denied.retryable is True
-    assert denied.reason == "burst limit reached"
-    assert denied.reevaluation is not None
-    assert denied.reevaluation.level == "platform"
-    assert denied.reevaluation.reason == "queued"
-    assert denied.reevaluation.retry_after == pytest.approx(15.0)
-    assert denied.reevaluation.allowed is False
+    current[0] = attempt_times[-1]
+    denial = gate.permit("discord", "tiered")
+    assert denial.allowed is False
+    assert denial.reason == expected_reason
+    assert denial.retryable is expected_retryable
 
-    assert hook_calls
-    context = hook_calls[0]
-    assert context.job == "news"
     assert metrics.calls[-1] == (
         "quota_denied",
         {
             "platform": "discord",
-            "channel": "beta",
-            "code": "burst_limit",
-            "level": "platform",
-            "reeval_reason": "queued",
+            "channel": "tiered",
+            "code": expected_code,
+            "reevaluation": expected_reevaluation,
         },
     )
-    assert "platform" in caplog.text
-    assert "queued" in caplog.text

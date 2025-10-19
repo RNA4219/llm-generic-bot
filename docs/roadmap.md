@@ -68,9 +68,9 @@
 - [OPS-B01] Permit/ジッタ/バッチ閾値の運用チューニングを継続し、閾値変更時も `tests/integration/test_runtime_multicontent_failures.py` がグリーンであることと、追加メトリクス検証を `tests/infra/` に整備する。
 - [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。
 - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
-- [OPS-B04] `tests/infra/test_metrics_reporting.py` の段階的廃止を進め、参照整理と CI グリーン化を確認する。
-- [OPS-B05] `tests/infra/test_metrics_reporting.py` 撤去前チェックを実施し、旧テストファイルへの残存参照がないことと CI 通過を証明する。
-- [OPS-B07] `tests/infra/test_metrics_reporting.py` 本削除を完了させ、撤去後の回帰防止とドキュメント更新を行う。
+- [OPS-B04] `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` へ分割済みのメトリクス報告テストを点検し、旧 `tests/infra/test_metrics_reporting.py` が担っていた観点（時間固定・記録・サービス連携）が欠落なく移管されたことをレビューする。
+- [OPS-B05] 旧テスト撤去後の参照整理を完了させ、レガシーパスに依存する設定/CI スクリプトが残っていないことを `rg tests/infra/test_metrics_reporting.py` などで確認し、分割先スイートのみで CI がグリーンであることを追証する。
+- [OPS-B07] 段階的撤去は完了済みとして記録し、ドキュメントやリンク類が `tests/infra/metrics/test_reporting_*.py` 群へ更新されていることを定期確認する。
 - [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。
 
 #### UX（体験・コンテンツ）

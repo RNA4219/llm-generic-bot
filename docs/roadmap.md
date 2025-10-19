@@ -81,6 +81,7 @@
 - [OPS-02] 週次サマリ（公開エントリ `core/orchestrator/__init__.py` とワーカープロセッサ `core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から移行済み、`features/report.py`）: 成果・失敗を集計し運用向けに通知。
 - [OPS-03] 設定再読込ログ（`src/llm_generic_bot/config/loader.py`, `src/llm_generic_bot/runtime/setup/__init__.py`, `config/*`）: リロード時の差分検出と監査ログ。
 - [OPS-04] ランタイムメトリクス（`src/llm_generic_bot/infra/metrics/aggregator.py`, `src/llm_generic_bot/infra/metrics/aggregator_state.py`, `src/llm_generic_bot/infra/metrics/reporting.py`, `src/llm_generic_bot/infra/metrics/service.py`）: `aggregator.py` が送信/Permit 事象の公開ファサードとなり、`aggregator_state.py` がロック付きの履歴保持と週次スナップショット生成を担いつつ、`service.py` のバックエンド構成と `reporting.py` の集約ロジックへ橋渡しする。
+  - `tests/infra/metrics/test_reporting_recording_metrics.py`: `send.delay_seconds` と `unit=seconds` タグの観測を固定する。
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。
 
 ## Sprint 4: テスト強化 & 異常系整備

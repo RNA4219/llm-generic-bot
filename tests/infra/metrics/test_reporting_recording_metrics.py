@@ -11,7 +11,7 @@ from llm_generic_bot.core.orchestrator import MetricsRecorder
 from llm_generic_bot.infra.metrics import reporting
 
 
-class RecordingMetricsLike(Protocol):
+class RecordingMetricsLike(MetricsRecorder, Protocol):
     increment_calls: list[tuple[str, dict[str, str]]]
     observe_calls: list[tuple[str, float, dict[str, str]]]
 
@@ -86,6 +86,34 @@ async def test_metrics_records_expected_labels_and_snapshot(
             }
         ],
     }
+
+
+@pytest.mark.anyio("asyncio")
+async def test_report_send_delay_records_unit_seconds(
+    make_recording_metrics: Callable[[], MetricsRecorder],
+) -> None:
+    recorder = cast(RecordingMetricsLike, make_recording_metrics())
+    reporting.configure_backend(recorder)
+
+    await reporting.report_send_delay(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        delay_seconds=1.25,
+    )
+
+    assert recorder.observe_calls == [
+        (
+            "send.delay_seconds",
+            pytest.approx(1.25),
+            {
+                "job": "weather",
+                "platform": "discord",
+                "channel": "alerts",
+                "unit": "seconds",
+            },
+        )
+    ]
 
 
 @pytest.mark.anyio("asyncio")

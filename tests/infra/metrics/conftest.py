@@ -11,28 +11,34 @@ from llm_generic_bot.core.orchestrator import MetricsRecorder
 from llm_generic_bot.infra.metrics import reporting
 
 try:  # pragma: no cover
-    from freezegun import freeze_time as _freezegun_freeze_time
+    from freezegun import freeze_time as _freezegun_freeze_time  # type: ignore[import-not-found]
 except ModuleNotFoundError:  # pragma: no cover
     from datetime import datetime as _datetime
     from unittest.mock import patch
 
-    @contextmanager
-    def _freeze_time_impl(iso_timestamp: str) -> Generator[None, None, None]:
-        frozen = _datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+    def _fallback_freeze_time(iso_timestamp: str) -> ContextManager[None]:
+        @contextmanager
+        def _freeze() -> Generator[None, None, None]:
+            frozen = _datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
 
-        class _Frozen(_datetime):
-            @classmethod
-            def now(cls, tz: timezone | None = None) -> _datetime:  # type: ignore[override]
-                if tz is None:
-                    return frozen
-                return frozen.astimezone(tz)
+            class _Frozen(_datetime):
+                @classmethod
+                def now(cls, tz: timezone | None = None) -> _datetime:  # type: ignore[override]
+                    if tz is None:
+                        return frozen
+                    return frozen.astimezone(tz)
 
-            @classmethod
-            def utcnow(cls) -> _datetime:  # type: ignore[override]
-                return frozen.astimezone(timezone.utc).replace(tzinfo=None)
+                @classmethod
+                def utcnow(cls) -> _datetime:  # type: ignore[override]
+                    return frozen.astimezone(timezone.utc).replace(tzinfo=None)
 
-        with patch("datetime.datetime", _Frozen), patch("time.time", lambda: frozen.timestamp()):
-            yield
+            with patch("datetime.datetime", _Frozen), patch("time.time", lambda: frozen.timestamp()):
+                yield
+
+        return _freeze()
+
+    def _freeze_time_impl(iso_timestamp: str) -> ContextManager[None]:
+        return _fallback_freeze_time(iso_timestamp)
 else:  # pragma: no cover
     def _freeze_time_impl(iso_timestamp: str) -> ContextManager[None]:
         return _freezegun_freeze_time(iso_timestamp)

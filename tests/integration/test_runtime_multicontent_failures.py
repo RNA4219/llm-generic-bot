@@ -211,3 +211,60 @@ async def test_dm_digest_permit_denied_records_metrics() -> None:
     ]
 
     await orchestrator.close()
+
+
+async def test_jitter_delay_records_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    queue = CoalesceQueue(window_seconds=1.0, threshold=1)
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
+
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("title", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue)
+    scheduler.jitter_enabled = True
+    scheduler.jitter_range = (3, 3)
+
+    delays: list[float] = []
+
+    async def _capture_sleep(duration: float) -> None:
+        delays.append(duration)
+
+    monkeypatch.setattr(scheduler, "_sleep", _capture_sleep, raising=False)
+    scheduler._last_dispatch_ts = 1.0
+
+    text = await jobs["news"]()
+    assert text
+    _run_dispatch(scheduler, text, created_at=0.0)
+
+    await scheduler.dispatch_ready_batches(1.0)
+    await orchestrator.flush()
+
+    assert delays == [pytest.approx(3.0)]
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert snapshot["success_rate"]["news"] == {"success": 1, "failure": 0, "ratio": 1.0}
+
+    metrics_snapshot = await orchestrator.weekly_snapshot()
+    tags_key = (
+        ("channel", "discord-news"),
+        ("job", "news"),
+        ("platform", "discord"),
+        ("unit", "seconds"),
+    )
+    assert "send.delay_seconds" in metrics_snapshot.observations
+    delay_stats = metrics_snapshot.observations["send.delay_seconds"][tags_key]
+    assert delay_stats.count == 1
+    assert delay_stats.minimum == pytest.approx(3.0)
+    assert delay_stats.maximum == pytest.approx(3.0)
+    assert delay_stats.average == pytest.approx(3.0)
+
+    await orchestrator.close()

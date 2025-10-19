@@ -10,6 +10,7 @@ import anyio
 from .arbiter import next_slot
 from .queue import CoalesceQueue, QueueBatch
 from .types import Sender
+from ..infra import metrics as metrics_module
 
 
 class _JobCallable(Protocol):
@@ -116,6 +117,15 @@ class Scheduler:
         job = batch.job
         channel = batch.channel
         text = batch.text
+        if delay > 0.0:
+            platform_value = getattr(self.sender, "platform", None)
+            platform = platform_value if isinstance(platform_value, str) and platform_value else "-"
+            await metrics_module.report_send_delay(
+                job=job_name,
+                platform=platform,
+                channel=channel,
+                delay_seconds=delay,
+            )
         await self._sleep(delay)
         await self.sender.send(text, channel, job=job_name)
         self._last_dispatch_ts = target_ts if delay > 0 else reference_ts

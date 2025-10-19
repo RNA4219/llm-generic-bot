@@ -9,32 +9,32 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Mapping, Optional, Protocol
 
-from .cooldown import CooldownGate
-from .dedupe import NearDuplicateFilter
-from ..infra import MetricsBackend, collect_weekly_snapshot
-from ..infra import metrics as metrics_module  # noqa: F401 - re-exported for tests
-from .orchestrator_metrics import (
+from ..cooldown import CooldownGate
+from ..dedupe import NearDuplicateFilter
+from ...infra import MetricsBackend, collect_weekly_snapshot
+from ...infra import metrics as metrics_module  # noqa: F401 - re-exported for tests
+from ..orchestrator_metrics import (
     MetricsRecorder,
     NullMetricsRecorder,
     resolve_metrics_boundary,
 )
 
 # LEGACY_ORCHESTRATOR_CHECKLIST: processor delegation registered
-_processor_path = Path(__file__).with_name("orchestrator") / "processor.py"
+_processor_path = Path(__file__).with_name("processor.py")
 _processor_spec = spec_from_file_location(
     "llm_generic_bot.core.orchestrator.processor",
     _processor_path,
 )
-_processor_module = module_from_spec(_processor_spec)
-if _processor_spec.loader is None:  # pragma: no cover - import machinery guard
+if _processor_spec is None or _processor_spec.loader is None:  # pragma: no cover - import machinery guard
     raise RuntimeError("failed to load orchestrator processor module")
+_processor_module = module_from_spec(_processor_spec)
 _processor_spec.loader.exec_module(_processor_module)
 sys.modules[_processor_spec.name] = _processor_module
 processor = _processor_module
 
 if TYPE_CHECKING:
-    from ..infra.metrics import WeeklyMetricsSnapshot
-    from .orchestrator_metrics import MetricsBoundary
+    from ...infra.metrics import WeeklyMetricsSnapshot
+    from ..orchestrator_metrics import MetricsBoundary
 
 
 class Sender(Protocol):
@@ -63,12 +63,12 @@ class _PermitDecision:
     job: Optional[str] = None
 
     @classmethod
-    def allowed(cls, job: Optional[str] = None) -> "PermitDecisionLike":
+    def allowed(cls, job: Optional[str] = None) -> "_PermitDecision":  # type: ignore[no-redef]
         return cls(True, None, True, job)
 
     @classmethod
-    def allow(cls, job: Optional[str] = None) -> "PermitDecisionLike":
-        return cls.allowed(job)
+    def allow(cls, job: Optional[str] = None) -> "_PermitDecision":
+        return cls(True, None, True, job)
 
 
 PermitDecision = _PermitDecision

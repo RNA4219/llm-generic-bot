@@ -16,6 +16,36 @@ from llm_generic_bot.features.dm_digest import DigestLogEntry
 from llm_generic_bot.features.news import NewsFeedItem, SummaryError
 from llm_generic_bot.infra.metrics import aggregator_state
 
+
+async def _dispatch_twice_with_jitter(
+    scheduler: Any,
+    orchestrator: Any,
+    *,
+    base_ts: float,
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[float]:
+    delays: list[float] = []
+
+    async def _fake_sleep(duration: float) -> None:
+        delays.append(duration)
+
+    def _fake_next_slot(
+        ts: float, clash: bool, jitter_range: tuple[int, int] = (60, 180)
+    ) -> float:
+        return ts if not clash else ts + 5.0
+
+    monkeypatch.setattr(scheduler, "_sleep", _fake_sleep)
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", _fake_next_slot)
+
+    _run_dispatch(scheduler, "first message", created_at=base_ts)
+    await scheduler.dispatch_ready_batches(base_ts)
+
+    _run_dispatch(scheduler, "second message", created_at=base_ts)
+    await scheduler.dispatch_ready_batches(base_ts)
+
+    await orchestrator.flush()
+    return delays
+
 pytestmark = pytest.mark.anyio("asyncio")
 
 

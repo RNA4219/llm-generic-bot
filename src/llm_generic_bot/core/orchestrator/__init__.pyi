@@ -1,4 +1,5 @@
-from ..orchestrator import (
+from . import processor
+from ._legacy import (
     MetricsRecorder,
     NullMetricsRecorder,
     Orchestrator,
@@ -8,7 +9,6 @@ from ..orchestrator import (
     Sender,
     _SendRequest,
     metrics_module,
-    processor,
 )
 
 __all__ = [

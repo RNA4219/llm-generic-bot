@@ -4,7 +4,15 @@ from dataclasses import dataclass
 import pytest
 
 from llm_generic_bot.config.quotas import PerChannelQuotaConfig
-from llm_generic_bot.core.arbiter import PermitDecision, PermitGate
+from llm_generic_bot.core.arbiter import (
+    PermitDecision,
+    PermitGate,
+    PermitGateConfig,
+    PermitGateHooks,
+    PermitQuotaLevel,
+    PermitReevaluationOutcome,
+    PermitRejectionContext,
+)
 
 
 class DummyMetrics:
@@ -52,6 +60,7 @@ def test_quota_permit_allows_within_limits() -> None:
     assert decision.allowed is True
     assert decision.reason is None
     assert decision.retryable is True
+    assert decision.reevaluation is None
     assert metrics.calls == []
 
 
@@ -84,10 +93,17 @@ def test_quota_denial_records_metrics_and_logs(caplog: pytest.LogCaptureFixture)
     assert metrics.calls == [
         (
             "quota_denied",
-            {"platform": "discord", "channel": "ch", "code": "daily_limit"},
+            {
+                "platform": "discord",
+                "channel": "ch",
+                "code": "daily_limit",
+                "level": "per_channel",
+                "reeval_reason": "daily limit reached",
+            },
         )
     ]
     assert "daily limit" in caplog.text
+    assert "per_channel" in caplog.text
 
 
 def test_quota_reset_after_window() -> None:
@@ -113,6 +129,7 @@ def test_quota_reset_after_window() -> None:
     assert denied.allowed is False
     assert denied.retryable is True
     assert denied.reason is not None and "burst" in denied.reason
+    assert denied.reevaluation is None
 
     current[0] += 61
     allowed_again = gate.permit("discord", "reset")

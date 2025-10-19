@@ -4,12 +4,56 @@ import logging
 import random
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Deque, Dict, Optional, Tuple
 
 from llm_generic_bot.config.quotas import PerChannelQuotaConfig
 
 DAY_SECONDS = 86400
+
+
+KeyFn = Callable[[str, Optional[str], Optional[str]], Tuple[str, str]]
+
+
+def _default_key(platform: str, channel: Optional[str], job: Optional[str]) -> Tuple[str, str]:
+    del job
+    return (platform or "-", channel or "-")
+
+
+@dataclass(frozen=True)
+class PermitReevaluationOutcome:
+    level: str
+    reason: str
+    retry_after: Optional[float] = None
+    allowed: Optional[bool] = None
+
+
+@dataclass(frozen=True)
+class PermitRejectionContext:
+    platform: str
+    channel: Optional[str]
+    job: Optional[str]
+    level: str
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class PermitGateHooks:
+    on_rejection: Optional[Callable[[PermitRejectionContext], Optional[PermitReevaluationOutcome]]] = None
+
+
+@dataclass(frozen=True)
+class PermitQuotaLevel:
+    name: str
+    quota: PerChannelQuotaConfig
+    key_fn: KeyFn = field(default=_default_key, repr=False)
+
+
+@dataclass(frozen=True)
+class PermitGateConfig:
+    levels: Tuple[PermitQuotaLevel, ...]
+    hooks: Optional[PermitGateHooks] = None
 
 
 @dataclass(frozen=True)
@@ -18,6 +62,7 @@ class PermitDecision:
     reason: Optional[str]
     retryable: bool
     job: Optional[str] = None
+    reevaluation: Optional[PermitReevaluationOutcome] = None
 
 
 @dataclass(frozen=True)
@@ -38,7 +83,10 @@ class PermitGate:
         metrics: Optional[Callable[[str, Dict[str, str]], None]] = None,
         logger: Optional[logging.Logger] = None,
         time_fn: Optional[Callable[[], float]] = None,
+        config: Optional[PermitGateConfig] = None,
     ) -> None:
+        if config is not None and not config.levels:
+            raise ValueError("PermitGateConfig.levels must not be empty")
         self.per_channel = per_channel
         self._metrics = metrics
         self._logger = logger or logging.getLogger(__name__)
@@ -77,8 +125,6 @@ class PermitGate:
         channel: Optional[str],
         job: Optional[str] = None,
     ) -> PermitDecision:
-        key = (platform or "-", channel or "-")
-        history = self._history.setdefault(key, deque())
         now = self._time()
         self._evict(history, now)
         for tier in self._tiers:
@@ -167,6 +213,7 @@ class PermitGate:
             reason=tier.message,
             retryable=tier.retryable,
             job=job,
+            reevaluation=reevaluation,
         )
 
 

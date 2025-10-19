@@ -41,6 +41,10 @@ module = [
 ]
 ignore_errors = true
 
+[[tool.mypy.overrides]]
+module = ["llm_generic_bot.core.orchestrator._legacy"]
+ignore_errors = true
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"

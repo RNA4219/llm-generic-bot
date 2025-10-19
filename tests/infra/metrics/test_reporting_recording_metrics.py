@@ -31,6 +31,12 @@ async def test_metrics_records_expected_labels_and_snapshot(
             duration_seconds=0.42,
             permit_tags={"decision": "allow"},
         )
+        await reporting.report_send_delay(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            delay_seconds=1.9,
+        )
         await reporting.report_send_failure(
             job="weather",
             platform="discord",
@@ -64,6 +70,11 @@ async def test_metrics_records_expected_labels_and_snapshot(
         (
             "send.duration",
             pytest.approx(0.42),
+            {"job": "weather", "platform": "discord", "channel": "alerts", "unit": "seconds"},
+        ),
+        (
+            "send.delay_seconds",
+            pytest.approx(1.9),
             {"job": "weather", "platform": "discord", "channel": "alerts", "unit": "seconds"},
         ),
         (

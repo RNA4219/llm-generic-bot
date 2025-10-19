@@ -221,6 +221,90 @@ def test_quota_hierarchical_denials_record_metrics(
             "platform": "discord",
             "channel": "tiered",
             "code": expected_code,
+            "level": "per_channel",
+            "reeval_reason": expected_reason,
             "reevaluation": expected_reevaluation,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("outcome_kwargs", "expected_allowed", "expected_retryable", "expected_reason"),
+    (
+        ({"reason": "retry soon", "retry_after": 30.0}, False, True, "burst limit reached"),
+        ({"reason": "manual override", "allowed": True}, True, True, None),
+    ),
+)
+def test_quota_reevaluation_callbacks_apply_outcome(
+    outcome_kwargs: dict[str, object],
+    expected_allowed: bool,
+    expected_retryable: bool,
+    expected_reason: str | None,
+) -> None:
+    metrics = DummyMetrics()
+    now = [0.0]
+
+    def time_fn() -> float:
+        return now[0]
+
+    contexts: list[PermitRejectionContext] = []
+
+    def channel_key(platform: str, channel: str | None, job: str | None) -> tuple[str, str]:
+        return (platform or "-", channel or "-")
+
+    def platform_key(platform: str, channel: str | None, job: str | None) -> tuple[str, str]:
+        del channel, job
+        return (platform or "-", "-")
+
+    base_quota = PerChannelQuotaConfig(day=5, window_minutes=1, burst_limit=5)
+    strict_quota = PerChannelQuotaConfig(day=1, window_minutes=1, burst_limit=1)
+
+    outcome = PermitReevaluationOutcome(level="per_platform", **outcome_kwargs)
+
+    def hook(context: PermitRejectionContext) -> PermitReevaluationOutcome:
+        contexts.append(context)
+        return outcome
+
+    gate = PermitGate(
+        per_channel=strict_quota,
+        metrics=metrics.increment,
+        logger=logging.getLogger("quota"),
+        time_fn=time_fn,
+        config=PermitGateConfig(
+            levels=(
+                PermitQuotaLevel(name="per_channel", quota=base_quota, key_fn=channel_key),
+                PermitQuotaLevel(name="per_platform", quota=strict_quota, key_fn=platform_key),
+            ),
+            hooks=PermitGateHooks(on_rejection=hook),
+        ),
+    )
+
+    assert gate.permit("discord", "general").allowed is True
+    now[0] += 1
+    decision = gate.permit("discord", "general")
+
+    assert decision.allowed is expected_allowed
+    assert decision.reason == expected_reason
+    assert decision.reevaluation == outcome
+    assert decision.retryable is expected_retryable
+
+    assert contexts == [
+        PermitRejectionContext(
+            platform="discord",
+            channel="general",
+            job=None,
+            level="per_platform",
+            code="burst_limit",
+            message="burst limit reached",
+        )
+    ]
+    assert metrics.calls[-1] == (
+        "quota_denied",
+        {
+            "platform": "discord",
+            "channel": "general",
+            "code": "burst_limit",
+            "level": "per_platform",
+            "reeval_reason": "burst limit reached",
         },
     )

@@ -2,6 +2,7 @@
 # タスク記録
 
 - 2025-10-18: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-18 へ補正し、`markdownlint docs/tasks/backlog.md` と `markdownlint TASKS.md` を実行して整形確認を完了。
+- 2025-10-18: DOC-B13 を完了扱いへ更新し、docs/tasks/backlog.md の該当行でチェック更新と整形確認（`markdownlint docs/tasks/backlog.md`・`markdownlint TASKS.md`）および関連テスト実行を記録。
 - 2025-10-18: docs/tasks/backlog.md の DOC-B12 を完了へ更新し、docs/roadmap.md の DOC-B12 記述も完了状態へ揃えた。
 - 2025-10-18: docs/tasks/backlog.md に DOC-B13 をバックログ項目として追加し、関連ドキュメント更新の追跡開始を記録。
 - 2025-10-18: docs/roadmap.md の統合テスト一覧にある残課題記述を最新バックログ参照へ差し替え、重複説明を排除。

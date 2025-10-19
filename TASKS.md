@@ -48,6 +48,7 @@
 - 2025-10-18: docs/tasks/backlog.md へオーケストレータシム撤去タスクを追加し、`tests/infra/test_metrics_reporting.py` 依存解消のチェックリストを整備予定。
 - 2025-10-18: docs/tasks/backlog.md の DOC-B10 行で完了チェックと備考整備を追記し、反映日を揃えた記録。
 - 2025-10-18: DOC-B11 を完了扱いへ更新し、docs/tasks/backlog.md のチェック更新と整形確認（`markdownlint docs/tasks/backlog.md`・`markdownlint TASKS.md`）を実施した旨を追記。
+- 2025-10-18: DOC-B13 を完了扱いへ更新し、docs/tasks/backlog.md のチェック更新と整形確認（`markdownlint docs/tasks/backlog.md`・`markdownlint TASKS.md`）および関連テスト実行を記録。
 - 2025-10-18: docs/tasks/sprint3.md の OPS-04 行で確認テスト列を `tests/infra/metrics/test_reporting_freeze_time.py`・`test_reporting_recording_metrics.py`・`test_reporting_service.py` へ差し替え、備考に旧 `tests/infra/test_metrics_reporting` シム継続を追記。
 - 2025-10-18: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へテンプレート改変・行整形・自己スコア除外を担保する統合テストを追記し、週次サマリ検証範囲の明示を更新。
 - 2025-10-18: (a) docs/roadmap.md に週次サマリ追加テストの検証観点を追記する作業を予定し、(b) docs/tasks/backlog.md へ Orchestrator シム撤去タスクを登録して影響範囲の移行手順を整理。

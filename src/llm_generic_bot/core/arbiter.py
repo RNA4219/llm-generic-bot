@@ -12,12 +12,57 @@ from llm_generic_bot.config.quotas import PerChannelQuotaConfig
 DAY_SECONDS = 86400
 
 
+KeyFn = Callable[[str, Optional[str], Optional[str]], Tuple[str, str]]
+
+
+def _default_key(platform: str, channel: Optional[str], job: Optional[str]) -> Tuple[str, str]:
+    del job
+    return (platform or "-", channel or "-")
+
+
+@dataclass(frozen=True)
+class PermitReevaluationOutcome:
+    level: str
+    reason: str
+    retry_after: Optional[float] = None
+    allowed: Optional[bool] = None
+
+
+@dataclass(frozen=True)
+class PermitRejectionContext:
+    platform: str
+    channel: Optional[str]
+    job: Optional[str]
+    level: str
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class PermitGateHooks:
+    on_rejection: Optional[Callable[[PermitRejectionContext], Optional[PermitReevaluationOutcome]]] = None
+
+
+@dataclass(frozen=True)
+class PermitQuotaLevel:
+    name: str
+    quota: PerChannelQuotaConfig
+    key_fn: KeyFn = field(default=_default_key, repr=False)
+
+
+@dataclass(frozen=True)
+class PermitGateConfig:
+    levels: Tuple[PermitQuotaLevel, ...]
+    hooks: Optional[PermitGateHooks] = None
+
+
 @dataclass(frozen=True)
 class PermitDecision:
     allowed: bool
     reason: Optional[str]
     retryable: bool
     job: Optional[str] = None
+    reevaluation: Optional[PermitReevaluationOutcome] = None
 
 
 class PermitGate:
@@ -29,7 +74,10 @@ class PermitGate:
         metrics: Optional[Callable[[str, Dict[str, str]], None]] = None,
         logger: Optional[logging.Logger] = None,
         time_fn: Optional[Callable[[], float]] = None,
+        config: Optional[PermitGateConfig] = None,
     ) -> None:
+        if config is not None and not config.levels:
+            raise ValueError("PermitGateConfig.levels must not be empty")
         self.per_channel = per_channel
         self._tiers: Dict[str, PerChannelQuotaConfig] = dict(tiers) if tiers else {}
         self._metrics = metrics
@@ -102,6 +150,7 @@ class PermitGate:
         platform: str,
         channel: Optional[str],
         *,
+        level: str,
         code: str,
         message: str,
         retryable: bool,
@@ -111,17 +160,47 @@ class PermitGate:
             "platform": platform or "-",
             "channel": channel or "-",
             "code": code,
+            "level": level,
+            "reeval_reason": message,
         }
+        reevaluation: Optional[PermitReevaluationOutcome] = None
+        if self._hooks is not None and self._hooks.on_rejection is not None:
+            context = PermitRejectionContext(
+                platform=platform or "-",
+                channel=channel,
+                job=job,
+                level=level,
+                code=code,
+                message=message,
+            )
+            reevaluation = self._hooks.on_rejection(context)
+            if reevaluation is not None:
+                tags["reeval_reason"] = reevaluation.reason
         if self._metrics is not None:
             self._metrics("quota_denied", tags)
-        self._logger.warning(
-            "Quota denied for %s/%s: %s", platform or "-", channel or "-", message
-        )
+        if reevaluation is not None:
+            self._logger.warning(
+                "Quota denied for %s/%s at level %s: %s (reeval=%s)",
+                platform or "-",
+                channel or "-",
+                level,
+                message,
+                reevaluation.reason,
+            )
+        else:
+            self._logger.warning(
+                "Quota denied for %s/%s at level %s: %s",
+                platform or "-",
+                channel or "-",
+                level,
+                message,
+            )
         return PermitDecision(
             allowed=False,
             reason=message,
             retryable=retryable,
             job=job,
+            reevaluation=reevaluation,
         )
 
     def _resolve_quota(

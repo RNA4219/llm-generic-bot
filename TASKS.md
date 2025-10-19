@@ -3,6 +3,7 @@
 # タスク記録
 
 - 2025-10-18: `pytest tests/integration/test_runtime_multicontent_failures.py -k reevaluation -q` を実行し、1 passed / 5 deselected を確認。
+- 2025-10-18: docs/roadmap.md と docs/tasks/backlog.md の OPS-B04/B05/B07 記述を `tests/infra/metrics/test_reporting_*` 参照へ更新し、`npx markdownlint-cli docs/roadmap.md`・`npx markdownlint-cli docs/tasks/backlog.md` を実行後に `git diff docs/roadmap.md` で差分を確認。
 - 2025-10-18: PermitGate の履歴初期化と再評価値返却を修正し、`pytest tests/core/test_quota_gate.py -k permit -q`・`ruff check src/llm_generic_bot/core/arbiter.py tests/core/test_quota_gate.py`・`mypy src/llm_generic_bot/core/arbiter.py` を順に実行して緑化を確認。
 - 2025-10-18: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-18 へ補正し、`markdownlint docs/tasks/backlog.md` と `markdownlint TASKS.md` を実行して整形確認を完了。
 - 2025-10-18: DOC-B13 を完了扱いへ更新し、docs/tasks/backlog.md の該当行でチェック更新と整形確認（`markdownlint docs/tasks/backlog.md`・`markdownlint TASKS.md`）および関連テスト実行を記録。

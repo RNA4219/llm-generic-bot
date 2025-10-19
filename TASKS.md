@@ -1,6 +1,7 @@
 - 2025-10-19: docs/tasks/sprint2.md の UX-01 対象モジュール参照を `core/orchestrator/__init__.py` へ更新し、`git diff docs/tasks/sprint2.md` を確認。環境に `markdownlint` が存在せず `command not found` を確認したため導入検討が必要。
 - 2025-10-19: docs/tasks/sprint3.md の `core/orchestrator.py` 参照を `core/orchestrator/__init__.py` へ補正し、同ファイルに OPS-02/OPS-04 など複数タスクが並列で存在することを記録。
 - 2025-10-19: OPS-B04/B05/B07 を `tests/infra/metrics/test_reporting_freeze_time.py`・`test_reporting_recording_metrics.py`・`test_reporting_service.py` 前提へ更新し、docs/tasks/backlog.md と docs/roadmap.md の旧 `tests/infra/test_metrics_reporting.py` 参照を除去して完了扱いへ整理。
+- 2025-10-19: docs/tasks/sprint1.md の SND-02/OPS-01 行で対象モジュール参照を `core/orchestrator/__init__.py` へ補正し、同一ファイルに複数タスクが積まれていることを明示。`markdownlint docs/tasks/sprint1.md` を実行後、`git diff docs/tasks/sprint1.md` で差分を確認。
 <!-- markdownlint-disable MD013 MD025 -->
 # タスク記録
 

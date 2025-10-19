@@ -1,3 +1,4 @@
+- 2025-10-19: OPS-B01/B02/B03/B06・UX-B01・DOC-B15 の未完了を再確認し、`rg "\\[ \]"` で未チェック項目が上記6件のみであることを確認。
 - 2025-10-19: DOC-B15 を追加し、docs/roadmap.md の DOC 残課題節へ同期。`npx markdownlint-cli docs/roadmap.md` と `pytest tests/integration/runtime_weekly_report/test_templates.py -q` を実行して整形と検証結果を記録。
 - 2025-10-19: docs/roadmap.md 残課題節から OPS-B04/B05/B07 を除外し、完了注記へ集約。`npx markdownlint-cli docs/roadmap.md` と `git diff docs/roadmap.md TASKS.md` を再確認。
 - 2025-10-19: docs/roadmap.md の残課題節に OPS-B04/B05/B07 完了注記（残課題一覧から除外済み）を追記し、`TASKS.md` 同日付記録を更新。`npx markdownlint-cli docs/roadmap.md`・`git diff docs/roadmap.md TASKS.md` を実行して差分を確認予定。

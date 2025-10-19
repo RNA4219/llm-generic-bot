@@ -4,6 +4,7 @@ from __future__ import annotations
 # - [x] reporting.py から直接 aggregator_state を参照する  # 2024-06 完了: reporting.py は aggregator_state._AGGREGATOR を直接利用
 # - [x] orchestrator_metrics が新ファサードに移行する  # 2024-06 完了: orchestrator_metrics は aggregator_state ベースのファサードで統一
 # - [x] tests が aggregator_state を優先的に import する  # 2024-06 完了: テストは aggregator_state を参照する互換レイヤーを使用
+# - [x] aggregator_state の純粋関数を aggregator_records へ移管する  # 2025-05 再確認: aggregator_state は状態管理のみに専念
 # NOTE: reporting.py・core/orchestrator_metrics.py・関連テストは aggregator_state ベースのファサードへ移行済み。
 
 from typing import Mapping

@@ -126,6 +126,8 @@ class PermitGate:
         job: Optional[str] = None,
     ) -> PermitDecision:
         now = self._time()
+        key = _default_key(platform, channel, job)
+        history = self._history.setdefault(key, deque())
         self._evict(history, now)
         for tier in self._tiers:
             if self._exceeds_tier(history, now, tier):
@@ -208,6 +210,7 @@ class PermitGate:
             channel or "-",
             tier.message,
         )
+        reevaluation = tier.reevaluation
         return PermitDecision(
             allowed=False,
             reason=tier.message,

@@ -219,7 +219,7 @@ class PermitGate:
         job: Optional[str],
         level: str,
     ) -> PermitDecision:
-        reevaluation = None
+        reevaluation: Optional[PermitReevaluationOutcome] = None
         if self._hooks and self._hooks.on_rejection:
             context = PermitRejectionContext(
                 platform=platform,
@@ -254,7 +254,6 @@ class PermitGate:
             level,
             tier.message,
         )
-        reevaluation = tier.reevaluation
         return PermitDecision(
             allowed=False,
             reason=tier.message,

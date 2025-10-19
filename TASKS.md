@@ -1,3 +1,4 @@
+- 2025-10-19: docs/roadmap.md の `core/orchestrator.py` 表記を `core/orchestrator/__init__.py`・`core/orchestrator/processor.py` へ更新し、旧パス注記へ差し替え。`markdownlint docs/roadmap.md`（コマンド未導入で失敗）と `git diff docs/roadmap.md` を実行して差分を確認。
 - 2025-10-19: OPS-B04/B05/B07 を `tests/infra/metrics/test_reporting_freeze_time.py`・`test_reporting_recording_metrics.py`・`test_reporting_service.py` 前提へ更新し、docs/tasks/backlog.md と docs/roadmap.md の旧 `tests/infra/test_metrics_reporting.py` 参照を除去して完了扱いへ整理。
 <!-- markdownlint-disable MD013 MD025 -->
 # タスク記録

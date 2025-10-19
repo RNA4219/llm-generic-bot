@@ -254,6 +254,7 @@ class PermitGate:
             level,
             tier.message,
         )
+        reevaluation = tier.reevaluation
         return PermitDecision(
             allowed=False,
             reason=tier.message,

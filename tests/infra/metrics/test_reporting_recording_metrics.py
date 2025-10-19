@@ -274,3 +274,76 @@ async def test_weekly_snapshot_retention_survives_backend_reconfiguration(
         "weather": {"1s": 1}
     }
     assert snapshot["permit_denials"] == []
+
+
+@pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_trims_history_without_mutating_delay_observations(
+    make_recording_metrics: Callable[[], MetricsRecorder],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_time = datetime(2025, 5, 20, tzinfo=timezone.utc)
+    current = {"value": base_time}
+
+    monkeypatch.setattr(
+        aggregator_state,
+        "_utcnow",
+        lambda: current["value"],
+    )
+
+    reporting.set_retention_days(2)
+
+    recorder = cast(RecordingMetricsLike, make_recording_metrics())
+    reporting.configure_backend(recorder)
+
+    current["value"] = base_time - timedelta(days=4)
+    await reporting.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.75,
+        permit_tags={"decision": "allow"},
+    )
+
+    current["value"] = base_time - timedelta(days=1)
+    await reporting.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.55,
+        permit_tags={"decision": "allow"},
+    )
+    await reporting.report_send_delay(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        delay_seconds=1.2,
+    )
+
+    current["value"] = base_time
+    snapshot = reporting.weekly_snapshot()
+
+    assert snapshot["success_rate"] == {
+        "weather": {
+            "success": 1,
+            "failure": 0,
+            "ratio": pytest.approx(1.0),
+        }
+    }
+    assert snapshot["latency_histogram_seconds"] == {"weather": {"1s": 1}}
+    assert [
+        call
+        for call in recorder.observe_calls
+        if call[0] == "send.delay_seconds"
+    ] == [
+        (
+            "send.delay_seconds",
+            pytest.approx(1.2),
+            {
+                "job": "weather",
+                "platform": "discord",
+                "channel": "alerts",
+                "unit": "seconds",
+            },
+        )
+    ]
+    assert len(aggregator_state._AGGREGATOR._send_events) == 1

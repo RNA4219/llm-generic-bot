@@ -1,3 +1,4 @@
+- 2025-10-19: docs/tasks/backlog.md の OPS-B02 / UX-B01 行を `core/orchestrator/__init__.py`・`core/orchestrator/processor.py` 参照強調へ再調整し、同ファイルの重複更新として `markdownlint docs/tasks/backlog.md`（command not found）と `git diff docs/tasks/backlog.md` を実行して差分確認を再記録。
 - 2025-10-19: docs/tasks/backlog.md の OPS-B02 / UX-B01 対象領域を `core/orchestrator/__init__.py` 参照へ再補正し、`markdownlint docs/tasks/backlog.md`（環境未導入で失敗）と `git diff docs/tasks/backlog.md` を実行して差分を確認。重複編集の記録として本行を追加。
 - 2025-10-19: docs/roadmap.md の `core/orchestrator.py` 表記を `core/orchestrator/__init__.py`・`core/orchestrator/processor.py` へ更新し、旧パス注記へ差し替え。`markdownlint docs/roadmap.md`（コマンド未導入で失敗）と `git diff docs/roadmap.md` を実行して差分を確認。
 - 2025-10-19: docs/tasks/sprint2.md の UX-01 対象モジュール参照を `core/orchestrator/__init__.py` へ更新し、`git diff docs/tasks/sprint2.md` を確認。環境に `markdownlint` が存在せず `command not found` を確認したため導入検討が必要。

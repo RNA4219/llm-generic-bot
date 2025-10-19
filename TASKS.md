@@ -1,4 +1,5 @@
 - 2025-10-19: docs/roadmap.md 残課題節から OPS-B04/B05/B07 を除外し、完了注記へ集約。`npx markdownlint-cli docs/roadmap.md` と `git diff docs/roadmap.md TASKS.md` を再確認。
+- 2025-10-19: docs/roadmap.md の残課題節に OPS-B04/B05/B07 完了注記（残課題一覧から除外済み）を追記し、`TASKS.md` 同日付記録を更新。`npx markdownlint-cli docs/roadmap.md`・`git diff docs/roadmap.md TASKS.md` を実行して差分を確認予定。
 - 2025-10-19: docs/roadmap.md の OPS-B04/B05/B07 を完了扱いへ更新し、`npx markdownlint-cli docs/roadmap.md`・`git diff docs/roadmap.md TASKS.md` を実行して整形と差分を確認。
 - 2025-10-19: docs/tasks/backlog.md の OPS-B02 / UX-B01 参照を `core/orchestrator/__init__.py` 再輸出注記へ再調整し、同一ファイルの重複更新として `markdownlint docs/tasks/backlog.md`（command not found）→`npx markdownlint-cli docs/tasks/backlog.md`→`git diff docs/tasks/backlog.md` を実行して差分を確認。
 - 2025-10-19: docs/roadmap.md の OPS-01/UX-01/OPS-02 行へ `core/orchestrator/__init__.py`（公開エントリ）と `core/orchestrator/processor.py`（ワーカープロセッサ）の役割説明を追記し、旧 `core/orchestrator.py`（削除済み）注記を維持したまま整備。`markdownlint docs/roadmap.md`（command not found）と `git diff docs/roadmap.md` を実行し、差分をレビュー済み。

@@ -69,7 +69,7 @@
 - [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。
 - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
 - [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。
-- ※ OPS-B04/B05/B07 は 2025-10-18 に完了済み（`tests/infra/metrics/test_reporting_*` 系 CI 緑化・ドキュメント同期済み）。
+- ※ OPS-B04/B05/B07 は 2025-10-18 に完了済みのため残課題一覧から除外している（`tests/infra/metrics/test_reporting_*` 系 CI 緑化・ドキュメント同期済み）。
 
 #### UX（体験・コンテンツ）
 - [UX-B01] Engagement 指標の長期トレンド分析と Permit クォータ変動時の通知頻度調整をテストダブルで検証し、`tests/features/test_weather_engagement.py` に新ケースを追加する。

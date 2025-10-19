@@ -10,6 +10,15 @@ from typing import Any, Dict, Iterable
 import pytest
 
 from llm_generic_bot import main as main_module
+from llm_generic_bot.config.quotas import PerChannelQuotaConfig
+from llm_generic_bot.core.arbiter import (
+    PermitGate,
+    PermitGateConfig,
+    PermitGateHooks,
+    PermitQuotaLevel,
+    PermitReevaluationOutcome,
+    PermitRejectionContext,
+)
 from llm_generic_bot.core.orchestrator import PermitDecision
 from llm_generic_bot.core.queue import CoalesceQueue
 from llm_generic_bot.features.dm_digest import DigestLogEntry
@@ -114,6 +123,91 @@ async def test_permit_denied_records_metrics(caplog: pytest.LogCaptureFixture) -
     assert aggregator_state.weekly_snapshot()["permit_denials"] == [
         {"job": "news-denied", "platform": "discord", "channel": "discord-news", "reason": "quota", "retryable": "false"}
     ]
+    await orchestrator.close()
+
+
+async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    settings["dedupe"]["enabled"] = False
+
+    current_time = 1_000_000.0
+    monkeypatch.setattr(time, "time", lambda: current_time)
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
+
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("reeval", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    quota = PerChannelQuotaConfig(day=2, window_minutes=1, burst_limit=1)
+    reevaluation_state: dict[str, float | None] = {"after": None}
+
+    def time_fn() -> float:
+        return current_time
+
+    def _on_rejection(ctx: PermitRejectionContext) -> PermitReevaluationOutcome:
+        del ctx
+        reevaluation_state["after"] = current_time + 61.0
+        return PermitReevaluationOutcome(
+            level="per_channel",
+            reason="retry after cooldown",
+            retry_after=61.0,
+            allowed=None,
+        )
+
+    gate = PermitGate(
+        per_channel=quota,
+        time_fn=time_fn,
+        config=PermitGateConfig(
+            levels=(PermitQuotaLevel(name="per_channel", quota=quota),),
+            hooks=PermitGateHooks(on_rejection=_on_rejection),
+        ),
+    )
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(
+        settings,
+        queue=queue,
+        permit_gate=gate,
+    )
+    scheduler.jitter_enabled = False
+
+    text = await jobs["news"]()
+    assert text
+    _run_dispatch(scheduler, text, created_at=current_time)
+    await scheduler.dispatch_ready_batches(current_time)
+    await orchestrator.flush()
+
+    _run_dispatch(scheduler, text, created_at=current_time)
+    await scheduler.dispatch_ready_batches(current_time)
+    await orchestrator.flush()
+
+    after = reevaluation_state["after"]
+    assert after is not None
+    current_time = after + 1.0
+
+    _run_dispatch(scheduler, text, created_at=current_time)
+    await scheduler.dispatch_ready_batches(current_time)
+    await orchestrator.flush()
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert snapshot["success_rate"]["news"] == {"success": 2, "failure": 0, "ratio": 1.0}
+    assert snapshot["permit_denials"] == [
+        {
+            "job": "news",
+            "platform": "discord",
+            "channel": "discord-news",
+            "reason": "burst limit reached",
+            "retryable": "true",
+        }
+    ]
+
     await orchestrator.close()
 
 

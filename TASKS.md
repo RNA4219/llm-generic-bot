@@ -1,6 +1,7 @@
 <!-- markdownlint-disable MD013 MD025 -->
 # タスク記録
 
+- 2025-10-18: `pytest tests/integration/test_runtime_multicontent_failures.py -k reevaluation -q` を実行し、1 passed / 5 deselected を確認。
 - 2025-10-18: docs/tasks/backlog.md の Frontmatter `updated` を 2025-10-18 へ補正し、`markdownlint docs/tasks/backlog.md` と `markdownlint TASKS.md` を実行して整形確認を完了。
 - 2025-10-18: DOC-B13 を完了扱いへ更新し、docs/tasks/backlog.md の該当行でチェック更新と整形確認（`markdownlint docs/tasks/backlog.md`・`markdownlint TASKS.md`）および関連テスト実行を記録。
 - 2025-10-18: DOC-B13 の完了更新を再確認し、整形確認（`markdownlint docs/tasks/backlog.md`）と関連テスト（`pytest tests/adapters/test_retry_policy.py::test_max_attempts -q`）の実施結果を追記。

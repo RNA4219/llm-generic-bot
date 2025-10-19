@@ -91,31 +91,21 @@ class PermitGate:
         self._metrics = metrics
         self._logger = logger or logging.getLogger(__name__)
         self._time = time_fn or time.time
-        self._history: Dict[Tuple[str, str], Deque[float]] = {}
-        tiers_attr = getattr(per_channel, "tiers", None)
-        if tiers_attr:
-            normalized_tiers = tuple(self._normalize_tier(tier) for tier in tiers_attr)
-        else:
-            normalized_tiers = (
-                _QuotaTier(
-                    code="burst_limit",
-                    message="burst limit reached",
-                    retryable=True,
-                    limit=per_channel.burst_limit,
-                    window_seconds=per_channel.window_seconds,
-                    reevaluation=None,
-                ),
-                _QuotaTier(
-                    code="daily_limit",
-                    message="daily limit reached",
-                    retryable=False,
-                    limit=per_channel.day,
-                    window_seconds=DAY_SECONDS,
-                    reevaluation=None,
-                ),
+        self._hooks = config.hooks if config else None
+        if config is None:
+            levels: Tuple[PermitQuotaLevel, ...] = (
+                PermitQuotaLevel(name="per_channel", quota=per_channel),
             )
-        self._tiers: tuple[_QuotaTier, ...] = normalized_tiers
-        retention_candidates = [tier.window_seconds for tier in self._tiers]
+        else:
+            levels = config.levels
+        self._levels = levels
+        self._history: Dict[Tuple[str, str, str], Deque[float]] = {}
+        self._tiers_by_level: Dict[str, tuple[_QuotaTier, ...]] = {}
+        retention_candidates: list[int] = []
+        for level in self._levels:
+            tiers = self._resolve_tiers(level.quota)
+            self._tiers_by_level[level.name] = tiers
+            retention_candidates.extend(tier.window_seconds for tier in tiers)
         retention_window = max(retention_candidates) if retention_candidates else DAY_SECONDS
         self._retention_window = max(DAY_SECONDS, retention_window)
 
@@ -126,15 +116,48 @@ class PermitGate:
         job: Optional[str] = None,
     ) -> PermitDecision:
         now = self._time()
-        key = _default_key(platform, channel, job)
-        history = self._history.setdefault(key, deque())
-        self._evict(history, now)
-        for tier in self._tiers:
-            if self._exceeds_tier(history, now, tier):
-                return self._deny(platform, channel, tier=tier, job=job)
+        pending: list[Deque[float]] = []
+        for level in self._levels:
+            key_a, key_b = level.key_fn(platform, channel, job)
+            history_key = (level.name, key_a, key_b)
+            history = self._history.setdefault(history_key, deque())
+            self._evict(history, now)
+            for tier in self._tiers_by_level[level.name]:
+                if self._exceeds_tier(history, now, tier):
+                    return self._deny(platform, channel, tier=tier, job=job, level=level.name)
+            pending.append(history)
 
-        history.append(now)
+        for history in pending:
+            history.append(now)
         return PermitDecision(allowed=True, reason=None, retryable=True, job=job)
+
+    def _resolve_tiers(self, quota: object) -> tuple[_QuotaTier, ...]:
+        tiers_attr = getattr(quota, "tiers", None)
+        if tiers_attr:
+            return tuple(self._normalize_tier(tier) for tier in tiers_attr)
+        burst_limit = getattr(quota, "burst_limit", None)
+        window_seconds = getattr(quota, "window_seconds", None)
+        day = getattr(quota, "day", None)
+        if burst_limit is None or window_seconds is None or day is None:
+            raise ValueError("quota must define tiers or burst/day limits")
+        return (
+            _QuotaTier(
+                code="burst_limit",
+                message="burst limit reached",
+                retryable=True,
+                limit=int(burst_limit),
+                window_seconds=int(window_seconds),
+                reevaluation=None,
+            ),
+            _QuotaTier(
+                code="daily_limit",
+                message="daily limit reached",
+                retryable=False,
+                limit=int(day),
+                window_seconds=DAY_SECONDS,
+                reevaluation=None,
+            ),
+        )
 
     def _normalize_tier(self, tier: object) -> _QuotaTier:
         code = getattr(tier, "code", None)
@@ -194,7 +217,21 @@ class PermitGate:
         *,
         tier: _QuotaTier,
         job: Optional[str],
+        level: str,
     ) -> PermitDecision:
+        reevaluation = None
+        if self._hooks and self._hooks.on_rejection:
+            context = PermitRejectionContext(
+                platform=platform,
+                channel=channel,
+                job=job,
+                level=level,
+                code=tier.code,
+                message=tier.message,
+            )
+            reevaluation = self._hooks.on_rejection(context)
+        if reevaluation is None and tier.reevaluation is not None:
+            reevaluation = PermitReevaluationOutcome(level=level, reason=tier.reevaluation)
         tags = {
             "platform": platform or "-",
             "channel": channel or "-",
@@ -202,12 +239,19 @@ class PermitGate:
         }
         if tier.reevaluation is not None:
             tags["reevaluation"] = tier.reevaluation
+        else:
+            reason_hint = tier.message
+            if reevaluation is not None and reevaluation.reason:
+                reason_hint = reevaluation.reason
+            tags["level"] = level
+            tags["reeval_reason"] = reason_hint
         if self._metrics is not None:
             self._metrics("quota_denied", tags)
         self._logger.warning(
-            "Quota denied for %s/%s: %s",
+            "Quota denied for %s/%s at level %s: %s",
             platform or "-",
             channel or "-",
+            level,
             tier.message,
         )
         reevaluation = tier.reevaluation

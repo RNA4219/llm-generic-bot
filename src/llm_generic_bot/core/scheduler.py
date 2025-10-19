@@ -3,7 +3,8 @@ from __future__ import annotations
 import datetime as dt
 # NOTE: tests monkeypatch the module-level `dt` alias to control time.
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Final, List, Optional, Protocol
+from importlib import import_module
+from typing import Awaitable, Callable, Final, List, Mapping, Optional, Protocol, cast
 import zoneinfo
 import anyio
 
@@ -15,6 +16,39 @@ from .types import Sender
 class _JobCallable(Protocol):
     async def __call__(self) -> Optional[str]:
         ...
+
+
+class _MetricsRecorder(Protocol):
+    def increment(self, name: str, tags: Mapping[str, str] | None = None) -> None:
+        ...
+
+    def observe(self, name: str, value: float, tags: Mapping[str, str] | None = None) -> None:
+        ...
+
+
+def _resolve_metrics(
+    metrics: Optional[_MetricsRecorder],
+) -> Optional[_MetricsRecorder]:
+    if metrics is not None:
+        return metrics
+    try:
+        aggregator_module = import_module("llm_generic_bot.infra.metrics.aggregator_state")
+    except ModuleNotFoundError:
+        return None
+    aggregator = getattr(aggregator_module, "_AGGREGATOR", None)
+    if aggregator is None:
+        return None
+    configured = bool(getattr(aggregator, "backend_configured", False))
+    backend = getattr(aggregator, "backend", None)
+    if not configured or backend is None:
+        return None
+    if hasattr(backend, "increment") and hasattr(backend, "observe"):
+        return cast(_MetricsRecorder, backend)
+    return None
+
+
+def _metric_tags(job: str, channel: Optional[str]) -> dict[str, str]:
+    return {"job": job, "channel": channel or "-"}
 
 
 @dataclass(slots=True)
@@ -39,6 +73,7 @@ class Scheduler:
         jitter_enabled: bool = True,
         jitter_range: tuple[int, int] = (60, 180),
         sleep: Callable[[float], Awaitable[None]] = anyio.sleep,
+        metrics: Optional[_MetricsRecorder] = None,
     ) -> None:
         self.tz = zoneinfo.ZoneInfo(tz)
         self.sender = sender
@@ -49,6 +84,7 @@ class Scheduler:
         self._jobs: List[_ScheduledJob] = []
         self._last_dispatch_ts: Optional[float] = None
         self._active_job: Optional[_ScheduledJob] = None
+        self._metrics = _resolve_metrics(metrics)
 
     def every_day(
         self,
@@ -116,6 +152,12 @@ class Scheduler:
         job = batch.job
         channel = batch.channel
         text = batch.text
+        metrics = self._metrics
+        if metrics is not None:
+            tags = _metric_tags(job_name, channel)
+            metrics.observe("scheduler.delay_seconds", delay, tags=tags)
+            decision_tags = {**tags, "decision": "defer" if delay > 0.0 else "allow"}
+            metrics.increment("scheduler.permit", tags=decision_tags)
         await self._sleep(delay)
         await self.sender.send(text, channel, job=job_name)
         self._last_dispatch_ts = target_ts if delay > 0 else reference_ts

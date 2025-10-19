@@ -16,6 +16,36 @@ from llm_generic_bot.features.dm_digest import DigestLogEntry
 from llm_generic_bot.features.news import NewsFeedItem, SummaryError
 from llm_generic_bot.infra.metrics import aggregator_state
 
+
+async def _dispatch_twice_with_jitter(
+    scheduler: Any,
+    orchestrator: Any,
+    *,
+    base_ts: float,
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[float]:
+    delays: list[float] = []
+
+    async def _fake_sleep(duration: float) -> None:
+        delays.append(duration)
+
+    def _fake_next_slot(
+        ts: float, clash: bool, jitter_range: tuple[int, int] = (60, 180)
+    ) -> float:
+        return ts if not clash else ts + 5.0
+
+    monkeypatch.setattr(scheduler, "_sleep", _fake_sleep)
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", _fake_next_slot)
+
+    _run_dispatch(scheduler, "first message", created_at=base_ts)
+    await scheduler.dispatch_ready_batches(base_ts)
+
+    _run_dispatch(scheduler, "second message", created_at=base_ts)
+    await scheduler.dispatch_ready_batches(base_ts)
+
+    await orchestrator.flush()
+    return delays
+
 pytestmark = pytest.mark.anyio("asyncio")
 
 
@@ -211,3 +241,48 @@ async def test_dm_digest_permit_denied_records_metrics() -> None:
     ]
 
     await orchestrator.close()
+
+
+async def test_scheduler_records_delay_and_permit_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    settings["cooldown"]["window_sec"] = 0
+
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    scheduler, orchestrator, _jobs = main_module.setup_runtime(settings, queue=queue)
+
+    try:
+        delays = await _dispatch_twice_with_jitter(
+            scheduler, orchestrator, base_ts=1200.0, monkeypatch=monkeypatch
+        )
+        assert delays == [0.0, 5.0]
+
+        snapshot = await orchestrator.weekly_snapshot()
+        permit_counters = snapshot.counters.get("scheduler.permit")
+        assert permit_counters is not None
+
+        allow_tags = (
+            ("channel", "discord-news"),
+            ("decision", "allow"),
+            ("job", "news"),
+        )
+        defer_tags = (
+            ("channel", "discord-news"),
+            ("decision", "defer"),
+            ("job", "news"),
+        )
+
+        assert permit_counters[allow_tags].count == 1
+        assert permit_counters[defer_tags].count == 1
+
+        delay_observations = snapshot.observations.get("scheduler.delay_seconds")
+        assert delay_observations is not None
+        delay_tags = (("channel", "discord-news"), ("job", "news"))
+        delay_snapshot = delay_observations[delay_tags]
+        assert delay_snapshot.count == 2
+        assert delay_snapshot.minimum == 0.0
+        assert delay_snapshot.maximum == pytest.approx(5.0)
+    finally:
+        await orchestrator.close()

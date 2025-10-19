@@ -68,9 +68,9 @@
 - [OPS-B01] Permit/ジッタ/バッチ閾値の運用チューニングを継続し、閾値変更時も `tests/integration/test_runtime_multicontent_failures.py` がグリーンであることと、追加メトリクス検証を `tests/infra/` に整備する。
 - [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。
 - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
-- [OPS-B04] `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` を最新仕様に沿って保守し、freeze/resume/recording 経路のテストが CI グリーンを継続することを確認する。
-- [OPS-B05] `tests/infra/metrics/test_reporting_*` 群だけに依存していることを CI ログで証明し、freeze/resume/recording それぞれのカバレッジが維持されていることを記録する。
-- [OPS-B07] `tests/infra/metrics/test_reporting_*` 群を基準にメトリクス報告テストの回帰防止策と関連ドキュメント更新を完了する。
+- [OPS-B04] `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_recording_metrics.py`・`tests/infra/metrics/test_reporting_service.py` を最新仕様に沿って保守し、freeze/resume/recording 経路のテストが CI グリーンを継続することを確認する。→ 完了済み（2025-10-18 対応: `tests/infra/metrics/test_reporting_*` 分割保守と CI 緑化を記録済み）
+- [OPS-B05] `tests/infra/metrics/test_reporting_*` 群だけに依存していることを CI ログで証明し、freeze/resume/recording それぞれのカバレッジが維持されていることを記録する。→ 完了済み（2025-10-18 対応: CI ログ確認とドキュメント同期を TASKS.md に記録済み）
+- [OPS-B07] `tests/infra/metrics/test_reporting_*` 群を基準にメトリクス報告テストの回帰防止策と関連ドキュメント更新を完了する。→ 完了済み（2025-10-18 対応: レガシー `tests/infra/test_metrics_reporting.py` 撤去およびドキュメント更新を完了）
 - [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。
 
 #### UX（体験・コンテンツ）

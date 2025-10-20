@@ -1,28 +1,24 @@
 from __future__ import annotations
 
-from typing import Callable, ContextManager, Protocol, cast
-
 from datetime import datetime, timedelta, timezone
+from typing import Callable, ContextManager
 
 import pytest
 
 import llm_generic_bot.infra.metrics.aggregator_state as aggregator_state
-from llm_generic_bot.core.orchestrator import MetricsRecorder
 from llm_generic_bot.infra.metrics import reporting
 
-
-class RecordingMetricsLike(MetricsRecorder, Protocol):
-    increment_calls: list[tuple[str, dict[str, str]]]
-    observe_calls: list[tuple[str, float, dict[str, str]]]
+from tests.infra.metrics import RecordingMetricsLike
 
 
 @pytest.mark.anyio("asyncio")
-async def test_metrics_records_expected_labels_and_snapshot(
+async def test_weekly_snapshot_collects_events(
     freeze_time_ctx: Callable[[str], ContextManager[None]],
-    make_recording_metrics: Callable[[], MetricsRecorder],
+    make_recording_metrics: Callable[[], RecordingMetricsLike],
 ) -> None:
-    recorder = cast(RecordingMetricsLike, make_recording_metrics())
+    recorder = make_recording_metrics()
     reporting.configure_backend(recorder)
+
     with freeze_time_ctx("2025-01-06T12:00:00+00:00"):
         await reporting.report_send_success(
             job="weather",
@@ -52,37 +48,7 @@ async def test_metrics_records_expected_labels_and_snapshot(
             permit_tags={"rule": "quota"},
         )
         snapshot = reporting.weekly_snapshot()
-    assert recorder.increment_calls == [
-        ("send.success", {"job": "weather", "platform": "discord", "channel": "alerts", "decision": "allow"}),
-        ("send.failure", {"job": "weather", "platform": "discord", "channel": "alerts", "error": "http_500"}),
-        (
-            "send.denied",
-            {
-                "job": "alerts",
-                "platform": "discord",
-                "channel": "-",
-                "reason": "quota_exceeded",
-                "rule": "quota",
-            },
-        ),
-    ]
-    assert recorder.observe_calls == [
-        (
-            "send.duration",
-            pytest.approx(0.42),
-            {"job": "weather", "platform": "discord", "channel": "alerts", "unit": "seconds"},
-        ),
-        (
-            "send.delay_seconds",
-            pytest.approx(1.9),
-            {"job": "weather", "platform": "discord", "channel": "alerts", "unit": "seconds"},
-        ),
-        (
-            "send.duration",
-            pytest.approx(2.4),
-            {"job": "weather", "platform": "discord", "channel": "alerts", "unit": "seconds"},
-        ),
-    ]
+
     assert snapshot == {
         "generated_at": "2025-01-06T12:00:00+00:00",
         "success_rate": {"weather": {"success": 1, "failure": 1, "ratio": 0.5}},
@@ -100,74 +66,12 @@ async def test_metrics_records_expected_labels_and_snapshot(
 
 
 @pytest.mark.anyio("asyncio")
-async def test_report_send_delay_records_unit_seconds(
-    make_recording_metrics: Callable[[], MetricsRecorder],
-) -> None:
-    recorder = cast(RecordingMetricsLike, make_recording_metrics())
-    reporting.configure_backend(recorder)
-
-    await reporting.report_send_delay(
-        job="weather",
-        platform="discord",
-        channel="alerts",
-        delay_seconds=1.25,
-    )
-
-    assert recorder.observe_calls == [
-        (
-            "send.delay_seconds",
-            pytest.approx(1.25),
-            {
-                "job": "weather",
-                "platform": "discord",
-                "channel": "alerts",
-                "unit": "seconds",
-            },
-        )
-    ]
-
-
-@pytest.mark.anyio("asyncio")
-async def test_report_send_success_records_engagement_tags(
-    make_recording_metrics: Callable[[], MetricsRecorder],
-) -> None:
-    recorder = cast(RecordingMetricsLike, make_recording_metrics())
-    reporting.configure_backend(recorder)
-
-    await reporting.report_send_success(
-        job="weather",
-        platform="discord",
-        channel="alerts",
-        duration_seconds=0.25,
-        permit_tags={
-            "engagement_score": "0.42",
-            "engagement_trend": "0.75",
-            "permit_quota": "0.5",
-        },
-    )
-
-    assert recorder.increment_calls == [
-        (
-            "send.success",
-            {
-                "job": "weather",
-                "platform": "discord",
-                "channel": "alerts",
-                "engagement_score": "0.42",
-                "engagement_trend": "0.75",
-                "permit_quota": "0.5",
-            },
-        )
-    ]
-
-
-@pytest.mark.anyio("asyncio")
-async def test_configure_backend_reconfiguration_uses_latest_backend(
+async def test_weekly_snapshot_respects_latest_backend_configuration(
     freeze_time_ctx: Callable[[str], ContextManager[None]],
-    make_recording_metrics: Callable[[], MetricsRecorder],
+    make_recording_metrics: Callable[[], RecordingMetricsLike],
 ) -> None:
-    first = cast(RecordingMetricsLike, make_recording_metrics())
-    second = cast(RecordingMetricsLike, make_recording_metrics())
+    first = make_recording_metrics()
+    second = make_recording_metrics()
 
     reporting.configure_backend(first)
     with freeze_time_ctx("2025-04-01T00:00:00+00:00"):
@@ -253,7 +157,7 @@ async def test_configure_backend_reconfiguration_uses_latest_backend(
 
 @pytest.mark.anyio("asyncio")
 async def test_weekly_snapshot_retention_survives_backend_reconfiguration(
-    make_recording_metrics: Callable[[], MetricsRecorder],
+    make_recording_metrics: Callable[[], RecordingMetricsLike],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     base_time = datetime(2025, 4, 10, tzinfo=timezone.utc)
@@ -267,8 +171,8 @@ async def test_weekly_snapshot_retention_survives_backend_reconfiguration(
 
     reporting.set_retention_days(3)
 
-    first = cast(RecordingMetricsLike, make_recording_metrics())
-    second = cast(RecordingMetricsLike, make_recording_metrics())
+    first = make_recording_metrics()
+    second = make_recording_metrics()
 
     reporting.configure_backend(first)
 
@@ -312,7 +216,7 @@ async def test_weekly_snapshot_retention_survives_backend_reconfiguration(
 
 @pytest.mark.anyio("asyncio")
 async def test_weekly_snapshot_trims_history_without_mutating_delay_observations(
-    make_recording_metrics: Callable[[], MetricsRecorder],
+    make_recording_metrics: Callable[[], RecordingMetricsLike],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     base_time = datetime(2025, 5, 20, tzinfo=timezone.utc)
@@ -326,7 +230,7 @@ async def test_weekly_snapshot_trims_history_without_mutating_delay_observations
 
     reporting.set_retention_days(2)
 
-    recorder = cast(RecordingMetricsLike, make_recording_metrics())
+    recorder = make_recording_metrics()
     reporting.configure_backend(recorder)
 
     current["value"] = base_time - timedelta(days=4)

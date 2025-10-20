@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from .conftest import RecordingMetrics  # re-export for convenience
+from .conftest import RecordingMetrics, RecordingMetricsLike  # re-export for convenience
 
-__all__ = ["RecordingMetrics"]
+__all__ = ["RecordingMetrics", "RecordingMetricsLike"]

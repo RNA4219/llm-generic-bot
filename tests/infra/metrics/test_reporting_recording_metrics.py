@@ -128,6 +128,40 @@ async def test_report_send_delay_records_unit_seconds(
 
 
 @pytest.mark.anyio("asyncio")
+async def test_report_send_success_records_engagement_tags(
+    make_recording_metrics: Callable[[], MetricsRecorder],
+) -> None:
+    recorder = cast(RecordingMetricsLike, make_recording_metrics())
+    reporting.configure_backend(recorder)
+
+    await reporting.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.25,
+        permit_tags={
+            "engagement_score": "0.42",
+            "engagement_trend": "0.75",
+            "permit_quota": "0.5",
+        },
+    )
+
+    assert recorder.increment_calls == [
+        (
+            "send.success",
+            {
+                "job": "weather",
+                "platform": "discord",
+                "channel": "alerts",
+                "engagement_score": "0.42",
+                "engagement_trend": "0.75",
+                "permit_quota": "0.5",
+            },
+        )
+    ]
+
+
+@pytest.mark.anyio("asyncio")
 async def test_configure_backend_reconfiguration_uses_latest_backend(
     freeze_time_ctx: Callable[[str], ContextManager[None]],
     make_recording_metrics: Callable[[], MetricsRecorder],

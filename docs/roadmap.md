@@ -62,6 +62,7 @@
 - [UX-02] ニュース配信実装（`features/news.py`）: フィード取得・要約・クールダウンを統合し、`tests/features/test_news.py` で正常系とフォールバック・クールダウン抑止を検証。
 - [UX-03] おみくじ生成（`features/omikuji.py`）: テンプレートローテーションとユーザー別シードを実装し、`tests/features/test_omikuji.py` でローテーションとフォールバック挙動をカバー。
 - [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。
+- [UX-05] Weather Engagement 長期トレンド補正（`features/weather.py`・`core/orchestrator/processor.py`）: 履歴ダブルから算出した長期平均と Permit クォータ比率をスコアへ混合し、`tests/features/test_weather_engagement.py::test_weather_engagement_long_term_trend_blends_recent_history` / `::test_weather_engagement_trend_respects_permit_quota_variation` でブレンド係数とクォータ補正を固定。Permit 連携タグは `tests/core/orchestrator_send/test_success_flow.py::test_process_success_records` と `tests/infra/metrics/test_reporting_recording_metrics.py::test_report_send_success_records_engagement_tags` が検証する。
 
 ### 残課題
 #### OPS（運用・基盤）
@@ -72,7 +73,7 @@
 - ※ OPS-B04/B05/B07 は 2025-10-18 に完了済みのため残課題一覧から除外している（`tests/infra/metrics/test_reporting_*` 系 CI 緑化・ドキュメント同期済み）。
 
 #### UX（体験・コンテンツ）
-- [UX-B01] Engagement 指標の長期トレンド分析と Permit クォータ変動時の通知頻度調整をテストダブルで検証し、`tests/features/test_weather_engagement.py` に新ケースを追加する。
+- [UX-B01] Engagement 指標の長期トレンド分析と Permit クォータ変動時の通知頻度調整 → 完了。`tests/features/test_weather_engagement.py::test_weather_engagement_long_term_trend_blends_recent_history` と `::test_weather_engagement_trend_respects_permit_quota_variation` で履歴ダブルとクォータ変動を固定し、Permit メトリクスタグは `tests/infra/metrics/test_reporting_recording_metrics.py::test_report_send_success_records_engagement_tags` で回帰を確保。
 
 #### DOC（ドキュメント）
 - [DOC-B09] 週次サマリ節のテンプレート差分説明を補完し、`tests/integration/runtime_weekly_report/` 配下テストの検証観点を整理済み。→ 完了済み（残課題なし）

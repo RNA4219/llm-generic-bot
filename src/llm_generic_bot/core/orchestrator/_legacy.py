@@ -1,4 +1,4 @@
-from __future__ import annotations
+"""Compatibility layer for legacy orchestrator imports."""
 
 import asyncio
 import logging
@@ -20,11 +20,14 @@ from ..orchestrator_metrics import (
     resolve_metrics_boundary,
 )
 
-# LEGACY_ORCHESTRATOR_CHECKLIST: processor delegation registered
-_processor_path = Path(__file__).with_name("processor.py")
-_processor_spec = spec_from_file_location(
-    "llm_generic_bot.core.orchestrator.processor",
-    _processor_path,
+from . import processor
+from .runtime import (
+    Orchestrator,
+    PermitDecision,
+    PermitDecisionLike,
+    PermitEvaluator,
+    Sender,
+    _SendRequest,
 )
 if _processor_spec is None or _processor_spec.loader is None:  # pragma: no cover - import machinery guard
     raise RuntimeError("failed to load orchestrator processor module")
@@ -92,6 +95,9 @@ class _SendRequest:
     channel: Optional[str]
     correlation_id: str
     engagement_score: Optional[float] = None
+    engagement_recent: Optional[float] = None
+    engagement_long_term: Optional[float] = None
+    engagement_permit_quota: Optional[float] = None
 
 
 class _ReevaluationScheduler:
@@ -192,10 +198,17 @@ class Orchestrator:
         if self._closed:
             raise RuntimeError("orchestrator is closed")
         corr = correlation_id or uuid.uuid4().hex
-        engagement_score: Optional[float] = None
-        raw_engagement = getattr(text, "engagement_score", None)
-        if isinstance(raw_engagement, (int, float)):
-            engagement_score = float(raw_engagement)
+        def _maybe_float(value: object) -> Optional[float]:
+            if isinstance(value, (int, float)):
+                return float(value)
+            return None
+
+        engagement_score = _maybe_float(getattr(text, "engagement_score", None))
+        engagement_recent = _maybe_float(getattr(text, "engagement_recent", None))
+        engagement_long_term = _maybe_float(getattr(text, "engagement_long_term", None))
+        engagement_permit_quota = _maybe_float(
+            getattr(text, "engagement_permit_quota", None)
+        )
         request = _SendRequest(
             text=str(text),
             job=job,
@@ -203,6 +216,9 @@ class Orchestrator:
             channel=channel,
             correlation_id=corr,
             engagement_score=engagement_score,
+            engagement_recent=engagement_recent,
+            engagement_long_term=engagement_long_term,
+            engagement_permit_quota=engagement_permit_quota,
         )
         await self._queue.put(request)
         return corr

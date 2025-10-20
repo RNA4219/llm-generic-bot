@@ -23,6 +23,7 @@ from llm_generic_bot.core.orchestrator import PermitDecision
 from llm_generic_bot.core.queue import CoalesceQueue
 from llm_generic_bot.features.dm_digest import DigestLogEntry
 from llm_generic_bot.features.news import NewsFeedItem, SummaryError
+from llm_generic_bot.infra import metrics as metrics_module
 from llm_generic_bot.infra.metrics import aggregator_state
 
 
@@ -316,7 +317,88 @@ async def test_permit_retry_after_schedules_reevaluation(
     assert reevaluations[0].reason == "retry after cooldown"
     assert delays == [pytest.approx(45.0)]
 
+
+async def test_scheduler_jitter_thresholds_override_preserves_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    scheduler_cfg = settings.setdefault("scheduler", {})
+    scheduler_cfg["jitter_range_seconds"] = [7, 7]
+    scheduler_cfg["queue"] = {"threshold": 1}
+
+    calls: list[tuple[str, str | None, str]] = []
+
+    class _PermitRecorder:
+        def permit(self, platform: str, channel: str | None, job: str) -> PermitDecision:
+            calls.append((platform, channel, job))
+            return PermitDecision(allowed=True, reason=None, retryable=True, job=job)
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
+
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("custom", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(
+        settings,
+        permit_gate=_PermitRecorder(),
+    )
+
+    assert scheduler.jitter_range == (7, 7)
+    assert getattr(scheduler.queue, "_threshold") == 1
+
+    recorded_delay: list[float] = []
+    jitter_calls: list[tuple[float, bool, tuple[int, int]]] = []
+
+    async def _fake_sleep(duration: float) -> None:
+        recorded_delay.append(duration)
+
+    async def _fake_report_send_delay(
+        *,
+        job: str,
+        platform: str,
+        channel: str | None,
+        delay_seconds: float,
+    ) -> None:
+        recorded_delay.append(delay_seconds)
+        assert job == "news"
+        assert platform == "discord"
+        assert channel == "discord-news"
+
+    def _fake_next_slot(
+        ts: float, clash: bool, jitter_range: tuple[int, int] = (60, 180)
+    ) -> float:
+        jitter_calls.append((ts, clash, jitter_range))
+        if not clash:
+            return ts
+        return ts + float(jitter_range[0])
+
+    base_ts = 1_000_000.0
+    monkeypatch.setattr(scheduler, "_sleep", _fake_sleep)
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", _fake_next_slot)
+    monkeypatch.setattr(metrics_module, "report_send_delay", _fake_report_send_delay)
+
+    text = await jobs["news"]()
+    assert text
+
+    _run_dispatch(scheduler, text, created_at=base_ts)
+    await scheduler.dispatch_ready_batches(base_ts)
+
+    _run_dispatch(scheduler, text, created_at=base_ts)
+    await scheduler.dispatch_ready_batches(base_ts)
+
+    await orchestrator.flush()
     await orchestrator.close()
+
+    assert recorded_delay == [0.0, pytest.approx(7.0), pytest.approx(7.0)]
+    assert jitter_calls == [(base_ts, False, (7, 7)), (base_ts, True, (7, 7))]
+    assert calls == [("discord", "discord-news", "news"), ("discord", "discord-news", "news")]
 
 
 async def test_cooldown_resume_allows_retry(monkeypatch: pytest.MonkeyPatch) -> None:

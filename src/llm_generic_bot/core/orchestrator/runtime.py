@@ -1,26 +1,23 @@
-"""Compatibility layer for legacy orchestrator imports."""
-
 from __future__ import annotations
 
-from . import processor
-from .runtime import (
-    Orchestrator,
-    PermitDecision,
-    PermitDecisionLike,
-    PermitEvaluator,
-    Sender,
-    _SendRequest,
+import asyncio
+import logging
+import uuid
+from dataclasses import dataclass
+from typing import Mapping, Optional, Protocol, TYPE_CHECKING
+
+from ...infra import MetricsBackend, collect_weekly_snapshot
+from ..cooldown import CooldownGate
+from ..dedupe import NearDuplicateFilter
+from ..orchestrator_metrics import (
+    MetricsBoundary,
+    MetricsRecorder,
+    resolve_metrics_boundary,
 )
-if _processor_spec is None or _processor_spec.loader is None:  # pragma: no cover - import machinery guard
-    raise RuntimeError("failed to load orchestrator processor module")
-_processor_module = module_from_spec(_processor_spec)
-_processor_spec.loader.exec_module(_processor_module)
-sys.modules[_processor_spec.name] = _processor_module
-processor = _processor_module
+from . import processor
 
 if TYPE_CHECKING:
     from ...infra.metrics import WeeklyMetricsSnapshot
-    from ..orchestrator_metrics import MetricsBoundary
 
 
 class Sender(Protocol):
@@ -41,29 +38,66 @@ class PermitDecisionLike(Protocol):
     job: Optional[str]
 
 
-@dataclass(frozen=True)
-class _PermitDecision:
-    allowed: bool
-    reason: Optional[str] = None
-    retryable: bool = True
-    job: Optional[str] = None
+class PermitDecision:
+    __slots__ = ("_allowed", "_reason", "_retryable", "_job")
+
+    def __init__(
+        self,
+        allowed: bool,
+        reason: Optional[str] = None,
+        retryable: bool = True,
+        job: Optional[str] = None,
+    ) -> None:
+        self._allowed = allowed
+        self._reason = reason
+        self._retryable = retryable
+        self._job = job
+
+    def __getattribute__(self, name: str) -> object:
+        if name in {"allowed", "reason", "retryable", "job"}:
+            return object.__getattribute__(self, f"_{name}")
+        return object.__getattribute__(self, name)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if not name.startswith("_"):
+            raise AttributeError("PermitDecision is immutable")
+        super().__setattr__(name, value)
 
     @classmethod
-    def allowed(cls, job: Optional[str] = None) -> "_PermitDecision":  # type: ignore[no-redef]
-        return cls(True, None, True, job)
+    def allow(cls, job: Optional[str] = None) -> PermitDecision:
+        return cls(allowed=True, reason=None, retryable=True, job=job)
 
     @classmethod
-    def allow(cls, job: Optional[str] = None) -> "_PermitDecision":
-        return cls(True, None, True, job)
+    def allowed(cls, job: Optional[str] = None) -> PermitDecision:
+        return cls.allow(job)
 
+    def __repr__(self) -> str:
+        return (
+            "PermitDecision(allowed={allowed!r}, reason={reason!r}, "
+            "retryable={retryable!r}, job={job!r})"
+        ).format(
+            allowed=self.allowed,
+            reason=self.reason,
+            retryable=self.retryable,
+            job=self.job,
+        )
 
-PermitDecision = _PermitDecision
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, PermitDecision):
+            return NotImplemented
+        return (
+            self.allowed == other.allowed
+            and self.reason == other.reason
+            and self.retryable == other.retryable
+            and self.job == other.job
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.allowed, self.reason, self.retryable, self.job))
 
 
 class PermitEvaluator(Protocol):
-    def __call__(
-        self, platform: str, channel: Optional[str], job: str
-    ) -> PermitDecisionLike:
+    def __call__(self, platform: str, channel: Optional[str], job: str) -> PermitDecisionLike:
         ...
 
 
@@ -75,9 +109,6 @@ class _SendRequest:
     channel: Optional[str]
     correlation_id: str
     engagement_score: Optional[float] = None
-    engagement_recent: Optional[float] = None
-    engagement_long_term: Optional[float] = None
-    engagement_permit_quota: Optional[float] = None
 
 
 class Orchestrator:
@@ -99,8 +130,8 @@ class Orchestrator:
         self._permit = permit
         boundary = resolve_metrics_boundary(metrics)
         self._metrics_boundary: MetricsBoundary = boundary
+        self._metrics: MetricsRecorder = boundary.recorder
         self._metrics_service = boundary.service
-        self._metrics = boundary.recorder
         self._logger = logger or logging.getLogger(__name__)
         self._queue: asyncio.Queue[_SendRequest | None] = asyncio.Queue(maxsize=queue_size)
         self._worker: asyncio.Task[None] | None = None
@@ -120,17 +151,10 @@ class Orchestrator:
         if self._closed:
             raise RuntimeError("orchestrator is closed")
         corr = correlation_id or uuid.uuid4().hex
-        def _maybe_float(value: object) -> Optional[float]:
-            if isinstance(value, (int, float)):
-                return float(value)
-            return None
-
-        engagement_score = _maybe_float(getattr(text, "engagement_score", None))
-        engagement_recent = _maybe_float(getattr(text, "engagement_recent", None))
-        engagement_long_term = _maybe_float(getattr(text, "engagement_long_term", None))
-        engagement_permit_quota = _maybe_float(
-            getattr(text, "engagement_permit_quota", None)
-        )
+        engagement_score: Optional[float] = None
+        raw_engagement = getattr(text, "engagement_score", None)
+        if isinstance(raw_engagement, (int, float)):
+            engagement_score = float(raw_engagement)
         request = _SendRequest(
             text=str(text),
             job=job,
@@ -138,9 +162,6 @@ class Orchestrator:
             channel=channel,
             correlation_id=corr,
             engagement_score=engagement_score,
-            engagement_recent=engagement_recent,
-            engagement_long_term=engagement_long_term,
-            engagement_permit_quota=engagement_permit_quota,
         )
         await self._queue.put(request)
         return corr
@@ -190,7 +211,7 @@ class Orchestrator:
                 self._queue.task_done()
 
     async def _process(self, request: _SendRequest) -> None:
-        await _processor_module.process(
+        await processor.process(
             request=request,
             sender=self._sender,
             cooldown=self._cooldown,
@@ -202,6 +223,25 @@ class Orchestrator:
             record_event=self._record_event,
         )
 
+    def _record_event(
+        self,
+        name: str,
+        tags: Mapping[str, str],
+        *,
+        measurements: Mapping[str, float] | None = None,
+        metadata: Mapping[str, object] | None = None,
+        force: bool = False,
+    ) -> None:
+        processor.record_event(
+            boundary=self._metrics_boundary,
+            name=name,
+            tags=tags,
+            measurements=measurements,
+            metadata=metadata,
+            force=force,
+        )
+
+
 __all__ = [
     "Orchestrator",
     "PermitDecision",
@@ -209,5 +249,4 @@ __all__ = [
     "PermitEvaluator",
     "Sender",
     "_SendRequest",
-    "processor",
 ]

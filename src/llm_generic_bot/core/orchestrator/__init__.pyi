@@ -1,6 +1,6 @@
 from ...infra import metrics as metrics_module
 from ..orchestrator_metrics import MetricsRecorder, NullMetricsRecorder
-from ._legacy import (
+from .runtime import (
     Orchestrator,
     PermitDecision,
     PermitDecisionLike,

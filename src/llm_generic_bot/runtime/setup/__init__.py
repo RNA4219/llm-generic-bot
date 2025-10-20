@@ -52,28 +52,28 @@ __all__ = [
 ]
 
 
-def _parse_positive_int_pair(raw: object) -> tuple[int, int]:
+def _parse_positive_int_pair(raw: object, *, setting_name: str) -> tuple[int, int]:
     if isinstance(raw, Mapping):
-        raise ValueError("arbiter.jitter_sec must be a sequence of two positive integers")
+        raise ValueError(f"{setting_name} must be a sequence of two positive integers")
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
-        raise ValueError("arbiter.jitter_sec must be a sequence of two positive integers")
+        raise ValueError(f"{setting_name} must be a sequence of two positive integers")
 
     values = list(raw)
     if len(values) != 2:
-        raise ValueError("arbiter.jitter_sec must contain exactly two positive integers")
+        raise ValueError(f"{setting_name} must contain exactly two positive integers")
 
     parsed: list[int] = []
     for value in values:
         if isinstance(value, bool) or not isinstance(value, int):
-            raise ValueError("arbiter.jitter_sec values must be positive integers")
+            raise ValueError(f"{setting_name} values must be positive integers")
         if value <= 0:
-            raise ValueError("arbiter.jitter_sec values must be positive integers")
+            raise ValueError(f"{setting_name} values must be positive integers")
         parsed.append(value)
 
     lower, upper = parsed
     if lower > upper:
         raise ValueError(
-            f"arbiter.jitter_sec lower bound {lower} must not exceed upper bound {upper}"
+            f"{setting_name} lower bound {lower} must not exceed upper bound {upper}"
         )
 
     return lower, upper
@@ -94,12 +94,43 @@ def setup_runtime(
     dedupe_cfg = as_mapping(cfg.get("dedupe"))
     dedupe = build_dedupe(dedupe_cfg)
 
-    arbiter_cfg = as_mapping(cfg.get("arbiter"))
     jitter_range_override: Optional[tuple[int, int]] = None
-    if arbiter_cfg:
-        jitter_values = arbiter_cfg.get("jitter_sec")
+    jitter_from_settings = False
+
+    scheduler_cfg = as_mapping(cfg.get("scheduler"))
+    queue_threshold_override: Optional[int] = None
+    queue_window_override: Optional[float] = None
+    if scheduler_cfg:
+        jitter_values = scheduler_cfg.get("jitter_range_seconds")
         if jitter_values is not None:
-            jitter_range_override = _parse_positive_int_pair(jitter_values)
+            jitter_range_override = _parse_positive_int_pair(
+                jitter_values, setting_name="scheduler.jitter_range_seconds"
+            )
+            jitter_from_settings = True
+        queue_cfg = as_mapping(scheduler_cfg.get("queue"))
+        if queue_cfg:
+            threshold_value = queue_cfg.get("threshold")
+            if threshold_value is not None:
+                if isinstance(threshold_value, bool) or not isinstance(threshold_value, int):
+                    raise ValueError("scheduler.queue.threshold must be a positive integer")
+                if threshold_value <= 0:
+                    raise ValueError("scheduler.queue.threshold must be a positive integer")
+                queue_threshold_override = threshold_value
+            window_value = queue_cfg.get("window_sec")
+            if window_value is not None:
+                window_seconds = get_float(window_value, 180.0)
+                if window_seconds < 0:
+                    raise ValueError("scheduler.queue.window_sec must be non-negative")
+                queue_window_override = window_seconds
+
+    if not jitter_from_settings:
+        arbiter_cfg = as_mapping(cfg.get("arbiter"))
+        if arbiter_cfg:
+            jitter_values = arbiter_cfg.get("jitter_sec")
+            if jitter_values is not None:
+                jitter_range_override = _parse_positive_int_pair(
+                    jitter_values, setting_name="arbiter.jitter_sec"
+                )
 
     quota: QuotaSettings = load_quota_settings(cfg)
     permit = build_permit(quota, permit_gate=permit_gate)
@@ -175,11 +206,20 @@ def setup_runtime(
     scheduler_kwargs: dict[str, Any] = {}
     if jitter_range_override is not None:
         scheduler_kwargs["jitter_range"] = jitter_range_override
+        scheduler_kwargs["jitter_range_overridden"] = jitter_from_settings
+
+    scheduler_queue = queue
+    if scheduler_queue is None:
+        window_seconds = queue_window_override if queue_window_override is not None else 180.0
+        threshold_value = queue_threshold_override if queue_threshold_override is not None else 3
+        scheduler_queue = CoalesceQueue(window_seconds=window_seconds, threshold=threshold_value)
+    elif queue_threshold_override is not None or queue_window_override is not None:
+        scheduler_queue = queue
 
     scheduler = Scheduler(
         tz=tz,
         sender=scheduler_sender,
-        queue=queue,
+        queue=scheduler_queue,
         **scheduler_kwargs,
     )
 

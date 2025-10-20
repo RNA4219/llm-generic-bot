@@ -9,8 +9,8 @@
 - Discord/Misskey 送信層には RetryPolicy と構造化ログが導入済みで、送信成否とリトライ結果が JSON ログに集約される。
 - PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
   - `src/llm_generic_bot/runtime/setup/__init__.py` の `setup_runtime` は `src/llm_generic_bot/runtime/setup/gates.py::build_permit` を呼び出して `PermitGate.permit` の結果を `PermitDecision` へ包み直した `PermitEvaluator` を構築し、同関数内で `Orchestrator` と `JobContext` へ共有している。
-  - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 判定前のメッセージ束を保持する。`Scheduler.queue.push` で積まれたバッチは `dispatch_ready_batches` を経て `sender.send` で `Orchestrator.enqueue` に載せられ、内部ワーカー `_process` が Permit を評価する。不許可時は `send.denied` を記録してバッチを破棄する。
-  - ジッタは `core/scheduler.py` の `Scheduler` で既定有効となり、Permit 判定前のバッチに対して `next_slot` が遅延を決定してからオーケストレータへ渡す。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
+  - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 判定前のメッセージ束を保持する。`config.scheduler.queue.threshold`／`window_sec` を指定すると `setup_runtime` が `CoalesceQueue` を構築する際に閾値と併合窓を上書きし、`tests/integration/test_runtime_multicontent_failures.py::test_scheduler_jitter_thresholds_override_preserves_metrics` が遅延メトリクスと Permit 判定が維持されることを固定する。`Scheduler.queue.push` で積まれたバッチは `dispatch_ready_batches` を経て `sender.send` で `Orchestrator.enqueue` に載せられ、内部ワーカー `_process` が Permit を評価する。不許可時は `send.denied` を記録してバッチを破棄する。
+  - ジッタは `core/scheduler.py` の `Scheduler` で既定有効となり、Permit 判定前のバッチに対して `next_slot` が遅延を決定してからオーケストレータへ渡す。`config.scheduler.jitter_range_seconds` を設定するとジッタ範囲が優先され、`tests/infra/metrics/test_send_delay_thresholds.py` が `send.delay_seconds` 観測値が設定閾値に追随することを検証する。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
 - integration テストは以下で運用経路をカバーしている:
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。
   - `tests/integration/test_permit_bridge.py`: `PermitGate` 経由の送信成否に応じたメトリクスタグ（`retryable` 含む）を直接検証。
@@ -69,7 +69,7 @@
 - [OPS-B01] Permit/ジッタ/バッチ閾値の運用チューニングを継続し、閾値変更時も `tests/integration/test_runtime_multicontent_failures.py` がグリーンであることと、追加メトリクス検証を `tests/infra/` に整備する。
 - [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。
 - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
-- [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。
+- [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。→ 2025-10-19: `core/orchestrator/runtime.py` を公開実装として昇格し、`tests/core/orchestrator/test_processor.py`・`tests/integration/test_orchestrator_imports.py` を追加して `llm_generic_bot.core.orchestrator.processor` / `.runtime` 直 import を固定化。`_legacy.py` は薄いフォワーダへ整理済み。
 - ※ OPS-B04/B05/B07 は 2025-10-18 に完了済みのため残課題一覧から除外している（`tests/infra/metrics/test_reporting_*` 系 CI 緑化・ドキュメント同期済み）。
 
 #### UX（体験・コンテンツ）
@@ -82,7 +82,7 @@
 - [OPS-02] 週次サマリ（公開エントリ `core/orchestrator/__init__.py` とワーカープロセッサ `core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から移行済み、`features/report.py`）: 成果・失敗を集計し運用向けに通知。
 - [OPS-03] 設定再読込ログ（`src/llm_generic_bot/config/loader.py`, `src/llm_generic_bot/runtime/setup/__init__.py`, `config/*`）: リロード時の差分検出と監査ログ。
 - [OPS-04] ランタイムメトリクス（`src/llm_generic_bot/infra/metrics/aggregator.py`, `src/llm_generic_bot/infra/metrics/aggregator_state.py`, `src/llm_generic_bot/infra/metrics/reporting.py`, `src/llm_generic_bot/infra/metrics/service.py`）: `aggregator.py` が送信/Permit 事象の公開ファサードとなり、`aggregator_state.py` がロック付きの履歴保持と週次スナップショット生成を担いつつ、`service.py` のバックエンド構成と `reporting.py` の集約ロジックへ橋渡しする。
-  - `tests/infra/metrics/test_reporting_recording_metrics.py`: `send.delay_seconds` と `unit=seconds` タグの観測を固定する。
+  - `tests/infra/metrics/test_reporting_recording_metrics.py::test_report_send_delay_records_unit_seconds`: `send.delay_seconds` が `unit=seconds` タグ付きで記録されることを固定する（検証: `pytest tests/infra/metrics/test_reporting_recording_metrics.py -k delay -q`）。
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。
 
 ## Sprint 4: テスト強化 & 異常系整備

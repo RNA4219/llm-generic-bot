@@ -1,4 +1,4 @@
-- 2025-10-21: docs/tasks/sprint3.md の OPS-04 行で確認テスト列を recording 系ファイルへ差し替え、Sprint3 に複数タスクが並行している旨を備考へ追記。`npx markdownlint-cli docs/tasks/sprint3.md` で整形を確認。
+- 2025-10-20: docs/roadmap.md のメトリクス記述を `tests/infra/metrics/recording/` 配下テスト名へ更新し、検証コマンドを `pytest tests/infra/metrics/recording/...` 形式へ揃えた。docs/roadmap.md には同日付タスクを含め複数更新が並行しているため、本行で重複作業の共有を継続する。
 - 2025-10-20: runtime_multicontent failures 再編タスクの移行手順を追記。`tests/integration/test_runtime_multicontent_failures.py` の `LEGACY_MULTICONTENT_FAILURES_CHECKLIST` に新モジュールを列挙しつつ、各ケースの移行時は `pytest tests/integration/runtime_multicontent/failures -k <scenario> -q` を緑化確認してからチェックリスト項目を削除すること。
 - 2025-10-20: WEATHER-LEGACY-01 を登録。`tests/features/test_weather_engagement.py` をレガシーシムとして残し、`LEGACY_WEATHER_ENGAGEMENT_TEST_CHECKLIST` の全項目完了後にファイル削除と `pytest tests/features/weather_engagement -q` 緑化を確認する段取りを追記。
 - 2025-10-20: LEGACY_QUOTA_GATE_TEST_CHECKLIST の完了後に `tests/core/test_quota_gate.py` を削除し、新設 `tests/core/quota_gate/` 配下モジュールと `_fixtures.py` を恒常運用へ移行するタスクを追加。削除時は `pytest tests/core/quota_gate -q` → `mypy src/llm_generic_bot/core/arbiter.py` → `ruff check tests/core/quota_gate` を確認すること。

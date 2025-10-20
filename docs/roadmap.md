@@ -94,7 +94,7 @@
   - `tests/core/structured_logging/test_permit.py` が Permit 拒否ログ・拒否理由タグ・メトリクス増分を検証し、
   - `tests/core/structured_logging/test_duplicate.py` が重複スキップ時の構造化ログと `send_duplicate_skip` メトリクスタグ整合を担保し、
   - `tests/core/structured_logging/test_metrics.py` が `send.duration` などメトリクス観測値の秒単位タグを固定する。分割後も `tests/core/test_structured_logging.py` はチェックリスト保持用シムとして残し、分担状況のレガシー互換性を追跡する。→ 実装済み
-- [OPS-10] News/おみくじ/DM 異常系結合テスト: `tests/integration/test_runtime_multicontent_failures.py` の `test_permit_denied_records_metrics` / `test_cooldown_resume_allows_retry` / `test_summary_provider_retry_and_fallback` / `test_dm_digest_permit_denied_records_metrics` が Permit 拒否メトリクス、クールダウン解除後の再送成功、サマリーリトライとフォールバック記録、DM ダイジェスト拒否時の送信スキップを週次スナップショットまで確認。→ 実装済み
+- [OPS-10] News/おみくじ/DM 異常系結合テスト: `tests/integration/runtime_multicontent/failures/test_permit.py::test_permit_denied_records_metrics` / `tests/integration/test_runtime_multicontent_failures.py::test_cooldown_resume_allows_retry` / `tests/integration/test_runtime_multicontent_failures.py::test_summary_provider_retry_and_fallback` / `tests/integration/test_runtime_multicontent_failures.py::test_dm_digest_permit_denied_records_metrics` が Permit 拒否メトリクス、クールダウン解除後の再送成功、サマリーリトライとフォールバック記録、DM ダイジェスト拒否時の送信スキップを週次スナップショットまで確認。→ 実装済み
 
 ## テストロードマップ
 - 現状認識:

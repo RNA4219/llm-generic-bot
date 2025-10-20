@@ -15,6 +15,8 @@ if TYPE_CHECKING:
         reason: Optional[str]
         retryable: bool
         job: Optional[str]
+        retry_after: Optional[float]
+        level: Optional[str]
 
     class PermitEvaluator(Protocol):
         def __call__(
@@ -82,10 +84,12 @@ async def process(
     if not decision.allowed:
         retryable_flag = "true" if decision.retryable else "false"
         permit_tags: dict[str, str] = {"retryable": retryable_flag}
-        if getattr(decision, "retry_after", None) is not None:
-            permit_tags["retry_after_sec"] = f"{float(decision.retry_after):.0f}"
-        if getattr(decision, "level", None):
-            permit_tags["level"] = str(decision.level)
+        retry_after = getattr(decision, "retry_after", None)
+        if retry_after is not None:
+            permit_tags["retry_after_sec"] = f"{float(retry_after):.0f}"
+        level = getattr(decision, "level", None)
+        if level:
+            permit_tags["level"] = str(level)
         denied_tags = {**tags, **permit_tags}
         reason = decision.reason or "unknown"
         if metrics_enabled:
@@ -202,26 +206,26 @@ async def process(
         "channel": request.channel,
         "duration_sec": duration,
     }
-    permit_tags: dict[str, str] | None = None
+    success_permit_tags: dict[str, str] | None = None
     if request.engagement_score is not None:
         formatted_score = format_metric_value(request.engagement_score)
         success_tags["engagement_score"] = formatted_score
         log_extra["engagement_score"] = request.engagement_score
-        permit_tags = {"engagement_score": formatted_score}
+        success_permit_tags = {"engagement_score": formatted_score}
     if request.engagement_long_term is not None:
         formatted_trend = format_metric_value(request.engagement_long_term)
         success_tags["engagement_trend"] = formatted_trend
         log_extra["engagement_long_term"] = request.engagement_long_term
-        if permit_tags is None:
-            permit_tags = {}
-        permit_tags["engagement_trend"] = formatted_trend
+        if success_permit_tags is None:
+            success_permit_tags = {}
+        success_permit_tags["engagement_trend"] = formatted_trend
     if request.engagement_permit_quota is not None:
         formatted_quota = format_metric_value(request.engagement_permit_quota)
         success_tags["permit_quota"] = formatted_quota
         log_extra["permit_quota"] = request.engagement_permit_quota
-        if permit_tags is None:
-            permit_tags = {}
-        permit_tags["permit_quota"] = formatted_quota
+        if success_permit_tags is None:
+            success_permit_tags = {}
+        success_permit_tags["permit_quota"] = formatted_quota
     if metrics_enabled:
         with metrics_boundary.suppress_backend(False):
             await metrics_module.report_send_success(
@@ -229,7 +233,7 @@ async def process(
                 platform=request.platform,
                 channel=request.channel,
                 duration_seconds=duration,
-                permit_tags=permit_tags,
+                permit_tags=success_permit_tags,
             )
     metadata = {"correlation_id": request.correlation_id}
     if request.engagement_score is not None:

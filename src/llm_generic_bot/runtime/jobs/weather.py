@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Optional, cast
+from typing import Any, Optional, TYPE_CHECKING, cast
 
-from ...features.weather import ReactionHistoryProvider
+if TYPE_CHECKING:
+    from ...features.weather.post_builder import ReactionHistoryProvider
+else:
+    from ...features.weather import ReactionHistoryProvider
 from . import JobContext, ScheduledJob
 from .common import (
     as_mapping,

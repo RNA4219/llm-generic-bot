@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from typing import Optional, Sequence, TYPE_CHECKING
 
-from ..features.weather import ReactionHistoryProvider
+if TYPE_CHECKING:
+    from ..features.weather.post_builder import ReactionHistoryProvider
+else:
+    from ..features.weather import ReactionHistoryProvider
 
 _DEFAULT_HISTORY: tuple[int, ...] = (8, 6, 7, 5, 3)
 

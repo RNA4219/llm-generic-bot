@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from functools import wraps
-from typing import Any, Awaitable, Callable, Mapping, Optional
+from typing import Any, Awaitable, Callable, Mapping, Optional, TYPE_CHECKING
 
 from ...config.quotas import QuotaSettings, load_quota_settings
 from ...core.arbiter.gate import PermitGate
@@ -23,7 +23,7 @@ from ...features.dm_digest import build_dm_digest
 from ...features.news import build_news_post
 from ...features.omikuji import build_omikuji_post
 from ...features.report import WeeklyReportTemplate, generate_weekly_summary
-from ...features.weather import build_weather_post
+from ...features.weather import build_weather_post as _build_weather_post  # type: ignore[attr-defined]
 from ...infra import metrics as metrics_module
 from ...infra.metrics import MetricsService
 from ..jobs import JobContext, ScheduledJob
@@ -39,6 +39,11 @@ from .runtime_helpers import resolve_sender
 from .sender import build_send_adapter
 
 _resolve_object = resolve_object
+
+if TYPE_CHECKING:
+    from ...features.weather.post_builder import build_weather_post
+else:
+    build_weather_post = _build_weather_post
 
 __all__ = [
     "setup_runtime",

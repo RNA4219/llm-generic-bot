@@ -36,10 +36,19 @@ class PermitDecisionLike(Protocol):
     reason: Optional[str]
     retryable: bool
     job: Optional[str]
+    retry_after: Optional[float]
+    level: Optional[str]
 
 
 class PermitDecision:
-    __slots__ = ("_allowed", "_reason", "_retryable", "_job")
+    __slots__ = (
+        "_allowed",
+        "_reason",
+        "_retryable",
+        "_job",
+        "_retry_after",
+        "_level",
+    )
 
     def __init__(
         self,
@@ -47,14 +56,19 @@ class PermitDecision:
         reason: Optional[str] = None,
         retryable: bool = True,
         job: Optional[str] = None,
+        *,
+        retry_after: Optional[float] = None,
+        level: Optional[str] = None,
     ) -> None:
         self._allowed = allowed
         self._reason = reason
         self._retryable = retryable
         self._job = job
+        self._retry_after = retry_after
+        self._level = level
 
     def __getattribute__(self, name: str) -> object:
-        if name in {"allowed", "reason", "retryable", "job"}:
+        if name in {"allowed", "reason", "retryable", "job", "retry_after", "level"}:
             return object.__getattribute__(self, f"_{name}")
         return object.__getattribute__(self, name)
 
@@ -74,12 +88,15 @@ class PermitDecision:
     def __repr__(self) -> str:
         return (
             "PermitDecision(allowed={allowed!r}, reason={reason!r}, "
-            "retryable={retryable!r}, job={job!r})"
+            "retryable={retryable!r}, job={job!r}, "
+            "retry_after={retry_after!r}, level={level!r})"
         ).format(
             allowed=self.allowed,
             reason=self.reason,
             retryable=self.retryable,
             job=self.job,
+            retry_after=self.retry_after,
+            level=self.level,
         )
 
     def __eq__(self, other: object) -> bool:
@@ -90,10 +107,21 @@ class PermitDecision:
             and self.reason == other.reason
             and self.retryable == other.retryable
             and self.job == other.job
+            and self.retry_after == other.retry_after
+            and self.level == other.level
         )
 
     def __hash__(self) -> int:
-        return hash((self.allowed, self.reason, self.retryable, self.job))
+        return hash(
+            (
+                self.allowed,
+                self.reason,
+                self.retryable,
+                self.job,
+                self.retry_after,
+                self.level,
+            )
+        )
 
 
 class PermitEvaluator(Protocol):

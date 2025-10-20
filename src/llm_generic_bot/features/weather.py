@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Mapping, Optional, cast
 
 _PACKAGE_PATH = Path(__file__).with_name("weather")
 __path__ = [str(_PACKAGE_PATH)]
@@ -15,6 +15,12 @@ post_builder = import_module(".weather.post_builder", __package__)
 
 if TYPE_CHECKING:
     from ..core.cooldown import CooldownGate
+    from .weather.post_builder import ReactionHistoryProvider as _ReactionHistoryProvider
+    from .weather.post_builder import WeatherPost as _WeatherPost
+else:
+    CooldownGate = Any  # type: ignore[assignment]
+    _ReactionHistoryProvider = Any  # type: ignore[assignment]
+    _WeatherPost = Any  # type: ignore[assignment]
 
 # LEGACY_WEATHER_MODULE_REFACTOR_CHECKLIST:
 # - Keep this facade in place until dependent call sites only rely on the thin wrapper.
@@ -26,8 +32,10 @@ LEGACY_WEATHER_MODULE_REFACTOR_CHECKLIST = (
 )
 
 CACHE: Path = cache.DEFAULT_CACHE_PATH
-ReactionHistoryProvider = post_builder.ReactionHistoryProvider
-WeatherPost = post_builder.WeatherPost
+ReactionHistoryProvider = cast(
+    type[_ReactionHistoryProvider], getattr(post_builder, "ReactionHistoryProvider")
+)
+WeatherPost = cast(type[_WeatherPost], getattr(post_builder, "WeatherPost"))
 
 
 async def build_weather_post(

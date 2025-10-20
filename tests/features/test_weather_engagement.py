@@ -16,6 +16,9 @@ from llm_generic_bot.core.orchestrator import (
     PermitEvaluator,
 )
 from llm_generic_bot.features import weather
+from llm_generic_bot.features.weather import cache as weather_cache
+from llm_generic_bot.features.weather import engagement as weather_engagement
+from llm_generic_bot.features.weather import post_builder as weather_post_builder
 
 pytestmark = pytest.mark.anyio
 
@@ -74,6 +77,7 @@ async def test_weather_engagement_table_driven(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_path = tmp_path / "weather_engagement_cache.json"
+    monkeypatch.setattr(weather_cache, "DEFAULT_CACHE_PATH", cache_path)
     monkeypatch.setattr(weather, "CACHE", cache_path)
 
     cooldown = _CooldownStub(values=[1.0, 1.5], calls=[])
@@ -120,7 +124,7 @@ async def test_weather_engagement_table_driven(
 
     for result, case in zip(results, table):
         if case["should_send"]:
-            assert isinstance(result, weather.WeatherPost)
+            assert isinstance(result, weather_post_builder.WeatherPost)
             assert result.engagement_score == case["expected_score"]
         else:
             assert result is None
@@ -135,6 +139,7 @@ async def test_weather_engagement_ignores_none_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_path = tmp_path / "weather_engagement_cache.json"
+    monkeypatch.setattr(weather_cache, "DEFAULT_CACHE_PATH", cache_path)
     monkeypatch.setattr(weather, "CACHE", cache_path)
 
     provider = _ReactionProvider(
@@ -160,7 +165,7 @@ async def test_weather_engagement_ignores_none_history(
         job="weather",
     )
 
-    assert isinstance(post, weather.WeatherPost)
+    assert isinstance(post, weather_post_builder.WeatherPost)
     assert post.engagement_score == pytest.approx(0.0)
 
 
@@ -168,6 +173,7 @@ async def test_weather_engagement_long_term_trend_blends_recent_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_path = tmp_path / "weather_engagement_cache.json"
+    monkeypatch.setattr(weather_cache, "DEFAULT_CACHE_PATH", cache_path)
     monkeypatch.setattr(weather, "CACHE", cache_path)
 
     cooldown = _CooldownStub(values=[1.0], calls=[])
@@ -195,7 +201,7 @@ async def test_weather_engagement_long_term_trend_blends_recent_history(
         job="weather",
     )
 
-    assert isinstance(post, weather.WeatherPost)
+    assert isinstance(post, weather_post_builder.WeatherPost)
     assert post.engagement_score == pytest.approx(0.76)
     assert post.engagement_recent == pytest.approx(0.6)
     assert post.engagement_long_term == pytest.approx(1.0)
@@ -207,6 +213,7 @@ async def test_weather_engagement_trend_respects_permit_quota_variation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_path = tmp_path / "weather_engagement_cache.json"
+    monkeypatch.setattr(weather_cache, "DEFAULT_CACHE_PATH", cache_path)
     monkeypatch.setattr(weather, "CACHE", cache_path)
 
     cooldown = _CooldownStub(values=[1.0], calls=[])
@@ -238,7 +245,7 @@ async def test_weather_engagement_trend_respects_permit_quota_variation(
         job="weather",
     )
 
-    assert isinstance(post, weather.WeatherPost)
+    assert isinstance(post, weather_post_builder.WeatherPost)
     assert post.engagement_score == pytest.approx(0.39)
     assert post.engagement_recent == pytest.approx(0.5)
     assert post.engagement_long_term == pytest.approx(0.65)
@@ -316,7 +323,7 @@ async def test_send_success_log_contains_engagement(caplog: pytest.LogCaptureFix
 
     caplog.set_level("INFO")
 
-    post = weather.WeatherPost("fine", engagement_score=0.6)
+    post = weather_post_builder.WeatherPost("fine", engagement_score=0.6)
     await orchestrator.enqueue(post, job="weather", platform="discord", channel="town-square")
     await orchestrator.flush()
     await orchestrator.close()

@@ -1,3 +1,4 @@
+- 2025-10-20: OPS-B04/B05/B07 行を `tests/infra/metrics/recording/test_success_events.py`・`test_delay_events.py` ほか現行分割済みテスト群へ差し替え、`pytest tests/infra/metrics/recording/... -q` 形式へ更新した。docs/tasks/backlog.md 冒頭へ複数タスク並行中である旨の注記を追記し、共有を継続する。
 - 2025-10-20: docs/roadmap.md のメトリクス記述を `tests/infra/metrics/recording/` 配下テスト名へ更新し、検証コマンドを `pytest tests/infra/metrics/recording/...` 形式へ揃えた。docs/roadmap.md には同日付タスクを含め複数更新が並行しているため、本行で重複作業の共有を継続する。
 - 2025-10-20: runtime_multicontent failures 再編タスクの移行手順を追記。`tests/integration/test_runtime_multicontent_failures.py` の `LEGACY_MULTICONTENT_FAILURES_CHECKLIST` に新モジュールを列挙しつつ、各ケースの移行時は `pytest tests/integration/runtime_multicontent/failures -k <scenario> -q` を緑化確認してからチェックリスト項目を削除すること。
 - 2025-10-20: WEATHER-LEGACY-01 を登録。`tests/features/test_weather_engagement.py` をレガシーシムとして残し、`LEGACY_WEATHER_ENGAGEMENT_TEST_CHECKLIST` の全項目完了後にファイル削除と `pytest tests/features/weather_engagement -q` 緑化を確認する段取りを追記。

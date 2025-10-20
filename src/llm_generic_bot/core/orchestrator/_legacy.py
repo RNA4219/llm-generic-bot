@@ -2,21 +2,31 @@
 
 from __future__ import annotations
 
-from . import processor
-from .runtime import (
-    Orchestrator,
-    PermitDecision,
-    PermitDecisionLike,
-    PermitEvaluator,
-    Sender,
-    _SendRequest,
+import asyncio
+import logging
+import sys
+import uuid
+from dataclasses import dataclass
+from importlib.util import module_from_spec
+from typing import Mapping, Optional, Protocol, TYPE_CHECKING
+
+from ...infra import MetricsBackend, collect_weekly_snapshot
+from ..cooldown import CooldownGate
+from ..dedupe import NearDuplicateFilter
+from ..orchestrator_metrics import (
+    MetricsBoundary,
+    MetricsRecorder,
+    resolve_metrics_boundary,
 )
+from . import processor as _processor_module
+
+_processor_spec = _processor_module.__spec__
 if _processor_spec is None or _processor_spec.loader is None:  # pragma: no cover - import machinery guard
     raise RuntimeError("failed to load orchestrator processor module")
-_processor_module = module_from_spec(_processor_spec)
-_processor_spec.loader.exec_module(_processor_module)
-sys.modules[_processor_spec.name] = _processor_module
-processor = _processor_module
+_processor = module_from_spec(_processor_spec)
+_processor_spec.loader.exec_module(_processor)
+sys.modules[_processor_spec.name] = _processor
+processor = _processor
 
 if TYPE_CHECKING:
     from ...infra.metrics import WeeklyMetricsSnapshot
@@ -194,7 +204,7 @@ class Orchestrator:
                 self._queue.task_done()
 
     async def _process(self, request: _SendRequest) -> None:
-        await _processor_module.process(
+        await processor.process(
             request=request,
             sender=self._sender,
             cooldown=self._cooldown,
@@ -204,6 +214,24 @@ class Orchestrator:
             metrics=self._metrics,
             logger=self._logger,
             record_event=self._record_event,
+        )
+
+    def _record_event(
+        self,
+        name: str,
+        tags: Mapping[str, str],
+        *,
+        measurements: Mapping[str, float] | None = None,
+        metadata: Mapping[str, object] | None = None,
+        force: bool = False,
+    ) -> None:
+        processor.record_event(
+            boundary=self._metrics_boundary,
+            name=name,
+            tags=tags,
+            measurements=measurements,
+            metadata=metadata,
+            force=force,
         )
 
 __all__ = [

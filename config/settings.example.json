@@ -1,8 +1,13 @@
 {
   "timezone": "Asia/Tokyo",
   "scheduler": {
-    "_usage": "スケジューラ共通設定サンプル。送信ジッタは `core/scheduler.py` で `jitter_range_seconds` の範囲からランダム遅延を適用する",
-    "jitter_range_seconds": [3, 15]
+    "_usage": "スケジューラ共通設定サンプル。`jitter_range_seconds` で送信ジッタを `[min, max]` 秒に固定し、`queue.threshold` でコアレスキューのフラッシュ閾値を上書きする",
+    "jitter_range_seconds": [3, 15],
+    "queue": {
+      "_usage": "バッチ併合キューの設定。`threshold` は同一ジョブのメッセージ数が達した時点で即時フラッシュし、`window_sec` はバッチング許容時間を秒単位で制御する",
+      "threshold": 3,
+      "window_sec": 180
+    }
   },
   "permit": {
     "_usage": "PermitGate 多段設定のサンプル。`tiers` で優先度ごとの通過条件を列挙し、上位 tier が先に評価される",

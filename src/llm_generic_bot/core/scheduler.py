@@ -73,6 +73,7 @@ class Scheduler:
         queue: Optional[CoalesceQueue] = None,
         jitter_enabled: bool = True,
         jitter_range: tuple[int, int] = (60, 180),
+        jitter_range_overridden: bool = False,
         sleep: Callable[[float], Awaitable[None]] = anyio.sleep,
         metrics: Optional[_MetricsRecorder] = None,
     ) -> None:
@@ -81,6 +82,7 @@ class Scheduler:
         self.queue = queue or CoalesceQueue(window_seconds=180.0, threshold=3)
         self.jitter_enabled = jitter_enabled
         self.jitter_range = jitter_range
+        self._jitter_range_overridden = jitter_range_overridden
         self._sleep = sleep
         self._jobs: List[_ScheduledJob] = []
         self._last_dispatch_ts: Optional[float] = None
@@ -168,6 +170,8 @@ class Scheduler:
         return target_ts
 
     def _effective_jitter_range(self) -> tuple[int, int]:
+        if self._jitter_range_overridden:
+            return self.jitter_range
         base_low, base_high = self.jitter_range
         window = self.queue.window_seconds
         if window <= 0.0:

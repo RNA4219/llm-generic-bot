@@ -75,6 +75,8 @@ async def test_process_success_records(
         channel="general",
         correlation_id="corr-success",
         engagement_score=0.42,
+        engagement_long_term=0.75,
+        engagement_permit_quota=0.5,
     )
 
     await orchestrator._process(request)
@@ -88,6 +90,15 @@ async def test_process_success_records(
     assert payload["platform"] == "discord"
     assert payload["channel"] == "general"
     assert isinstance(payload["duration"], float)
-    assert payload["permit_tags"] == {"engagement_score": "0.42"}
+    assert payload["permit_tags"] == {
+        "engagement_score": "0.42",
+        "engagement_trend": "0.75",
+        "permit_quota": "0.5",
+    }
     assert events[0][0] == "send.success"
-    assert events[0][3] == {"correlation_id": "corr-success", "engagement_score": 0.42}
+    assert events[0][3] == {
+        "correlation_id": "corr-success",
+        "engagement_score": 0.42,
+        "engagement_long_term": 0.75,
+        "permit_quota": 0.5,
+    }

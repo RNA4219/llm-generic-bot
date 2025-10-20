@@ -63,17 +63,18 @@
 - [UX-02] ニュース配信実装（`features/news.py`）: フィード取得・要約・クールダウンを統合し、`tests/features/test_news.py` で正常系とフォールバック・クールダウン抑止を検証。
 - [UX-03] おみくじ生成（`features/omikuji.py`）: テンプレートローテーションとユーザー別シードを実装し、`tests/features/test_omikuji.py` でローテーションとフォールバック挙動をカバー。
 - [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。
+- [UX-05] Weather Engagement 長期トレンド補正（`features/weather.py`・`core/orchestrator/processor.py`）: 履歴ダブルから算出した長期平均と Permit クォータ比率をスコアへ混合し、`tests/features/test_weather_engagement.py::test_weather_engagement_long_term_trend_blends_recent_history` / `::test_weather_engagement_trend_respects_permit_quota_variation` でブレンド係数とクォータ補正を固定。Permit 連携タグは `tests/core/orchestrator_send/test_success_flow.py::test_process_success_records` と `tests/infra/metrics/test_reporting_recording_metrics.py::test_report_send_success_records_engagement_tags` が検証する。
 
 ### 残課題
 #### OPS（運用・基盤）
 - [OPS-B01] Permit/ジッタ/バッチ閾値の運用チューニングを継続し、閾値変更時も `tests/integration/test_runtime_multicontent_failures.py` がグリーンであることと、追加メトリクス検証を `tests/infra/` に整備する。
 - [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。
 - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
-- [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。
+- [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。→ 2025-10-19: `core/orchestrator/runtime.py` を公開実装として昇格し、`tests/core/orchestrator/test_processor.py`・`tests/integration/test_orchestrator_imports.py` を追加して `llm_generic_bot.core.orchestrator.processor` / `.runtime` 直 import を固定化。`_legacy.py` は薄いフォワーダへ整理済み。
 - ※ OPS-B04/B05/B07 は 2025-10-18 に完了済みのため残課題一覧から除外している（`tests/infra/metrics/test_reporting_*` 系 CI 緑化・ドキュメント同期済み）。
 
 #### UX（体験・コンテンツ）
-- [UX-B01] Engagement 指標の長期トレンド分析と Permit クォータ変動時の通知頻度調整をテストダブルで検証し、`tests/features/test_weather_engagement.py` に新ケースを追加する。
+- [UX-B01] Engagement 指標の長期トレンド分析と Permit クォータ変動時の通知頻度調整 → 完了。`tests/features/test_weather_engagement.py::test_weather_engagement_long_term_trend_blends_recent_history` と `::test_weather_engagement_trend_respects_permit_quota_variation` で履歴ダブルとクォータ変動を固定し、Permit メトリクスタグは `tests/infra/metrics/test_reporting_recording_metrics.py::test_report_send_success_records_engagement_tags` で回帰を確保。
 
 #### DOC（ドキュメント）
 - [DOC-B09] 週次サマリ節のテンプレート差分説明を補完し、`tests/integration/runtime_weekly_report/` 配下テストの検証観点を整理済み。→ 完了済み（残課題なし）
@@ -82,7 +83,7 @@
 - [OPS-02] 週次サマリ（公開エントリ `core/orchestrator/__init__.py` とワーカープロセッサ `core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から移行済み、`features/report.py`）: 成果・失敗を集計し運用向けに通知。
 - [OPS-03] 設定再読込ログ（`src/llm_generic_bot/config/loader.py`, `src/llm_generic_bot/runtime/setup/__init__.py`, `config/*`）: リロード時の差分検出と監査ログ。
 - [OPS-04] ランタイムメトリクス（`src/llm_generic_bot/infra/metrics/aggregator.py`, `src/llm_generic_bot/infra/metrics/aggregator_state.py`, `src/llm_generic_bot/infra/metrics/reporting.py`, `src/llm_generic_bot/infra/metrics/service.py`）: `aggregator.py` が送信/Permit 事象の公開ファサードとなり、`aggregator_state.py` がロック付きの履歴保持と週次スナップショット生成を担いつつ、`service.py` のバックエンド構成と `reporting.py` の集約ロジックへ橋渡しする。
-  - `tests/infra/metrics/test_reporting_recording_metrics.py`: `send.delay_seconds` と `unit=seconds` タグの観測を固定する。
+  - `tests/infra/metrics/test_reporting_recording_metrics.py::test_report_send_delay_records_unit_seconds`: `send.delay_seconds` が `unit=seconds` タグ付きで記録されることを固定する（検証: `pytest tests/infra/metrics/test_reporting_recording_metrics.py -k delay -q`）。
 - [OPS-07] Weather 複数スケジュール（`src/llm_generic_bot/runtime/jobs/weather.py`, `tests/runtime/test_weather_jobs.py`）: 都市ごとに定義された複数スケジュールが `build_weather_jobs` で 1 件の `ScheduledJob` に複数時刻を集約し、ジョブ登録時に想定通りの時間帯へ割り当てられることを検証。
 
 ## Sprint 4: テスト強化 & 異常系整備

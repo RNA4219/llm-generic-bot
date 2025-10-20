@@ -40,6 +40,9 @@ class SendRequest(Protocol):
     channel: Optional[str]
     correlation_id: str
     engagement_score: Optional[float]
+    engagement_recent: Optional[float]
+    engagement_long_term: Optional[float]
+    engagement_permit_quota: Optional[float]
 
 
 class RecordEvent(Protocol):
@@ -205,6 +208,20 @@ async def process(
         success_tags["engagement_score"] = formatted_score
         log_extra["engagement_score"] = request.engagement_score
         permit_tags = {"engagement_score": formatted_score}
+    if request.engagement_long_term is not None:
+        formatted_trend = format_metric_value(request.engagement_long_term)
+        success_tags["engagement_trend"] = formatted_trend
+        log_extra["engagement_long_term"] = request.engagement_long_term
+        if permit_tags is None:
+            permit_tags = {}
+        permit_tags["engagement_trend"] = formatted_trend
+    if request.engagement_permit_quota is not None:
+        formatted_quota = format_metric_value(request.engagement_permit_quota)
+        success_tags["permit_quota"] = formatted_quota
+        log_extra["permit_quota"] = request.engagement_permit_quota
+        if permit_tags is None:
+            permit_tags = {}
+        permit_tags["permit_quota"] = formatted_quota
     if metrics_enabled:
         with metrics_boundary.suppress_backend(False):
             await metrics_module.report_send_success(
@@ -217,6 +234,10 @@ async def process(
     metadata = {"correlation_id": request.correlation_id}
     if request.engagement_score is not None:
         metadata["engagement_score"] = request.engagement_score
+    if request.engagement_long_term is not None:
+        metadata["engagement_long_term"] = request.engagement_long_term
+    if request.engagement_permit_quota is not None:
+        metadata["permit_quota"] = request.engagement_permit_quota
     record_event(
         "send.success",
         success_tags,

@@ -99,6 +99,8 @@ def build_permit(
                 reason=decision.reason,
                 retryable=decision.retryable,
                 job=decision.job or job,
+                retry_after=getattr(decision, "retry_after", None),
+                level=getattr(decision, "level", None),
             ),
         )
 

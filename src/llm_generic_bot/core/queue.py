@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,6 +13,7 @@ class QueueBatch:
     channel: Optional[str]
     job: str
     created_at: float
+    batch_id: str
 
 
 @dataclass(slots=True)
@@ -23,6 +25,7 @@ class _PendingBatch:
     channel: Optional[str] = None
     ready_at: float = 0.0
     force_ready: bool = False
+    batch_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 class CoalesceQueue:
@@ -35,6 +38,7 @@ class CoalesceQueue:
         self._window = window_seconds
         self._threshold = threshold
         self._pending: List[_PendingBatch] = []
+        self._index: Dict[str, _PendingBatch] = {}
 
     @property
     def window_seconds(self) -> float:
@@ -48,24 +52,37 @@ class CoalesceQueue:
         job: str,
         created_at: Optional[float] = None,
         channel: Optional[str] = None,
+        batch_id: Optional[str] = None,
     ) -> None:
         ts = created_at if created_at is not None else time.time()
-        batch = self._find_batch(ts, channel, job, priority)
+        batch = self._find_batch(ts, channel, job, priority, batch_id)
         if batch is None:
+            resolved_id = batch_id or uuid.uuid4().hex
             batch = _PendingBatch(
                 start=ts,
                 job=job,
                 priority=priority,
                 channel=channel,
                 ready_at=ts + self._window,
+                batch_id=resolved_id,
             )
             self._pending.append(batch)
+            self._index[batch.batch_id] = batch
         else:
             batch.priority = min(batch.priority, priority)
-        batch.messages.append(text)
-        if len(batch.messages) >= self._threshold:
-            batch.force_ready = True
-            batch.ready_at = min(batch.ready_at, ts)
+            if batch_id is not None and batch.batch_id == batch_id:
+                batch.messages = []
+        if batch_id is not None and batch.batch_id == batch_id:
+            batch.start = min(batch.start, ts)
+            batch.channel = channel
+            batch.messages = [text]
+            batch.ready_at = ts + self._window
+            batch.force_ready = False
+        else:
+            batch.messages.append(text)
+            if len(batch.messages) >= self._threshold:
+                batch.force_ready = True
+                batch.ready_at = min(batch.ready_at, ts)
 
     def pop_ready(self, now: float) -> List[QueueBatch]:
         ready: List[QueueBatch] = []
@@ -83,8 +100,10 @@ class CoalesceQueue:
                         channel=batch.channel,
                         job=batch.job,
                         created_at=batch.start,
+                        batch_id=batch.batch_id,
                     )
                 )
+                self._index.pop(batch.batch_id, None)
             else:
                 remaining.append(batch)
         self._pending = remaining
@@ -97,12 +116,18 @@ class CoalesceQueue:
         channel: Optional[str],
         job: str,
         priority: int,
+        batch_id: Optional[str] = None,
     ) -> Optional[_PendingBatch]:
+        if batch_id is not None:
+            existing = self._index.get(batch_id)
+            if existing is not None:
+                return existing
         for batch in self._pending:
             if batch.channel != channel or batch.job != job:
                 continue
             if priority > batch.priority:
                 continue
             if ts - batch.start <= self._window:
+                self._index[batch.batch_id] = batch
                 return batch
         return None

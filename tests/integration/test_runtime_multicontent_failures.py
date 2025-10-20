@@ -72,9 +72,22 @@ def _settings() -> Dict[str, Any]:
     return settings
 
 
-def _run_dispatch(scheduler: Any, text: str, *, created_at: float) -> None:
+def _run_dispatch(
+    scheduler: Any,
+    text: str,
+    *,
+    created_at: float,
+    batch_id: str | None = None,
+) -> None:
     job = scheduler._jobs[0]
-    scheduler.queue.push(text, priority=job.priority, job=job.name, created_at=created_at, channel=job.channel)
+    scheduler.queue.push(
+        text,
+        priority=job.priority,
+        job=job.name,
+        created_at=created_at,
+        channel=job.channel,
+        batch_id=batch_id,
+    )
 
 
 def _providers(items: Iterable[NewsFeedItem], summarize: Any) -> tuple[Any, Any]:
@@ -198,6 +211,78 @@ async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.Monkey
 
     snapshot = aggregator_state.weekly_snapshot()
     assert snapshot["success_rate"]["news"] == {"success": 2, "failure": 0, "ratio": 1.0}
+
+
+async def test_quota_multilayer_quota_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    settings["dedupe"]["enabled"] = False
+
+    current_time = 1_000_000.0
+
+    monkeypatch.setattr(time, "time", lambda: current_time)
+
+    per_channel_quota = PerChannelQuotaConfig(day=5, window_minutes=1, burst_limit=1)
+    per_platform_quota = PerChannelQuotaConfig(day=10, window_minutes=5, burst_limit=3)
+
+    def time_fn() -> float:
+        return current_time
+
+    gate = PermitGate(
+        per_channel=per_channel_quota,
+        time_fn=time_fn,
+        config=PermitGateConfig(
+            levels=(
+                PermitQuotaLevel(name="per_channel", quota=per_channel_quota),
+                PermitQuotaLevel(name="per_platform", quota=per_platform_quota),
+            )
+        ),
+    )
+
+    assert gate.permit("discord", "discord-news", "news").allowed is True
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(
+        settings,
+        queue=queue,
+        permit_gate=gate,
+    )
+    scheduler.jitter_enabled = False
+
+    send_calls: list[tuple[str, str | None, str | None]] = []
+
+    async def _fake_send(text: str, channel: str | None, *, job: str | None = None) -> None:
+        send_calls.append((text, channel, job))
+
+    monkeypatch.setattr(orchestrator._sender, "send", _fake_send)
+
+    text = await jobs["news"]()
+    batch_id = "quota-multilayer"
+    _run_dispatch(scheduler, text, created_at=current_time, batch_id=batch_id)
+    await scheduler.dispatch_ready_batches(current_time)
+    await orchestrator.flush()
+
+    assert send_calls == []
+
+    denial_snapshot = aggregator_state.weekly_snapshot()
+    assert denial_snapshot["permit_denials"]
+    denial_entry = denial_snapshot["permit_denials"][0]
+    assert denial_entry["reason"] == "burst limit reached"
+    assert denial_entry["retryable"] == "true"
+    assert denial_entry["retry_after_sec"] == "60"
+    assert denial_entry["level"] == "per_channel"
+
+    current_time += 61.0
+
+    _run_dispatch(scheduler, text, created_at=current_time, batch_id=batch_id)
+    await scheduler.dispatch_ready_batches(current_time)
+    await orchestrator.flush()
+
+    assert len(send_calls) == 1
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert len(snapshot["permit_denials"]) == 1
+    assert snapshot["success_rate"]["news"] == {"success": 1, "failure": 0, "ratio": 1.0}
     assert snapshot["permit_denials"] == [
         {
             "job": "news",
@@ -205,6 +290,8 @@ async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.Monkey
             "channel": "discord-news",
             "reason": "burst limit reached",
             "retryable": "true",
+            "retry_after_sec": "60",
+            "level": "per_channel",
         }
     ]
 

@@ -53,6 +53,8 @@ class PermitDecisionLike(Protocol):
     reason: Optional[str]
     retryable: bool
     job: Optional[str]
+    retry_after: Optional[float]
+    level: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,8 @@ class _PermitDecision:
     reason: Optional[str] = None
     retryable: bool = True
     job: Optional[str] = None
+    retry_after: Optional[float] = None
+    level: Optional[str] = None
 
     @classmethod
     def allowed(cls, job: Optional[str] = None) -> "_PermitDecision":  # type: ignore[no-redef]

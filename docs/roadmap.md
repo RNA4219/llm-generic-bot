@@ -10,6 +10,7 @@
 - PermitGate・CoalesceQueue・ジッタは次の連携で稼働している:
   - `src/llm_generic_bot/runtime/setup/__init__.py` の `setup_runtime` は `src/llm_generic_bot/runtime/setup/gates.py::build_permit` を呼び出して `PermitGate.permit` の結果を `PermitDecision` へ包み直した `PermitEvaluator` を構築し、同関数内で `Orchestrator` と `JobContext` へ共有している。
   - CoalesceQueue はスケジューラが収集した同一ジョブを閾値に応じてバッチ化し、Permit 判定前のメッセージ束を保持する。`Scheduler.queue.push` で積まれたバッチは `dispatch_ready_batches` を経て `sender.send` で `Orchestrator.enqueue` に載せられ、内部ワーカー `_process` が Permit を評価する。不許可時は `send.denied` を記録してバッチを破棄する。
+  - 多段クォータと再送ガード: `config/settings.example.json` の `quota.per_channel_multilayer_example` に PermitGateConfig の階層例と検証コマンドを記載し、`tests/core/test_quota_gate.py::test_quota_multilayer_tiers_respect_windows_and_retryable` で tier ごとの `retry_after`・`retryable` 判定とメトリクスタグ（`level`/`retry_after_sec`）を固定化。`core/queue.py` の `batch_id` 追跡で Permit 再評価時の重複 dispatch を抑止し、`tests/integration/test_runtime_multicontent_failures.py::test_quota_multilayer_quota_retry`（`pytest tests/integration/test_runtime_multicontent_failures.py -k quota_multilayer -q`）が初回拒否→再評価許可でも送信 1 回と Permit メトリクス整合を保証する。
   - ジッタは `core/scheduler.py` の `Scheduler` で既定有効となり、Permit 判定前のバッチに対して `next_slot` が遅延を決定してからオーケストレータへ渡す。統合テストでは `scheduler.jitter_enabled = False` としてテストの決定性を確保している。
 - integration テストは以下で運用経路をカバーしている:
   - `tests/integration/test_main_pipeline.py`: Permit 通過後にチャンネル付き文字列バッチを送出できることと Permit ゲート呼び出しを追跡。

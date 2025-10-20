@@ -111,7 +111,7 @@
 - 2025-10-18: src/llm_generic_bot/infra/metrics/aggregator.py の LEGACY_METRICS_AGGREGATOR_CHECKLIST が全項目完了済みで、docs/roadmap.md・docs/tasks/backlog.md の記述と整合していることを確認。
 - 2025-10-17: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を Tue/Thu 09:00 例へ更新し、tests/integration/runtime_weekly_report/test_scheduler.py の呼び出し検証と整合を確認した記録。
 - 2025-10-17: docs/roadmap.md の runtime_multicontent パイプライン節を更新し、`test_weekly_report_job_uses_metrics_and_template` が `MetricsService.collect_weekly_snapshot` と `metrics_module.weekly_snapshot` の双方を通じて週次サマリを整形する保証を記録。
-- 2025-10-18: OPS-B01 Permit/ジッタ/バッチ閾値の調整タスクを着手用にスタブ化。`pytest tests/integration/test_runtime_multicontent_failures.py -q` を先に実行し現状を固定、その後 `tests/infra/` にメトリクス検証を追加するサブタスクを設定。
+- 2025-10-18: OPS-B01 Permit/ジッタ/バッチ閾値の調整タスクを着手用にスタブ化し、OPS-B03 多段クォータ着手とあわせて `pytest tests/integration/test_runtime_multicontent_failures.py -q`・`pytest tests/core/test_quota_gate.py -k multilayer -q`・`pytest tests/integration/test_runtime_multicontent_failures.py -k quota_multilayer -q` を先に実行して現状を固定、その後 `tests/infra/` にメトリクス検証を追加するサブタスクを設定。
 - 2025-10-18: OPS-B02 Permit 再評価フロー整備タスクをスタブ化。`pytest tests/integration/test_runtime_multicontent_failures.py -k permit -q` を再現シナリオとして先に追加し、再評価時のメトリクス/ログ記録を実装するタスクを設定。
 - 2025-10-18: OPS-B03 Permit クォータ多段構成タスクをスタブ化。`pytest tests/core/test_quota_gate.py -q` の拡張テストを先行実装し、再送ガード強化を段階的に適用するタスクを設定。
 - 2025-10-18: UX-B01 Engagement 長期トレンド分析タスクをスタブ化。`pytest tests/features/test_weather_engagement.py -q` にトレンド用ケースを先に追加し、Permit クォータ連動ロジックの調整タスクを設定。

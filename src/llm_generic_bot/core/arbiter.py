@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import Callable
 from pathlib import Path
 
 _package_dir = Path(__file__).with_name("arbiter")
@@ -26,7 +27,7 @@ PermitReevaluationOutcome = _models.PermitReevaluationOutcome
 PermitRejectionContext = _models.PermitRejectionContext
 
 jitter_seconds = _jitter.jitter_seconds
-next_slot = _jitter.next_slot
+next_slot: Callable[[float, bool, tuple[int, int]], float] = _jitter.next_slot
 
 LEGACY_PERMIT_GATE_REFACTOR_CHECKLIST = (
     "- [ ] すべての呼び出しサイトを llm_generic_bot.core.arbiter.gate へ更新",

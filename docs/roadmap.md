@@ -59,7 +59,7 @@
 
 ## Sprint 2: UX & コンテンツ
 ### 完了済み
-- [UX-01] Engagement 反映ロジック（`features/weather.py`、オーケストレータ公開エントリ `core/orchestrator/__init__.py` とワーカープロセッサ `core/orchestrator/processor.py`。旧 `core/orchestrator.py`（削除済み）から移行済み）: リアクション履歴をもとに出力頻度を調整し、`tests/features/weather_engagement/test_cooldown.py::test_send_success_log_contains_engagement` と `tests/features/weather_engagement/test_resume_conditions.py::test_weather_engagement_resume_thresholds` / `tests/features/weather_engagement/test_scoring.py::test_weather_engagement_long_term_trend_blends_recent_history` で閾値・クールダウン・再開シナリオを固定。
+- [UX-01] Engagement 反映ロジック（`features/weather.py`、オーケストレータ公開エントリ `core/orchestrator/__init__.py` とワーカープロセッサ `core/orchestrator/processor.py`）: リアクション履歴をもとに出力頻度を調整し、`tests/features/weather_engagement/test_cooldown.py::test_send_success_log_contains_engagement` と `tests/features/weather_engagement/test_resume_conditions.py::test_weather_engagement_resume_thresholds` / `tests/features/weather_engagement/test_scoring.py::test_weather_engagement_long_term_trend_blends_recent_history` で閾値・クールダウン・再開シナリオを固定。
 - [UX-02] ニュース配信実装（`features/news.py`）: フィード取得・要約・クールダウンを統合し、`tests/features/test_news.py` で正常系とフォールバック・クールダウン抑止を検証。
 - [UX-03] おみくじ生成（`features/omikuji.py`）: テンプレートローテーションとユーザー別シードを実装し、`tests/features/test_omikuji.py` でローテーションとフォールバック挙動をカバー。
 - [UX-04] DM ダイジェスト（`adapters/discord.py`, `features/*`）: 日次ダイジェストを PermitGate 経由で送信し、`tests/features/test_dm_digest.py` で集計・リトライ・PermitGate 連携を確認。

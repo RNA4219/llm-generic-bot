@@ -9,10 +9,13 @@ from typing import Any, Dict
 import pytest
 
 from llm_generic_bot.features import weather
+from llm_generic_bot.features.weather import cache as weather_cache
+from llm_generic_bot.features.weather import post_builder as weather_post_builder
 
 
 def test_weather_cache_rotation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cache_path = tmp_path / "weather_cache.json"
+    monkeypatch.setattr(weather_cache, "DEFAULT_CACHE_PATH", cache_path)
     monkeypatch.setattr(weather, "CACHE", cache_path)
     monkeypatch.setenv("OPENWEATHER_API_KEY", "dummy")
 
@@ -28,7 +31,9 @@ def test_weather_cache_rotation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         temp = temps.popleft()
         return {"main": {"temp": temp}, "weather": [{"description": "clear"}]}
 
-    monkeypatch.setattr(weather, "fetch_current_city", fake_fetch_current_city)
+    monkeypatch.setattr(
+        weather_post_builder, "fetch_current_city", fake_fetch_current_city
+    )
 
     cfg: Dict[str, Any] = {
         "openweather": {"units": "metric", "lang": "ja"},
@@ -59,6 +64,7 @@ def test_weather_cache_rotation_falls_back_to_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_path = tmp_path / "weather_cache.json"
+    monkeypatch.setattr(weather_cache, "DEFAULT_CACHE_PATH", cache_path)
     monkeypatch.setattr(weather, "CACHE", cache_path)
     monkeypatch.setenv("OPENWEATHER_API_KEY", "dummy")
 
@@ -76,7 +82,9 @@ def test_weather_cache_rotation_falls_back_to_cache(
             return {"main": {"temp": temp}, "weather": [{"description": "clear"}]}
         raise RuntimeError("temporary failure")
 
-    monkeypatch.setattr(weather, "fetch_current_city", fake_fetch_current_city)
+    monkeypatch.setattr(
+        weather_post_builder, "fetch_current_city", fake_fetch_current_city
+    )
 
     cfg: Dict[str, Any] = {
         "openweather": {"units": "metric", "lang": "ja"},

@@ -59,6 +59,11 @@ async def _dispatch_twice_with_jitter(
 pytestmark = pytest.mark.anyio("asyncio")
 
 
+# LEGACY_MULTICONTENT_FAILURES_CHECKLIST:
+# - tests.integration.runtime_multicontent.failures.test_permit
+from tests.integration.runtime_multicontent.failures.test_permit import *  # noqa: F401,F403
+
+
 def _settings() -> Dict[str, Any]:
     settings: Dict[str, Any] = json.loads(Path("config/settings.example.json").read_text(encoding="utf-8"))
     for key in ("weather", "omikuji", "dm_digest", "report"):
@@ -102,42 +107,6 @@ def _providers(items: Iterable[NewsFeedItem], summarize: Any) -> tuple[Any, Any]
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
-
-
-async def test_permit_denied_records_metrics(caplog: pytest.LogCaptureFixture) -> None:
-    aggregator_state.reset_for_test()
-    settings = _settings()
-    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
-
-    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
-        del _item, language
-        return "summary"
-
-    fetcher, summarizer = _providers([NewsFeedItem("t", "https://example.com")], _summarize)
-    settings["news"]["feed_provider"] = fetcher
-    settings["news"]["summary_provider"] = summarizer
-
-    class _Deny:
-        def permit(self, platform: str, channel: str | None, job: str) -> PermitDecision:
-            del platform, channel
-            return PermitDecision(allowed=False, reason="quota", retryable=False, job=f"{job}-denied")
-
-    caplog.set_level("INFO", logger="llm_generic_bot.core.orchestrator")
-    scheduler, orchestrator, jobs = main_module.setup_runtime(settings, queue=queue, permit_gate=_Deny())
-    scheduler.jitter_enabled = False
-
-    text = await jobs["news"]()
-    assert text
-    _run_dispatch(scheduler, text, created_at=0.0)
-    await scheduler.dispatch_ready_batches()
-    await orchestrator.flush()
-
-    denied = [record for record in caplog.records if record.message == "permit_denied"]
-    assert denied and denied[0].job == "news-denied"
-    assert aggregator_state.weekly_snapshot()["permit_denials"] == [
-        {"job": "news-denied", "platform": "discord", "channel": "discord-news", "reason": "quota", "retryable": "false"}
-    ]
-    await orchestrator.close()
 
 
 async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.MonkeyPatch) -> None:

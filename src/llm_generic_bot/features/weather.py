@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Protocol, Sequence, cast
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, cast
 import json
 import os
 import time
@@ -17,16 +17,36 @@ class ReactionHistoryProvider(Protocol):
         limit: int,
         platform: Optional[str],
         channel: Optional[str],
-    ) -> Sequence[int]:
+    ) -> Sequence[object]:
         ...
 
 
 class WeatherPost(str):
     engagement_score: float
+    engagement_recent: float
+    engagement_long_term: float
+    engagement_permit_quota: Optional[float]
 
-    def __new__(cls, text: str, *, engagement_score: float) -> "WeatherPost":
+    def __new__(
+        cls,
+        text: str,
+        *,
+        engagement_score: float,
+        engagement_recent: Optional[float] = None,
+        engagement_long_term: Optional[float] = None,
+        engagement_permit_quota: Optional[float] = None,
+    ) -> "WeatherPost":
         obj = cast("WeatherPost", super().__new__(cls, text))
         obj.engagement_score = engagement_score
+        obj.engagement_recent = (
+            engagement_recent if engagement_recent is not None else engagement_score
+        )
+        obj.engagement_long_term = (
+            engagement_long_term
+            if engagement_long_term is not None
+            else obj.engagement_recent
+        )
+        obj.engagement_permit_quota = engagement_permit_quota
         return obj
 
 CACHE = Path("weather_cache.json")
@@ -50,6 +70,65 @@ def _read_cache() -> Dict[str, Any]:
 def _write_cache(data: Dict[str, Any]) -> None:
     CACHE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def _clamp_unit_interval(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _normalize_history(
+    history: Sequence[object],
+    *,
+    recent_limit: int,
+    long_term_limit: int,
+) -> tuple[List[float], List[float]]:
+    def _coerce_sequence(items: Sequence[object]) -> List[float]:
+        values: List[float] = []
+        for item in items[: max(recent_limit, long_term_limit)]:
+            coerced = _coerce_float(item)
+            if coerced is not None:
+                values.append(coerced)
+        return values
+
+    nested: List[Sequence[object]] = []
+    for item in history:
+        if isinstance(item, Sequence) and not isinstance(item, (str, bytes, bytearray)):
+            nested.append(cast(Sequence[object], item))
+    if nested:
+        recent_source = nested[0]
+        long_term_source = nested[1] if len(nested) > 1 else nested[0]
+        recent_values = _coerce_sequence(recent_source)[:recent_limit]
+        long_term_values = _coerce_sequence(long_term_source)[:long_term_limit]
+        return recent_values, long_term_values
+
+    values = _coerce_sequence(history)
+    return values[:recent_limit], values[:long_term_limit]
+
+
+def _score_from_values(values: Sequence[float], *, target: float) -> float:
+    if not values:
+        return 0.0
+    average = sum(values) / len(values)
+    if target > 0:
+        average = average / target
+    return _clamp_unit_interval(average)
+
+
+def _filter_cache_entries(
+    source: Mapping[str, Dict[str, Any]],
+    *,
+    retention_seconds: float,
+    now_ts: float,
+) -> Dict[str, Dict[str, Any]]:
+    kept: Dict[str, Dict[str, Any]] = {}
+    for city, snapshot in source.items():
+        if not isinstance(snapshot, dict):
+            continue
+        ts_value = _coerce_float(snapshot.get("ts"))
+        if ts_value is None or now_ts - ts_value > retention_seconds:
+            continue
+        kept[city] = dict(snapshot)
+    return kept
+
+
 async def build_weather_post(
     cfg: Dict[str, Any],
     *,
@@ -58,6 +137,7 @@ async def build_weather_post(
     platform: Optional[str] = None,
     channel: Optional[str] = None,
     job: str = "weather",
+    permit_quota_ratio: Optional[float] = None,
 ) -> Optional[WeatherPost]:
     ow = cfg.get("openweather", {})
     wc = cfg.get("weather", {})
@@ -83,6 +163,9 @@ async def build_weather_post(
     history_limit = int(engagement_cfg.get("history_limit", 5))
     if history_limit <= 0:
         history_limit = 1
+    long_term_limit = int(engagement_cfg.get("long_term_history_limit", history_limit))
+    if long_term_limit <= 0:
+        long_term_limit = history_limit
     target_reactions = float(engagement_cfg.get("target_reactions", 5.0))
     if target_reactions <= 0:
         target_reactions = 1.0
@@ -91,7 +174,22 @@ async def build_weather_post(
     if resume_score < min_score:
         resume_score = min_score
     time_band_factor = float(engagement_cfg.get("time_band_factor", 1.0))
+    long_term_weight = _clamp_unit_interval(
+        float(engagement_cfg.get("long_term_weight", 0.0))
+    )
+    permit_quota_weight = _clamp_unit_interval(
+        float(engagement_cfg.get("permit_quota_weight", 0.0))
+    )
+    if permit_quota_ratio is None:
+        permit_quota_ratio = _coerce_float(engagement_cfg.get("permit_quota_ratio"))
+    permit_quota_clamped = (
+        _clamp_unit_interval(permit_quota_ratio)
+        if permit_quota_ratio is not None
+        else None
+    )
 
+    engagement_recent_score = 1.0
+    engagement_long_term_score = 1.0
     engagement_score = 1.0
     if reaction_history_provider is not None:
         history = await reaction_history_provider(
@@ -100,19 +198,32 @@ async def build_weather_post(
             platform=platform,
             channel=channel,
         )
-        recent_raw = list(history)[-history_limit:]
-        recent = [
-            value
-            for value in (_coerce_float(item) for item in recent_raw)
-            if value is not None
-        ]
-        if recent:
-            total = sum(recent)
-            average = total / len(recent)
-            normalized = average / target_reactions if target_reactions > 0 else average
-            engagement_score = max(0.0, min(1.0, normalized))
+        recent_values, long_term_values = _normalize_history(
+            list(history),
+            recent_limit=history_limit,
+            long_term_limit=long_term_limit,
+        )
+        engagement_recent_score = _score_from_values(
+            recent_values,
+            target=target_reactions,
+        )
+        engagement_long_term_score = _score_from_values(
+            long_term_values or recent_values,
+            target=target_reactions,
+        )
+        if long_term_weight > 0.0:
+            engagement_score = _clamp_unit_interval(
+                engagement_recent_score * (1.0 - long_term_weight)
+                + engagement_long_term_score * long_term_weight
+            )
         else:
-            engagement_score = 0.0
+            engagement_score = engagement_recent_score
+
+        if permit_quota_clamped is not None and permit_quota_weight > 0.0:
+            engagement_score = _clamp_unit_interval(
+                engagement_score * (1.0 - permit_quota_weight)
+                + permit_quota_clamped * permit_quota_weight
+            )
 
         multiplier = 1.0
         if cooldown is not None:
@@ -129,24 +240,29 @@ async def build_weather_post(
                 return None
 
     cache = _read_cache()
+    now_ts = time.time()
+    retention_hours = _coerce_float(wc.get("cache_retention_hours"))
+    if retention_hours is None or retention_hours <= 0:
+        retention_hours = 48.0
+    retention_seconds = retention_hours * 3600.0
     previous_today_source = cache.get("today", {}) or {}
     if isinstance(previous_today_source, dict):
-        previous_today: Dict[str, Dict[str, Any]] = {
-            city: dict(snapshot)
-            for city, snapshot in previous_today_source.items()
-            if isinstance(snapshot, dict)
-        }
+        previous_today = _filter_cache_entries(
+            previous_today_source,
+            retention_seconds=retention_seconds,
+            now_ts=now_ts,
+        )
     else:
         previous_today = {}
     yesterday_source = cache.get("yesterday", {}) or {}
     if previous_today:
         yesterday: Dict[str, Dict[str, Any]] = previous_today
     elif isinstance(yesterday_source, dict):
-        yesterday = {
-            city: dict(snapshot)
-            for city, snapshot in yesterday_source.items()
-            if isinstance(snapshot, dict)
-        }
+        yesterday = _filter_cache_entries(
+            yesterday_source,
+            retention_seconds=retention_seconds,
+            now_ts=now_ts,
+        )
     else:
         yesterday = {}
     now_snap: Dict[str, Dict[str, Any]] = {}
@@ -215,7 +331,13 @@ async def build_weather_post(
     if warns:
         out_lines.append(footer_warn.replace("{bullets}", "\n".join(warns)))
 
-    new_cache = {"today": now_snap, "yesterday": previous_today}
+    new_cache = {"today": now_snap, "yesterday": _filter_cache_entries(previous_today, retention_seconds=retention_seconds, now_ts=now_ts)}
     _write_cache(new_cache)
     text = "\n".join(out_lines).strip()
-    return WeatherPost(text, engagement_score=engagement_score)
+    return WeatherPost(
+        text,
+        engagement_score=engagement_score,
+        engagement_recent=engagement_recent_score,
+        engagement_long_term=engagement_long_term_score,
+        engagement_permit_quota=permit_quota_clamped,
+    )

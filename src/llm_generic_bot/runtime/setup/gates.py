@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Optional, cast
 
 from ...config.quotas import QuotaSettings
-from ...core.arbiter import PermitGate
+from ...core.arbiter.gate import PermitGate
+from ...core.arbiter.models import PermitReevaluationOutcome
 from ...core.cooldown import CooldownGate
 from ...core.dedupe import NearDuplicateFilter
 from ...core.orchestrator import (
@@ -69,6 +71,17 @@ def build_dedupe(dedupe_cfg: Mapping[str, Any]) -> NearDuplicateFilter:
     )
 
 
+@dataclass(frozen=True)
+class _PermitDecisionAdapter:
+    allowed: bool
+    reason: Optional[str]
+    retryable: bool
+    job: Optional[str]
+    retry_after: Optional[float] = None
+    level: Optional[str] = None
+    reevaluation: PermitReevaluationOutcome | str | None = None
+
+
 def build_permit(
     quota: QuotaSettings,
     *,
@@ -94,13 +107,14 @@ def build_permit(
             )
         return cast(
             PermitDecisionLike,
-            PermitDecision(
+            _PermitDecisionAdapter(
                 allowed=False,
                 reason=decision.reason,
                 retryable=decision.retryable,
                 job=decision.job or job,
                 retry_after=getattr(decision, "retry_after", None),
                 level=getattr(decision, "level", None),
+                reevaluation=getattr(decision, "reevaluation", None),
             ),
         )
 

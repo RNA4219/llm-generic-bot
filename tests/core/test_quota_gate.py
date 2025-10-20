@@ -4,9 +4,10 @@ from dataclasses import dataclass
 import pytest
 
 from llm_generic_bot.config.quotas import PerChannelQuotaConfig
-from llm_generic_bot.core.arbiter import (
+from llm_generic_bot.core.arbiter import LEGACY_PERMIT_GATE_REFACTOR_CHECKLIST
+from llm_generic_bot.core.arbiter.gate import PermitGate
+from llm_generic_bot.core.arbiter.models import (
     PermitDecision,
-    PermitGate,
     PermitGateConfig,
     PermitGateHooks,
     PermitQuotaLevel,
@@ -327,3 +328,18 @@ def test_quota_multilayer_tiers_respect_windows_and_retryable() -> None:
 
     assert metrics.calls[-1][1]["code"] == "platform_daily"
     assert metrics.calls[-1][1]["level"] == "per_platform"
+
+
+def test_legacy_module_reexports_permit_gate_components() -> None:
+    from llm_generic_bot.core import arbiter as legacy_arbiter
+    from llm_generic_bot.core.arbiter.gate import PermitGate as GatePermitGate
+    from llm_generic_bot.core.arbiter.models import (
+        PermitDecision as ModelsPermitDecision,
+        PermitGateConfig as ModelsPermitGateConfig,
+    )
+
+    assert legacy_arbiter.PermitGate is GatePermitGate
+    assert legacy_arbiter.PermitDecision is ModelsPermitDecision
+    assert legacy_arbiter.PermitGateConfig is ModelsPermitGateConfig
+    checklist = LEGACY_PERMIT_GATE_REFACTOR_CHECKLIST
+    assert any("呼び出しサイト" in item for item in checklist)

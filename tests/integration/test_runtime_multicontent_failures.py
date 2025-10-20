@@ -26,6 +26,10 @@ from llm_generic_bot.features.news import NewsFeedItem, SummaryError
 from llm_generic_bot.infra import metrics as metrics_module
 from llm_generic_bot.infra.metrics import aggregator_state
 
+# LEGACY_MULTICONTENT_FAILURES_CHECKLIST:
+# - tests.integration.runtime_multicontent.failures.test_permit
+from tests.integration.runtime_multicontent.failures.test_permit import *  # noqa: F401,F403
+
 
 async def _dispatch_twice_with_jitter(
     scheduler: Any,
@@ -57,11 +61,6 @@ async def _dispatch_twice_with_jitter(
     return delays
 
 pytestmark = pytest.mark.anyio("asyncio")
-
-
-# LEGACY_MULTICONTENT_FAILURES_CHECKLIST:
-# - tests.integration.runtime_multicontent.failures.test_permit
-from tests.integration.runtime_multicontent.failures.test_permit import *  # noqa: F401,F403
 
 
 def _settings() -> Dict[str, Any]:

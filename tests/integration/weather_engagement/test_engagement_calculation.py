@@ -29,6 +29,7 @@ async def test_runtime_weather_engagement_flow(
     monkeypatch.setattr(provider_module, "PROVIDER", provider)
 
     cache_path = tmp_path / "weather_runtime_flow_cache.json"
+    monkeypatch.setattr(weather_module.cache, "DEFAULT_CACHE_PATH", cache_path)
     monkeypatch.setattr(weather_module, "CACHE", cache_path)
 
     async def fake_fetch_current_city(
@@ -45,7 +46,11 @@ async def test_runtime_weather_engagement_flow(
             "weather": [{"description": "clear"}],
         }
 
-    monkeypatch.setattr(weather_module, "fetch_current_city", fake_fetch_current_city)
+    monkeypatch.setattr(
+        weather_module.post_builder,
+        "fetch_current_city",
+        fake_fetch_current_city,
+    )
 
     settings: Dict[str, Any] = {
         "timezone": "UTC",

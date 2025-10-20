@@ -21,6 +21,7 @@ async def test_weather_runtime_engagement_controls_dispatch(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     cache_path = tmp_path / "weather_cache.json"
+    monkeypatch.setattr(weather_module.cache, "DEFAULT_CACHE_PATH", cache_path)
     monkeypatch.setattr(weather_module, "CACHE", cache_path)
 
     async def fake_fetch_current_city(
@@ -36,7 +37,11 @@ async def test_weather_runtime_engagement_controls_dispatch(
             "weather": [{"description": "fine"}],
         }
 
-    monkeypatch.setattr(weather_module, "fetch_current_city", fake_fetch_current_city)
+    monkeypatch.setattr(
+        weather_module.post_builder,
+        "fetch_current_city",
+        fake_fetch_current_city,
+    )
 
     provider = _ReactionHistoryProviderStub(((0, 0), (8, 7)))
     monkeypatch.setattr(main_module, "REACTION_PROVIDER", provider, raising=False)

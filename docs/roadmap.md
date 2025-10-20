@@ -68,8 +68,7 @@
 - [OPS-B01] Permit/ジッタ/バッチ閾値の運用チューニングを継続し、閾値変更時も `tests/integration/test_runtime_multicontent_failures.py` がグリーンであることと、追加メトリクス検証を `tests/infra/` に整備する。
 - [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。
 - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
-- `send.delay_seconds` 計測は `unit=seconds` タグ付きで報告されることを確認し、検証コマンドとして `pytest tests/infra/metrics/test_reporting_recording_metrics.py -k delay -q` を実行する。
-- [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。
+- [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。→ 2025-10-19: `core/orchestrator/runtime.py` を公開実装として昇格し、`tests/core/orchestrator/test_processor.py`・`tests/integration/test_orchestrator_imports.py` を追加して `llm_generic_bot.core.orchestrator.processor` / `.runtime` 直 import を固定化。`_legacy.py` は薄いフォワーダへ整理済み。
 - ※ OPS-B04/B05/B07 は 2025-10-18 に完了済みのため残課題一覧から除外している（`tests/infra/metrics/test_reporting_*` 系 CI 緑化・ドキュメント同期済み）。
 
 #### UX（体験・コンテンツ）

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import ContextManager, Mapping
+from typing import ContextManager, Mapping, Protocol
 
 import pytest
 
@@ -44,7 +44,12 @@ else:  # pragma: no cover
         return _freezegun_freeze_time(iso_timestamp)
 
 
-class RecordingMetrics(MetricsRecorder):
+class RecordingMetricsLike(MetricsRecorder, Protocol):
+    increment_calls: list[tuple[str, dict[str, str]]]
+    observe_calls: list[tuple[str, float, dict[str, str]]]
+
+
+class RecordingMetrics(RecordingMetricsLike):
     def __init__(self) -> None:
         self.increment_calls: list[tuple[str, dict[str, str]]] = []
         self.observe_calls: list[tuple[str, float, dict[str, str]]] = []
@@ -71,7 +76,7 @@ def freeze_time_ctx() -> Callable[[str], ContextManager[None]]:
 
 
 @pytest.fixture
-def make_recording_metrics() -> Callable[[], RecordingMetrics]:
+def make_recording_metrics() -> Callable[[], RecordingMetricsLike]:
     return RecordingMetrics
 
 

@@ -1,3 +1,4 @@
+- 2025-10-20: DOC-B15 対応で docs/roadmap.md の OPS 残課題節へ `send.delay_seconds` の `unit=seconds` タグと検証コマンドを追記し、`pytest tests/infra/metrics/test_reporting_recording_metrics.py -k delay -q` を参照に含めた。`npx markdownlint-cli docs/roadmap.md` を実行して整形を確認し、docs/tasks/backlog.md の DOC-B15 行へ同節のアンカーリンクを追加。
 - 2025-10-20: OPS-B16 をバックログへ追加し、`pytest tests/infra/metrics/test_reporting_recording_metrics.py -q` → `mypy src/llm_generic_bot/infra/metrics` → `ruff check src/llm_generic_bot/infra/metrics` の順で現状を固定した上で記録関数分離と状態層整理に着手する方針を共有。
 - 2025-10-19: OPS-B01/B02/B03/B06・UX-B01・DOC-B15 の未完了を再確認し、`rg "\\[ \]"` で未チェック項目が上記6件のみであることを確認。
 - 2025-10-19: DOC-B15 を追加し、docs/roadmap.md の DOC 残課題節へ同期。`npx markdownlint-cli docs/roadmap.md` と `pytest tests/integration/runtime_weekly_report/test_templates.py -q` を実行して整形と検証結果を記録。

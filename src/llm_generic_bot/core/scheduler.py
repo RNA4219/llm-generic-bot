@@ -8,7 +8,7 @@ from typing import Awaitable, Callable, Final, List, Mapping, Optional, Protocol
 import zoneinfo
 import anyio
 
-from .arbiter import next_slot
+from .arbiter.jitter import next_slot
 from .queue import CoalesceQueue, QueueBatch
 from .types import Sender
 from ..infra import metrics as metrics_module

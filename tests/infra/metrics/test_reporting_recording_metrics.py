@@ -96,6 +96,7 @@ async def test_metrics_records_expected_labels_and_snapshot(
                 "rule": "quota",
             }
         ],
+        "permit_reevaluations": [],
     }
 
 
@@ -124,6 +125,53 @@ async def test_report_send_delay_records_unit_seconds(
                 "unit": "seconds",
             },
         )
+    ]
+
+
+@pytest.mark.anyio("asyncio")
+async def test_report_permit_reevaluation_records_reason(
+    freeze_time_ctx: Callable[[str], ContextManager[None]],
+    make_recording_metrics: Callable[[], MetricsRecorder],
+) -> None:
+    recorder = cast(RecordingMetricsLike, make_recording_metrics())
+    reporting.configure_backend(recorder)
+
+    with freeze_time_ctx("2025-07-01T00:00:00+00:00"):
+        await reporting.report_permit_reevaluation(
+            job="news",
+            platform="discord",
+            channel="headlines",
+            level="per_channel",
+            reason="cooldown window",
+            retry_after_seconds=45.0,
+            decision="pending",
+        )
+        snapshot = reporting.weekly_snapshot()
+
+    assert recorder.increment_calls == [
+        (
+            "send.permit_reevaluation",
+            {
+                "job": "news",
+                "platform": "discord",
+                "channel": "headlines",
+                "level": "per_channel",
+                "reason": "cooldown window",
+                "decision": "pending",
+                "retry_after": "45",
+            },
+        )
+    ]
+    assert snapshot["permit_reevaluations"] == [
+        {
+            "job": "news",
+            "platform": "discord",
+            "channel": "headlines",
+            "level": "per_channel",
+            "reason": "cooldown window",
+            "decision": "pending",
+            "retry_after_seconds": "45",
+        }
     ]
 
 

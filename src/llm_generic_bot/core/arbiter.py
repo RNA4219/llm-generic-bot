@@ -28,6 +28,40 @@ class PermitReevaluationOutcome:
     allowed: Optional[bool] = None
 
 
+def reevaluation_retry_after(
+    reevaluation: "PermitReevaluationOutcome | str | None",
+) -> Optional[float]:
+    if isinstance(reevaluation, PermitReevaluationOutcome):
+        return reevaluation.retry_after
+    return None
+
+
+def reevaluation_allowed(
+    reevaluation: "PermitReevaluationOutcome | str | None",
+) -> Optional[bool]:
+    if isinstance(reevaluation, PermitReevaluationOutcome):
+        return reevaluation.allowed
+    return None
+
+
+def reevaluation_reason(
+    reevaluation: "PermitReevaluationOutcome | str | None",
+) -> Optional[str]:
+    if isinstance(reevaluation, PermitReevaluationOutcome):
+        return reevaluation.reason
+    if isinstance(reevaluation, str):
+        return reevaluation
+    return None
+
+
+def reevaluation_level(
+    reevaluation: "PermitReevaluationOutcome | str | None",
+) -> Optional[str]:
+    if isinstance(reevaluation, PermitReevaluationOutcome):
+        return reevaluation.level
+    return None
+
+
 @dataclass(frozen=True)
 class PermitRejectionContext:
     platform: str
@@ -256,7 +290,17 @@ class PermitGate:
             ):
                 reason_hint = reevaluation_outcome.reason
             tags["level"] = level
-            tags["reeval_reason"] = reason_hint
+            tags["reevaluation_reason"] = reason_hint
+        if reevaluation_outcome is not None:
+            tags["reevaluation_level"] = reevaluation_outcome.level
+            if reevaluation_outcome.reason:
+                tags["reevaluation_reason"] = reevaluation_outcome.reason
+            retry_after_value = reevaluation_outcome.retry_after
+            if retry_after_value is not None:
+                tags["reevaluation_retry_after"] = str(float(retry_after_value))
+            allowed_flag = reevaluation_outcome.allowed
+            if allowed_flag is not None:
+                tags["reevaluation_allowed"] = "true" if allowed_flag else "false"
         if self._metrics is not None:
             self._metrics("quota_denied", tags)
         self._logger.warning(

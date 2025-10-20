@@ -58,9 +58,10 @@ async def test_weekly_report_job_uses_metrics_and_template(
         payload = {
             "generated_at": "2024-01-08T00:00:00+00:00",
             "success_rate": {"weather": {"ratio": 0.75}},
-            "latency_histogram_seconds": {},
-            "permit_denials": [],
-        }
+        "latency_histogram_seconds": {},
+        "permit_denials": [],
+        "permit_reevaluations": [],
+    }
         weekly_snapshot_calls.append(payload)
         return payload
 

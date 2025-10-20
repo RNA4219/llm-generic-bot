@@ -65,6 +65,7 @@ async def test_metrics_null_backend_falls_back_to_noop(
         "success_rate": {},
         "latency_histogram_seconds": {},
         "permit_denials": [],
+        "permit_reevaluations": [],
     }
 
 

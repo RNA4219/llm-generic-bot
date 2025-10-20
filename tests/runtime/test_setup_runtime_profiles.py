@@ -191,6 +191,7 @@ async def test_setup_runtime_disables_metrics_when_disabled(
         "success_rate": {},
         "latency_histogram_seconds": {},
         "permit_denials": [],
+        "permit_reevaluations": [],
     }
 
     await orchestrator.close()

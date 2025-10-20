@@ -7,6 +7,13 @@ from typing import TYPE_CHECKING, Mapping, Optional, Protocol
 from ..cooldown import CooldownGate
 from ..dedupe import NearDuplicateFilter
 from ..orchestrator_metrics import MetricsBoundary, MetricsRecorder, format_metric_value
+from ..arbiter import (
+    PermitReevaluationOutcome,
+    reevaluation_allowed,
+    reevaluation_level,
+    reevaluation_reason,
+    reevaluation_retry_after,
+)
 from ...infra import metrics as metrics_module
 
 if TYPE_CHECKING:
@@ -15,6 +22,7 @@ if TYPE_CHECKING:
         reason: Optional[str]
         retryable: bool
         job: Optional[str]
+        reevaluation: PermitReevaluationOutcome | str | None
 
     class PermitEvaluator(Protocol):
         def __call__(
@@ -55,6 +63,11 @@ class RecordEvent(Protocol):
         ...
 
 
+class ScheduleReevaluation(Protocol):
+    async def __call__(self, request: SendRequest, *, retry_after: float) -> None:
+        ...
+
+
 async def process(
     *,
     request: SendRequest,
@@ -66,6 +79,7 @@ async def process(
     metrics: MetricsRecorder,
     logger: logging.Logger,
     record_event: RecordEvent,
+    schedule_reevaluation: ScheduleReevaluation,
 ) -> None:
     decision: "PermitDecisionLike" = permit(request.platform, request.channel, request.job)
     job_name = decision.job or request.job
@@ -80,6 +94,19 @@ async def process(
         retryable_flag = "true" if decision.retryable else "false"
         denied_tags = {**tags, "retryable": retryable_flag}
         reason = decision.reason or "unknown"
+        retry_after = reevaluation_retry_after(decision.reevaluation)
+        reeval_level = reevaluation_level(decision.reevaluation)
+        reeval_reason = reevaluation_reason(decision.reevaluation)
+        allowed_hint = reevaluation_allowed(decision.reevaluation)
+        permit_payload: dict[str, str] = {"retryable": retryable_flag}
+        if reeval_level is not None:
+            permit_payload["reevaluation_level"] = reeval_level
+        if reeval_reason:
+            permit_payload["reevaluation_reason"] = reeval_reason
+        if retry_after is not None and retry_after >= 0.0:
+            permit_payload["reevaluation_retry_after"] = format_metric_value(retry_after)
+        if allowed_hint is not None:
+            permit_payload["reevaluation_allowed"] = "true" if allowed_hint else "false"
         if metrics_enabled:
             with metrics_boundary.suppress_backend(False):
                 metrics_module.report_permit_denied(
@@ -87,7 +114,7 @@ async def process(
                     platform=request.platform,
                     channel=request.channel,
                     reason=reason,
-                    permit_tags={"retryable": retryable_flag},
+                    permit_tags=permit_payload,
                 )
         denied_metadata = {
             "correlation_id": request.correlation_id,
@@ -107,6 +134,54 @@ async def process(
                 "retryable": decision.retryable,
             },
         )
+        if retry_after is not None and retry_after >= 0.0:
+            level = reeval_level or "unspecified"
+            reeval_reason = reeval_reason or reason
+            decision_label = (
+                "allow" if allowed_hint is True else "deny" if allowed_hint is False else "pending"
+            )
+            reevaluation_tags = {**tags, "level": level, "decision": decision_label}
+            if reeval_reason:
+                reevaluation_tags["reason"] = reeval_reason
+            reevaluation_tags["retry_after"] = format_metric_value(retry_after)
+            metrics.increment("send.permit_reevaluation", reevaluation_tags)
+            if metrics_enabled:
+                with metrics_boundary.suppress_backend(False):
+                    await metrics_module.report_permit_reevaluation(
+                        job=job_name,
+                        platform=request.platform,
+                        channel=request.channel,
+                        level=level,
+                        reason=reeval_reason,
+                        retry_after_seconds=retry_after,
+                        decision=decision_label,
+                    )
+            metadata = {
+                "correlation_id": request.correlation_id,
+                "reason": reeval_reason,
+                "retry_after": retry_after,
+                "decision": decision_label,
+            }
+            record_event(
+                "send.permit_reevaluation",
+                reevaluation_tags,
+                metadata=metadata,
+                force=True,
+            )
+            logger.info(
+                "permit_reevaluation_scheduled",
+                extra={
+                    "event": "send_permit_reevaluation",
+                    "correlation_id": request.correlation_id,
+                    "job": job_name,
+                    "platform": request.platform,
+                    "channel": request.channel,
+                    "reason": reeval_reason,
+                    "retry_after": retry_after,
+                    "decision": decision_label,
+                },
+            )
+            await schedule_reevaluation(request, retry_after=retry_after)
         return
 
     if not dedupe.permit(request.text):

@@ -8,6 +8,7 @@ from typing import Mapping
 
 from .aggregator_records import (
     _PermitDenialRecord,
+    _PermitReevaluationRecord,
     _SendEventRecord,
     _base_tags,
     _build_snapshot,
@@ -38,6 +39,12 @@ def _utcnow() -> datetime:
     return _service_utcnow()
 
 
+def _format_retry_after(value: float) -> str:
+    formatted = f"{value:.3f}"
+    trimmed = formatted.rstrip("0").rstrip(".")
+    return trimmed or "0"
+
+
 @dataclass
 class _GlobalMetricsAggregator:
     lock: Lock = field(default_factory=Lock)
@@ -45,6 +52,7 @@ class _GlobalMetricsAggregator:
     backend_configured: bool = False
     _send_events: list[_SendEventRecord] = field(default_factory=list)
     _permit_denials: list[_PermitDenialRecord] = field(default_factory=list)
+    _permit_reevaluations: list[_PermitReevaluationRecord] = field(default_factory=list)
     retention_days: int = _DEFAULT_RETENTION_DAYS
 
     def configure_backend(self, recorder: MetricsRecorder | None) -> None:
@@ -57,6 +65,7 @@ class _GlobalMetricsAggregator:
         with self.lock:
             self._send_events.clear()
             self._permit_denials.clear()
+            self._permit_reevaluations.clear()
 
     def set_retention_days(self, retention_days: int | None) -> None:
         value = _normalize_retention_days(retention_days)
@@ -75,7 +84,7 @@ class _GlobalMetricsAggregator:
         base_tags = _base_tags(job, platform, channel)
         tags = _merge_tags(base_tags, permit_tags)
         duration_tags = {**base_tags, "unit": "seconds"}
-        backend = self._backend_for_recording(
+        backend = self._backend_for_event(
             _SendEventRecord(
                 recorded_at=_utcnow(),
                 job=job,
@@ -99,7 +108,7 @@ class _GlobalMetricsAggregator:
         increment_tags = dict(base_tags)
         increment_tags["error"] = error_type
         duration_tags = {**base_tags, "unit": "seconds"}
-        backend = self._backend_for_recording(
+        backend = self._backend_for_event(
             _SendEventRecord(
                 recorded_at=_utcnow(),
                 job=job,
@@ -122,7 +131,7 @@ class _GlobalMetricsAggregator:
         base_tags = _base_tags(job, platform, channel)
         tags = _merge_tags(base_tags, permit_tags)
         tags["reason"] = reason
-        backend = self._backend_for_recording(
+        backend = self._backend_for_event(
             _PermitDenialRecord(recorded_at=_utcnow(), payload=dict(tags))
         )
         backend.increment("send.denied", tags=tags)
@@ -140,11 +149,43 @@ class _GlobalMetricsAggregator:
         backend = self._backend_for_delay()
         backend.observe("send.delay_seconds", float(delay_seconds), tags=observation_tags)
 
+    def report_permit_reevaluation(
+        self,
+        *,
+        job: str,
+        platform: str,
+        channel: str | None,
+        level: str,
+        reason: str | None,
+        retry_after_seconds: float,
+        decision: str,
+    ) -> None:
+        base_tags = _base_tags(job, platform, channel)
+        metric_tags = dict(base_tags)
+        metric_tags["level"] = level
+        metric_tags["decision"] = decision
+        record_payload = dict(base_tags)
+        record_payload["level"] = level
+        record_payload["decision"] = decision
+        if reason:
+            metric_tags["reason"] = reason
+            record_payload["reason"] = reason
+        formatted_retry_after = _format_retry_after(retry_after_seconds)
+        metric_tags["retry_after"] = formatted_retry_after
+        record_payload["retry_after_seconds"] = formatted_retry_after
+        backend = self._backend_for_event(
+            _PermitReevaluationRecord(
+                recorded_at=_utcnow(),
+                payload=record_payload,
+            )
+        )
+        backend.increment("send.permit_reevaluation", tags=metric_tags)
+
     def weekly_snapshot(self) -> dict[str, object]:
         generated_at = _utcnow()
         cutoff = generated_at - timedelta(days=self._retention_days())
         with self.lock:
-            send_events, permit_denials = self._trim_history(cutoff)
+            send_events, permit_denials, permit_reevaluations = self._trim_history(cutoff)
         success_counts, failure_counts, histogram = _summarize_send_events(send_events)
         success_rate = _calculate_success_rate(success_counts, failure_counts)
         return _build_snapshot(
@@ -152,6 +193,7 @@ class _GlobalMetricsAggregator:
             success_rate=success_rate,
             histogram=histogram,
             permit_denials=permit_denials,
+            permit_reevaluations=permit_reevaluations,
         )
 
     def reset(self) -> None:
@@ -160,18 +202,21 @@ class _GlobalMetricsAggregator:
             self.backend_configured = False
             self._send_events.clear()
             self._permit_denials.clear()
+            self._permit_reevaluations.clear()
             self.retention_days = _DEFAULT_RETENTION_DAYS
 
-    def _backend_for_recording(
-        self, record: _SendEventRecord | _PermitDenialRecord
+    def _backend_for_event(
+        self, record: _SendEventRecord | _PermitDenialRecord | _PermitReevaluationRecord
     ) -> MetricsRecorder:
         with self.lock:
             backend = self.backend
             if self.backend_configured:
                 if isinstance(record, _SendEventRecord):
                     self._send_events.append(record)
-                else:
+                elif isinstance(record, _PermitDenialRecord):
                     self._permit_denials.append(record)
+                else:
+                    self._permit_reevaluations.append(record)
         return backend
 
     def _backend_for_delay(self) -> MetricsRecorder:
@@ -180,12 +225,14 @@ class _GlobalMetricsAggregator:
 
     def _trim_history(
         self, cutoff: datetime
-    ) -> tuple[list[_SendEventRecord], list[_PermitDenialRecord]]:
+    ) -> tuple[list[_SendEventRecord], list[_PermitDenialRecord], list[_PermitReevaluationRecord]]:
         send_events = _retain_recent(self._send_events, cutoff)
         permit_denials = _retain_recent(self._permit_denials, cutoff)
+        permit_reevaluations = _retain_recent(self._permit_reevaluations, cutoff)
         self._send_events = send_events
         self._permit_denials = permit_denials
-        return send_events, permit_denials
+        self._permit_reevaluations = permit_reevaluations
+        return send_events, permit_denials, permit_reevaluations
 
     def _retention_days(self) -> int:
         with self.lock:

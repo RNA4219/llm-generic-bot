@@ -21,6 +21,12 @@ class _PermitDenialRecord:
     payload: dict[str, str]
 
 
+@dataclass(frozen=True)
+class _PermitReevaluationRecord:
+    recorded_at: datetime
+    payload: dict[str, str]
+
+
 _LATENCY_BUCKETS: tuple[tuple[float, str], ...] = (
     (1.0, "1s"),
     (3.0, "3s"),
@@ -28,7 +34,7 @@ _LATENCY_BUCKETS: tuple[tuple[float, str], ...] = (
 )
 
 
-_RecordT = TypeVar("_RecordT", _SendEventRecord, _PermitDenialRecord)
+_RecordT = TypeVar("_RecordT", _SendEventRecord, _PermitDenialRecord, _PermitReevaluationRecord)
 
 
 def _normalize_retention_days(retention_days: int | None) -> int:
@@ -97,12 +103,14 @@ def _build_snapshot(
     success_rate: dict[str, dict[str, float | int]],
     histogram: dict[str, dict[str, int]],
     permit_denials: Iterable[_PermitDenialRecord],
+    permit_reevaluations: Iterable[_PermitReevaluationRecord],
 ) -> dict[str, object]:
     return {
         "generated_at": generated_at.isoformat(),
         "success_rate": success_rate,
         "latency_histogram_seconds": histogram,
         "permit_denials": _format_permit_denials(permit_denials),
+        "permit_reevaluations": _format_permit_reevaluations(permit_reevaluations),
     }
 
 
@@ -110,6 +118,12 @@ def _format_permit_denials(
     permit_denials: Iterable[_PermitDenialRecord],
 ) -> list[dict[str, str]]:
     return [dict(record.payload) for record in permit_denials]
+
+
+def _format_permit_reevaluations(
+    reevaluations: Iterable[_PermitReevaluationRecord],
+) -> list[dict[str, str]]:
+    return [dict(record.payload) for record in reevaluations]
 
 
 def _select_bucket(value: float) -> str:
@@ -122,6 +136,7 @@ def _select_bucket(value: float) -> str:
 __all__ = [
     "_SendEventRecord",
     "_PermitDenialRecord",
+    "_PermitReevaluationRecord",
     "_LATENCY_BUCKETS",
     "_normalize_retention_days",
     "_base_tags",
@@ -131,5 +146,6 @@ __all__ = [
     "_calculate_success_rate",
     "_build_snapshot",
     "_format_permit_denials",
+    "_format_permit_reevaluations",
     "_select_bucket",
 ]

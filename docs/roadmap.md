@@ -66,7 +66,7 @@
 ### 残課題
 #### OPS（運用・基盤）
 - [OPS-B01] Permit/ジッタ/バッチ閾値の運用チューニングを継続し、閾値変更時も `tests/integration/test_runtime_multicontent_failures.py` がグリーンであることと、追加メトリクス検証を `tests/infra/` に整備する。
-- [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。
+- [OPS-B02] Permit 失敗時の再評価フロー整備を進め、再評価タイミングと監査ログをテストで固定したうえで PermitGate のレート制御と重複スキップの両立を確認する。2025-10-21 時点で `tests/integration/test_runtime_multicontent_failures.py::test_permit_retry_after_schedules_reevaluation` と `tests/infra/metrics/test_reporting_recording_metrics.py::test_report_permit_reevaluation_records_reason` を追加し、`pytest tests/integration/test_runtime_multicontent_failures.py -k permit_reeval -q` → `mypy src/llm_generic_bot/core/orchestrator processor.py src/llm_generic_bot/core/arbiter.py` → `ruff check` → `pytest tests/infra/metrics/test_reporting_recording_metrics.py -k reeval -q` の順で緑化を確認済み。
 - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
 - [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。
 - ※ OPS-B04/B05/B07 は 2025-10-18 に完了済みのため残課題一覧から除外している（`tests/infra/metrics/test_reporting_*` 系 CI 緑化・ドキュメント同期済み）。

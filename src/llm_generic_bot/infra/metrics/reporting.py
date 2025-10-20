@@ -80,6 +80,27 @@ def report_permit_denied(
     )
 
 
+async def report_permit_reevaluation(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    level: str,
+    reason: str | None,
+    retry_after_seconds: float,
+    decision: str,
+) -> None:
+    _AGGREGATOR.report_permit_reevaluation(
+        job=job,
+        platform=platform,
+        channel=channel,
+        level=level,
+        reason=reason,
+        retry_after_seconds=retry_after_seconds,
+        decision=decision,
+    )
+
+
 def reset_for_test() -> None:
     _AGGREGATOR.reset()
 
@@ -96,6 +117,7 @@ __all__ = [
     "configure_backend",
     "clear_history",
     "report_permit_denied",
+    "report_permit_reevaluation",
     "report_send_delay",
     "report_send_failure",
     "report_send_success",

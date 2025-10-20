@@ -158,7 +158,7 @@ async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.Monkey
         return PermitReevaluationOutcome(
             level="per_channel",
             reason="retry after cooldown",
-            retry_after=61.0,
+            retry_after=None,
             allowed=None,
         )
 
@@ -177,6 +177,8 @@ async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.Monkey
         permit_gate=gate,
     )
     scheduler.jitter_enabled = False
+
+    # 再評価スケジュールは手動制御で検証するため、retry_after は Permit フック側で管理する。
 
     text = await jobs["news"]()
     assert text
@@ -205,8 +207,114 @@ async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.Monkey
             "channel": "discord-news",
             "reason": "burst limit reached",
             "retryable": "true",
+            "reevaluation_level": "per_channel",
+            "reevaluation_reason": "retry after cooldown",
         }
     ]
+
+    await orchestrator.close()
+
+
+async def test_permit_retry_after_schedules_reevaluation(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    settings["dedupe"]["enabled"] = False
+
+    current_time = 2_000_000.0
+    monkeypatch.setattr(time, "time", lambda: current_time)
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
+
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("reeval-retry", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    caplog.set_level("INFO", logger="llm_generic_bot.core.orchestrator")
+
+    class _Permit:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        def permit(self, platform: str, channel: str | None, job: str) -> PermitDecision:
+            del platform, channel
+            self.attempts += 1
+            if self.attempts == 1:
+                return PermitDecision(
+                    allowed=False,
+                    reason="cooldown", 
+                    retryable=True,
+                    job=f"{job}-retry",
+                    reevaluation=PermitReevaluationOutcome(
+                        level="per_channel",
+                        reason="retry after cooldown",
+                        retry_after=45.0,
+                        allowed=None,
+                    ),
+                )
+            return PermitDecision(allowed=True, reason=None, retryable=True, job=job)
+
+    permit_gate = _Permit()
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(
+        settings,
+        queue=queue,
+        permit_gate=permit_gate,
+    )
+    scheduler.jitter_enabled = False
+
+    delays: list[float] = []
+
+    async def _fast_sleep(duration: float) -> None:
+        delays.append(duration)
+
+    monkeypatch.setattr(orchestrator._reevaluation_scheduler, "_sleep", _fast_sleep)
+
+    text = await jobs["news"]()
+    assert text
+    _run_dispatch(scheduler, text, created_at=current_time)
+    await scheduler.dispatch_ready_batches(current_time)
+    await orchestrator.flush()
+
+    await orchestrator.flush()
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert snapshot["success_rate"]["news"] == {"success": 1, "failure": 0, "ratio": 1.0}
+    assert snapshot["permit_denials"] == [
+        {
+            "job": "news-retry",
+            "platform": "discord",
+            "channel": "discord-news",
+            "reason": "cooldown",
+            "retryable": "true",
+            "reevaluation_level": "per_channel",
+            "reevaluation_reason": "retry after cooldown",
+            "reevaluation_retry_after": "45",
+        }
+    ]
+    assert snapshot["permit_reevaluations"] == [
+        {
+            "job": "news-retry",
+            "platform": "discord",
+            "channel": "discord-news",
+            "level": "per_channel",
+            "reason": "retry after cooldown",
+            "decision": "pending",
+            "retry_after_seconds": "45",
+        }
+    ]
+
+    reevaluations = [record for record in caplog.records if record.message == "permit_reevaluation_scheduled"]
+    assert reevaluations and reevaluations[0].retry_after == pytest.approx(45.0)
+    assert reevaluations[0].reason == "retry after cooldown"
+    assert delays == [pytest.approx(45.0)]
 
     await orchestrator.close()
 

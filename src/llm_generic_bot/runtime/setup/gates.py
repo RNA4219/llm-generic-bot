@@ -99,6 +99,7 @@ def build_permit(
                 reason=decision.reason,
                 retryable=decision.retryable,
                 job=decision.job or job,
+                reevaluation=decision.reevaluation,
             ),
         )
 

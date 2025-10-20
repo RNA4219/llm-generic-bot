@@ -4,13 +4,14 @@ import asyncio
 import logging
 import sys
 import uuid
+from dataclasses import dataclass
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Mapping, Optional, Protocol
+from typing import TYPE_CHECKING, Awaitable, Callable, Mapping, Optional, Protocol
 
 from ..cooldown import CooldownGate
 from ..dedupe import NearDuplicateFilter
+from ..arbiter import PermitReevaluationOutcome
 from ...infra import MetricsBackend, collect_weekly_snapshot
 from ...infra import metrics as metrics_module  # noqa: F401 - re-exported for tests
 from ..orchestrator_metrics import (
@@ -53,6 +54,7 @@ class PermitDecisionLike(Protocol):
     reason: Optional[str]
     retryable: bool
     job: Optional[str]
+    reevaluation: PermitReevaluationOutcome | str | None
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class _PermitDecision:
     reason: Optional[str] = None
     retryable: bool = True
     job: Optional[str] = None
+    reevaluation: PermitReevaluationOutcome | str | None = None
 
     @classmethod
     def allowed(cls, job: Optional[str] = None) -> "_PermitDecision":  # type: ignore[no-redef]
@@ -91,6 +94,63 @@ class _SendRequest:
     engagement_score: Optional[float] = None
 
 
+class _ReevaluationScheduler:
+    def __init__(
+        self,
+        queue: "asyncio.Queue[_SendRequest | None]",
+        *,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        self._queue = queue
+        self._sleep = sleep
+        self._tasks: set[asyncio.Task[None]] = set()
+        self._closed = False
+
+    async def schedule(self, request: _SendRequest, *, retry_after: float) -> None:
+        if self._closed:
+            return
+        if retry_after <= 0.0:
+            await self._queue.put(_clone_request(request))
+            return
+        task = asyncio.create_task(self._run(request, retry_after))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def close(self) -> None:
+        self._closed = True
+        if not self._tasks:
+            return
+        for task in list(self._tasks):
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks.clear()
+
+    async def drain(self) -> None:
+        if not self._tasks:
+            return
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    async def _run(self, request: _SendRequest, retry_after: float) -> None:
+        try:
+            await self._sleep(retry_after)
+            if self._closed:
+                return
+            await self._queue.put(_clone_request(request))
+        except asyncio.CancelledError:  # pragma: no cover - cancellation cleanup
+            raise
+
+
+def _clone_request(request: _SendRequest) -> _SendRequest:
+    return _SendRequest(
+        text=request.text,
+        job=request.job,
+        platform=request.platform,
+        channel=request.channel,
+        correlation_id=request.correlation_id,
+        engagement_score=request.engagement_score,
+    )
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -117,6 +177,7 @@ class Orchestrator:
         self._worker: asyncio.Task[None] | None = None
         self._closed = False
         self._default_platform = platform
+        self._reevaluation_scheduler = _ReevaluationScheduler(self._queue)
         self._start_worker()
 
     async def enqueue(
@@ -153,6 +214,7 @@ class Orchestrator:
         if self._closed:
             return
         self._closed = True
+        await self._reevaluation_scheduler.close()
         await self._queue.put(None)
         if self._worker:
             await self._worker
@@ -201,6 +263,7 @@ class Orchestrator:
             metrics=self._metrics,
             logger=self._logger,
             record_event=self._record_event,
+            schedule_reevaluation=self._schedule_reevaluation,
         )
 
     def _record_event(
@@ -220,3 +283,6 @@ class Orchestrator:
             metadata=metadata,
             force=force,
         )
+
+    async def _schedule_reevaluation(self, request: _SendRequest, *, retry_after: float) -> None:
+        await self._reevaluation_scheduler.schedule(request, retry_after=retry_after)

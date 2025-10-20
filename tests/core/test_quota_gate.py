@@ -98,7 +98,7 @@ def test_quota_denial_records_metrics_and_logs(caplog: pytest.LogCaptureFixture)
                 "channel": "ch",
                 "code": "daily_limit",
                 "level": "per_channel",
-                "reeval_reason": "daily limit reached",
+                "reevaluation_reason": "daily limit reached",
             },
         )
     ]

@@ -15,7 +15,7 @@ from functools import wraps
 from typing import Any, Awaitable, Callable, Mapping, Optional
 
 from ...config.quotas import QuotaSettings, load_quota_settings
-from ...core.arbiter import PermitGate
+from ...core.arbiter.gate import PermitGate
 from ...core.orchestrator import Orchestrator, PermitEvaluator, Sender
 from ...core.queue import CoalesceQueue
 from ...core.scheduler import Scheduler

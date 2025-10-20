@@ -11,8 +11,8 @@ import pytest
 
 from llm_generic_bot import main as main_module
 from llm_generic_bot.config.quotas import PerChannelQuotaConfig
-from llm_generic_bot.core.arbiter import (
-    PermitGate,
+from llm_generic_bot.core.arbiter.gate import PermitGate
+from llm_generic_bot.core.arbiter.models import (
     PermitGateConfig,
     PermitGateHooks,
     PermitQuotaLevel,

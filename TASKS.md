@@ -1,4 +1,5 @@
-- 2025-10-21: docs/tasks/sprint3.md の OPS-04 備考から旧 `tests/infra/test_metrics_reporting.py` 維持注記を除外し、`tests/infra/metrics/recording/` 配下と `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_service.py` を恒常運用テストとして明示。`npx markdownlint-cli docs/tasks/sprint3.md` を実行して整形を確認し、Sprint3 ドキュメントに同作業を新規タスクとして追記した旨を共有。
+- 2025-10-20: docs/tasks/sprint3.md の OPS-04 備考から旧 `tests/infra/test_metrics_reporting.py` 維持注記を除外し、`tests/infra/metrics/recording/` 配下と `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/test_reporting_service.py` を恒常運用テストとして明示。`npx markdownlint-cli docs/tasks/sprint3.md` を実行して整形を確認し、Sprint3 ドキュメントに同作業を新規タスクとして追記した旨を共有。
+- 2025-10-20: docs/roadmap.md Sprint3 テストロードマップ節を `tests/infra/metrics/recording/` と `tests/infra/metrics/test_reporting_freeze_time.py` / `tests/infra/metrics/test_reporting_service.py` 前提へ再記述し、旧シム言及を撤去。`npx markdownlint-cli docs/roadmap.md` 実行結果を本行へ記録しつつ、同日付で複数タスクが並行している旨を継続共有する。
 - 2025-10-20: docs/roadmap.md のメトリクス記述を `tests/infra/metrics/recording/` 配下テスト名へ更新し、検証コマンドを `pytest tests/infra/metrics/recording/...` 形式へ揃えた。docs/roadmap.md には同日付タスクを含め複数更新が並行しているため、本行で重複作業の共有を継続する。
 - 2025-10-20: runtime_multicontent failures 再編タスクの移行手順を追記。`tests/integration/test_runtime_multicontent_failures.py` の `LEGACY_MULTICONTENT_FAILURES_CHECKLIST` に新モジュールを列挙しつつ、各ケースの移行時は `pytest tests/integration/runtime_multicontent/failures -k <scenario> -q` を緑化確認してからチェックリスト項目を削除すること。
 - 2025-10-20: WEATHER-LEGACY-01 を登録。`tests/features/test_weather_engagement.py` をレガシーシムとして残し、`LEGACY_WEATHER_ENGAGEMENT_TEST_CHECKLIST` の全項目完了後にファイル削除と `pytest tests/features/weather_engagement -q` 緑化を確認する段取りを追記。
@@ -30,7 +31,7 @@
 - 2025-10-19: docs/roadmap.md の `core/orchestrator.py` 表記を `core/orchestrator/__init__.py`・`core/orchestrator/processor.py` へ更新し、旧パス注記へ差し替え。`markdownlint docs/roadmap.md`（コマンド未導入で失敗）と `git diff docs/roadmap.md` を実行して差分を確認。
 - 2025-10-19: docs/tasks/sprint2.md の UX-01 対象モジュール参照を `core/orchestrator/__init__.py` へ更新し、`git diff docs/tasks/sprint2.md` を確認。環境に `markdownlint` が存在せず `command not found` を確認したため導入検討が必要。
 - 2025-10-19: docs/tasks/sprint3.md の `core/orchestrator.py` 参照を `core/orchestrator/__init__.py` へ補正し、同ファイルに OPS-02/OPS-04 など複数タスクが並列で存在することを記録。
-- 2025-10-19: OPS-B04/B05/B07 を `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/recording/`・`tests/infra/metrics/test_reporting_service.py` 前提へ更新し、docs/tasks/backlog.md と docs/roadmap.md の旧 `tests/infra/test_metrics_reporting.py` 参照を除去して完了扱いへ整理。
+- 2025-10-19: OPS-B04/B05/B07 を `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/recording/`・`tests/infra/metrics/test_reporting_service.py` 前提へ更新し、docs/tasks/backlog.md と docs/roadmap.md の旧単一メトリクスレポートテスト参照を除去して完了扱いへ整理。
 - 2025-10-19: docs/tasks/sprint1.md の SND-02/OPS-01 行で対象モジュール参照を `core/orchestrator/__init__.py` へ補正し、同一ファイルに複数タスクが積まれていることを明示。`markdownlint docs/tasks/sprint1.md` を実行後、`git diff docs/tasks/sprint1.md` で差分を確認。
 <!-- markdownlint-disable MD013 MD025 -->
 # タスク記録
@@ -78,25 +79,25 @@
 - 2025-10-18: docs/roadmap.md の DM ダイジェスト節に `tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` が送信抑止と `dm_digest_permit_denied` ログ（`retryable=False`・`job="dm_digest-denied"` サフィックス）を検証する旨を追記し、記録を更新。
 - 2025-10-18: docs/roadmap.md の DM ダイジェスト節へ Permit 拒否時ログ（`dm_digest_permit_denied`・`job="dm_digest-denied"`・`retryable=False`）を明示し、`tests/integration/test_runtime_dm_digest.py::test_dm_digest_job_denied_by_permit` の送信抑止と PermitDecision 由来サフィックス保証をドキュメント化。
 - 2025-10-18: docs/roadmap.md の DM ダイジェスト節へ `test_dm_digest_job_denied_by_permit` の Permit 拒否時送信抑止と `dm_digest_permit_denied` ログ検証を追記し、tests/integration/test_runtime_dm_digest.py の挙動と整合を確認。
-- 2025-10-18: `tests/infra/test_metrics_reporting.py` を最終撤去する OPS-B07 をバックログへ追加し、完了条件（ファイル削除・参照最終確認・CI `pytest`/`mypy`/`ruff` 緑化・関連ドキュメント更新）を明文化。背景は OPS-B05 での撤去前チェック完了後に本削除へ進むための仕上げ作業として設定し、他タスクとの重複はなし。
+- 2025-10-18: OPS-B07 を完了扱いへ更新し、単一ファイル構成だったメトリクスレポートテストの削除と `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/recording/`・`tests/infra/metrics/test_reporting_service.py` への移行完了を記録。CI `pytest`/`mypy`/`ruff` 緑化と関連ドキュメント更新も確認済み。
 - 2025-10-18: docs/roadmap.md の `test_weekly_report_respects_weekday_schedule` 説明を曜日スロット準拠へ更新し、重複箇条書きを統合。
 - 2025-10-18: (a) docs/roadmap.md の週次サマリ節重複を解消し、(b) docs/tasks/backlog.md へ OPS-B07 を追加した記録を追記。
 - 2025-10-18: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節で週次サマリ統合テストをファイル単位へ整理し、`test_weekly_report_permit_override_applies_to_dispatch` の重複表記を単一化。
 - 2025-10-18: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へ曜日スケジュール遵守の説明を追加し、週次サマリ検証記述を最新状態へ更新。
 - 2025-10-18: docs/roadmap.md の週次サマリ節を最新テンプレートへ更新し、`tests/integration/runtime_weekly_report/` の検証観点差分を反映予定。
-- 2025-10-18: docs/tasks/backlog.md へオーケストレータシム撤去タスクを追加し、`tests/infra/test_metrics_reporting.py` 依存解消のチェックリストを整備予定。
+- 2025-10-18: docs/tasks/backlog.md のオーケストレータシム撤去タスク備考から旧単一メトリクスレポートテスト依存を削除し、`tests/infra/metrics/*` 分割構成のみを参照するチェックリストへ整理。
 - 2025-10-18: docs/tasks/backlog.md の DOC-B10 行で完了チェックと備考整備を追記し、反映日を揃えた記録。
 - 2025-10-18: DOC-B11 を完了扱いへ更新し、docs/tasks/backlog.md のチェック更新と整形確認（`markdownlint docs/tasks/backlog.md`・`markdownlint TASKS.md`）を実施した旨を追記。
 - 2025-10-18: DOC-B13 を完了扱いへ更新し、docs/tasks/backlog.md のチェック更新と整形確認（`markdownlint docs/tasks/backlog.md`・`markdownlint TASKS.md`）および関連テスト実行を記録。
-- 2025-10-18: `rg "test_metrics_reporting"` を実行し、コードからの参照が残っていないこと（docs/roadmap.md・docs/tasks/backlog.md・TASKS.md でのドキュメント参照のみ）を確認。ドキュメント更新は OPS-B07 の別タスクで実施予定。
-- 2025-10-18: docs/tasks/sprint3.md の OPS-04 行で確認テスト列を `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/recording/`・`tests/infra/metrics/test_reporting_service.py` へ差し替え、備考に旧 `tests/infra/test_metrics_reporting` シム継続を追記。
+- 2025-10-18: `rg` で旧メトリクスレポートテスト名を検索し、コードおよびドキュメントからの参照消失を確認済み。
+- 2025-10-18: docs/tasks/sprint3.md の OPS-04 行で確認テスト列を `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/recording/`・`tests/infra/metrics/test_reporting_service.py` のみへ差し替え、旧シム継続に関する備考を削除。
 - 2025-10-18: docs/roadmap.md の `tests/integration/runtime_weekly_report/` 節へテンプレート改変・行整形・自己スコア除外を担保する統合テストを追記し、週次サマリ検証範囲の明示を更新。
 - 2025-10-18: (a) docs/roadmap.md に週次サマリ追加テストの検証観点を追記する作業を予定し、(b) docs/tasks/backlog.md へ Orchestrator シム撤去タスクを登録して影響範囲の移行手順を整理。
-- 2025-10-18: docs/roadmap.md の Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/recording/`・`tests/infra/metrics/test_reporting_service.py` へ差し替え、旧 `tests/infra/test_metrics_reporting.py` がレガシーシムである旨を追記。
-- 2025-10-18: docs/roadmap.md の統合テスト一覧に DM ダイジェスト/Weather Engagement/設定リロードの役割を追記し、Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_*` 分割済み・`tests/infra/test_metrics_reporting.py` シム継続へ更新。
+- 2025-10-18: docs/roadmap.md の Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_freeze_time.py`・`tests/infra/metrics/recording/`・`tests/infra/metrics/test_reporting_service.py` 参照へ統一し、旧単一ファイルに関するレガシー記述を削除。
+- 2025-10-18: docs/roadmap.md の統合テスト一覧に DM ダイジェスト/Weather Engagement/設定リロードの役割を追記し、Sprint3 テストロードマップを `tests/infra/metrics/test_reporting_*` 分割構成のみを参照する内容へ更新。
 - 2025-10-18: DOC-B11 をバックログへ追加し、docs/roadmap.md に DOC 系タスクが複数積まれたため記録分離した経緯を残し、重複管理を防止するメモを共有。
-- 2025-10-18: docs/tasks/backlog.md に OPS-B04 を追加し、`tests/infra/test_metrics_reporting.py` 廃止手順（参照整理・CI 緑化・ドキュメント更新）を完了条件へ明記。次担当者は `tests/infra/metrics/*` への移行確認を優先すること。
-- 2025-10-18: docs/tasks/backlog.md に OPS-B05 を追加し、`tests/infra/test_metrics_reporting.py` 撤去前チェックリスト（参照確認・CI 緑化・ドキュメント更新）を完了条件へ追記。
+- 2025-10-18: docs/tasks/backlog.md の OPS-B04 をクローズし、完了条件を `tests/infra/metrics/*` 参照のメトリクス分割構成確認に更新。
+- 2025-10-18: docs/tasks/backlog.md の OPS-B05 をクローズし、撤去前チェックリストを削除済み構成の振り返り記録へ差し替え。
 - 2025-10-18: docs/roadmap.md の runtime_multicontent 統合テスト紹介を現行ディレクトリ構成（`tests/integration/runtime_multicontent/test_pipeline.py`）へ更新し、DM ダイジェスト検証説明との整合を確認。
 - 2025-10-16: docs/roadmap.md の integration テスト一覧へ DM ダイジェスト/Weather Engagement/設定リロードの各結合テスト概要を追記し、検証観点（直接送信スキップ・履歴連携・差分ログ）を補足。
 - 2025-10-16: config/settings.example.json の `limits` / `metrics._usage` / `metrics.export` コメントを更新済みとし、サンプル構成の整合を確認。

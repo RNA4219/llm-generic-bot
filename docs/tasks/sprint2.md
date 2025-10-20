@@ -7,13 +7,16 @@ known_issues: []
 
 # Sprint 2 タスクリスト
 
+<!-- markdownlint-disable MD013 MD033 MD022 MD032 -->
 | 状態 | ID | 要約 | 対象モジュール | 完了条件 | 備考 | 確認テスト |
 |:----:|:---|:-----|:---------------|:---------|:-----|:-------------|
-| [x] | UX-01 | Engagement 反映ロジック調整 | `src/llm_generic_bot/features/weather.py`<br>`src/llm_generic_bot/core/orchestrator/__init__.py`（必要に応じて `src/llm_generic_bot/core/orchestrator/processor.py`。旧 `core/orchestrator.py` から移行済み） | 利用者のリアクション履歴を参照し、指定クールダウン内での重複通知を抑止しつつ、閾値超過時は通知が再開される。送信処理は `processor.py` に移設済み。構造化ログに Engagement 指標を含める。 | 2025-10-21 実装完了。PermitGate 整合と `pytest -k weather_engagement` 緑を再確認。 | `tests/features/test_weather_engagement.py`: リアクション閾値・クールダウン・再開シナリオ |
+| [x] | UX-01 | Engagement 反映ロジック調整 | `src/llm_generic_bot/features/weather.py`<br>`src/llm_generic_bot/core/orchestrator/__init__.py`（必要に応じて `src/llm_generic_bot/core/orchestrator/processor.py`。旧 `core/orchestrator.py` から移行済み） | 利用者のリアクション履歴を参照し、指定クールダウン内での重複通知を抑止しつつ、閾値超過時は通知が再開される。送信処理は `processor.py` に移設済み。構造化ログに Engagement 指標を含める。 | 2025-10-21 実装完了。PermitGate 整合と `pytest -k weather_engagement` 緑を再確認。 | `tests/features/weather_engagement/test_cooldown.py`: クールダウン判定と送信ログの Engagement 指標を検証<br>`tests/features/weather_engagement/test_resume_conditions.py`: 再開閾値と履歴参照の組み合わせを確認<br>`tests/features/weather_engagement/test_scoring.py`: スコア算出と履歴ウィンドウ制御を固定<br>`tests/features/weather_engagement/test_history_filter.py`: 古いリアクションの除外と記録更新を検証 |
 | [x] | UX-02 | ニュース配信機能実装 | `src/llm_generic_bot/features/news.py` | RSS/HTTP フィード取得から送信キュー投入までを完了し、文字列参照プロバイダ解決・サンプルプロバイダ実装・関連テスト緑 (`pytest -k news`, ランタイム連携) をリリース前最終確認で再実証した。 | 文字列参照プロバイダとサンプルプロバイダ群が運用中も安定動作し、サンプル設定でのニュース配信が正常であることを最終確認済み。 | `tests/features/test_news.py`: 正常取得・要約失敗リトライ＋フォールバック・クールダウン抑止<br>`tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers` |
 | [x] | UX-03 | おみくじ生成ワークフロー | `src/llm_generic_bot/features/omikuji.py` | 日次テンプレートをローテーションし、既出結果を 24 時間以内に再利用しない。結果はユーザー別シードに基づく。 | 2025-10-21 実装完了。Fallback 文言と `pytest -k omikuji` 緑を再確認。 | `tests/features/test_omikuji.py`: シード固定・テンプレ消費・Fallback 文言の回帰 |
 | [x] | UX-04 | Discord DM ダイジェスト | `src/llm_generic_bot/adapters/discord.py`<br>`src/llm_generic_bot/features/*`<br>`tests/runtime/test_providers.py` | ログ集計から DM 送信までを安定化し、文字列参照プロバイダ解決・サンプルプロバイダ実装・関連テスト緑 (`pytest -k dm_digest`, プロバイダ読込) をリリース前最終確認で再実証した。 | 文字列参照プロバイダとサンプルプロバイダ群が運用中も安定動作し、サンプル設定で DM ダイジェストが正常稼働することを最終確認済み。 | `tests/features/test_dm_digest.py`: 集計・送信・リトライ・PermitGate 連携<br>`tests/runtime/test_providers.py`: サンプルプロバイダ群の読み込み |
+<!-- markdownlint-enable MD013 MD033 MD022 MD032 -->
 
+<!-- markdownlint-disable MD013 MD032 MD022 -->
 ## 進行手順
 1. `tests/features/` にテストスケルトンを追加し、UX-01〜UX-04 の期待挙動を先に固定する。
 2. ランタイム設定経由のプロバイダ解決を `tests/integration/runtime_multicontent/test_providers.py` と `tests/runtime/test_providers.py` で先に固定する。
@@ -25,3 +28,4 @@ known_issues: []
 - UX-02: `build_news_post` がクールダウン判定・Permit 呼び出し・要約リトライとフォールバックを実装し、`tests/features/test_news.py` で成功・再試行・抑止ケースをカバー済み。`tests/integration/runtime_multicontent/test_providers.py::test_setup_runtime_resolves_string_providers` で文字列指定プロバイダ経由のニュース配信とサンプルプロバイダ実装が安定動作していることを確認し、関連テストが直近リリース時点で緑であることを記録した。
 - UX-03: `build_omikuji_post` がテンプレ回転とユーザー別シード、ロケール Fallback を実装し、`tests/features/test_omikuji.py` で各条件を固定。
 - UX-04: `build_dm_digest` が PermitGate 判定・DM 送信リトライ・失敗ログ記録を提供し、`tests/features/test_dm_digest.py` でリトライ・空データ・失敗動作を検証済み。`tests/runtime/test_providers.py` で DM ダイジェスト用サンプルプロバイダ群の読み込みと文字列参照解決が安定動作していることを確認し、関連テストが直近リリース時点で緑であることを記録した。
+<!-- markdownlint-enable MD013 MD032 MD022 -->

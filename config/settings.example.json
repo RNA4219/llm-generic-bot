@@ -42,7 +42,40 @@
       "weather":   { "base_gap_sec": 86400,"priority": 80 }
     }
   },
-  "quota": { "per_channel": { "day": 20, "window_min": 30, "burst_limit": 5 } },
+  "quota": {
+    "_usage": "チャンネル単位クォータのサンプル。`per_channel_multilayer_example` で PermitGateConfig 多段構成と再送ガード検証コマンドを共有",
+    "per_channel": { "day": 20, "window_min": 30, "burst_limit": 5 },
+    "per_channel_multilayer_example": [
+      {
+        "level": "per_channel",
+        "tiers": [
+          {
+            "code": "channel_burst",
+            "limit": 1,
+            "window_minutes": 1,
+            "retryable": true,
+            "reevaluation": "channel"
+          }
+        ]
+      },
+      {
+        "level": "per_platform",
+        "tiers": [
+          {
+            "code": "platform_daily",
+            "limit": 3,
+            "window_minutes": 5,
+            "retryable": false,
+            "message": "platform limit reached"
+          }
+        ]
+      }
+    ],
+    "retry_guard_verification": [
+      "pytest tests/core/test_quota_gate.py -k multilayer -q",
+      "pytest tests/integration/test_runtime_multicontent_failures.py -k quota_multilayer -q"
+    ]
+  },
   "arbiter": { "jitter_sec": [60, 180] },
   "dedupe": { "enabled": true, "recent_k": 20, "sim_threshold": 0.93 },
   "limits": {

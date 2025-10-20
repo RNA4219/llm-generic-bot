@@ -81,7 +81,12 @@ async def process(
 
     if not decision.allowed:
         retryable_flag = "true" if decision.retryable else "false"
-        denied_tags = {**tags, "retryable": retryable_flag}
+        permit_tags: dict[str, str] = {"retryable": retryable_flag}
+        if getattr(decision, "retry_after", None) is not None:
+            permit_tags["retry_after_sec"] = f"{float(decision.retry_after):.0f}"
+        if getattr(decision, "level", None):
+            permit_tags["level"] = str(decision.level)
+        denied_tags = {**tags, **permit_tags}
         reason = decision.reason or "unknown"
         if metrics_enabled:
             with metrics_boundary.suppress_backend(False):
@@ -90,7 +95,7 @@ async def process(
                     platform=request.platform,
                     channel=request.channel,
                     reason=reason,
-                    permit_tags={"retryable": retryable_flag},
+                    permit_tags=permit_tags,
                 )
         denied_metadata = {
             "correlation_id": request.correlation_id,

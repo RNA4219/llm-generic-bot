@@ -63,6 +63,8 @@ class PermitDecision:
     retryable: bool
     job: Optional[str] = None
     reevaluation: PermitReevaluationOutcome | str | None = None
+    retry_after: Optional[float] = None
+    level: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -127,8 +129,16 @@ class PermitGate:
                 level_history[history_key] = history
             self._evict(history, now)
             for tier in self._tiers_by_level[level.name]:
-                if self._exceeds_tier(history, now, tier):
-                    return self._deny(platform, channel, tier=tier, job=job, level=level.name)
+                exceeded, retry_after = self._tier_state(history, now, tier)
+                if exceeded:
+                    return self._deny(
+                        platform,
+                        channel,
+                        tier=tier,
+                        job=job,
+                        level=level.name,
+                        retry_after=retry_after,
+                    )
             pending.append(history)
 
         for history in pending:
@@ -204,10 +214,18 @@ class PermitGate:
             reevaluation=str(reevaluation) if reevaluation is not None else None,
         )
 
-    def _exceeds_tier(self, history: Deque[float], now: float, tier: _QuotaTier) -> bool:
+    def _tier_state(
+        self, history: Deque[float], now: float, tier: _QuotaTier
+    ) -> tuple[bool, Optional[float]]:
         cutoff = now - tier.window_seconds
-        count = sum(1 for ts in history if ts >= cutoff)
-        return count >= tier.limit
+        recent = [ts for ts in history if ts >= cutoff]
+        exceeded = len(recent) >= tier.limit
+        if not exceeded:
+            return False, None
+        threshold_index = len(recent) - tier.limit
+        threshold_ts = recent[threshold_index]
+        retry_after = tier.window_seconds - (now - threshold_ts)
+        return True, max(0.0, retry_after)
 
     def _evict(self, history: Deque[float], now: float) -> None:
         cutoff = now - self._retention_window
@@ -222,6 +240,7 @@ class PermitGate:
         tier: _QuotaTier,
         job: Optional[str],
         level: str,
+        retry_after: Optional[float],
     ) -> PermitDecision:
         reevaluation_outcome: Optional[PermitReevaluationOutcome] = None
         if self._hooks and self._hooks.on_rejection:
@@ -246,6 +265,11 @@ class PermitGate:
             "channel": channel or "-",
             "code": tier.code,
         }
+        tags["level"] = level
+        tags["retryable"] = "true" if tier.retryable else "false"
+        tags["window_sec"] = str(tier.window_seconds)
+        if retry_after is not None:
+            tags["retry_after_sec"] = f"{retry_after:.0f}"
         if tier.reevaluation is not None:
             tags["reevaluation"] = tier.reevaluation
         else:
@@ -255,7 +279,6 @@ class PermitGate:
                 and reevaluation_outcome.reason
             ):
                 reason_hint = reevaluation_outcome.reason
-            tags["level"] = level
             tags["reeval_reason"] = reason_hint
         if self._metrics is not None:
             self._metrics("quota_denied", tags)
@@ -272,6 +295,8 @@ class PermitGate:
             retryable=tier.retryable,
             job=job,
             reevaluation=reevaluation_value,
+            retry_after=retry_after,
+            level=level,
         )
 
 

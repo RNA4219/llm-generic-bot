@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Mapping, Optional, Protocol
 
+from ..arbiter.models import PermitReevaluationOutcome
 from ..cooldown import CooldownGate
 from ..dedupe import NearDuplicateFilter
 from ..orchestrator_metrics import MetricsBoundary, MetricsRecorder, format_metric_value
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
         job: Optional[str]
         retry_after: Optional[float]
         level: Optional[str]
+        reevaluation: object | None
 
     class PermitEvaluator(Protocol):
         def __call__(
@@ -60,6 +63,13 @@ class RecordEvent(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class RetryDirective:
+    retry_after: Optional[float]
+    reason: Optional[str]
+    allowed: Optional[bool]
+
+
 async def process(
     *,
     request: SendRequest,
@@ -70,8 +80,8 @@ async def process(
     metrics_boundary: MetricsBoundary,
     metrics: MetricsRecorder,
     logger: logging.Logger,
-    record_event: RecordEvent,
-) -> None:
+        record_event: RecordEvent,
+) -> Optional[RetryDirective]:
     decision: "PermitDecisionLike" = permit(request.platform, request.channel, request.job)
     job_name = decision.job or request.job
     tags = {
@@ -90,6 +100,21 @@ async def process(
         level = getattr(decision, "level", None)
         if level:
             permit_tags["level"] = str(level)
+        reevaluation_obj = getattr(decision, "reevaluation", None)
+        directive: Optional[RetryDirective] = None
+        if isinstance(reevaluation_obj, PermitReevaluationOutcome):
+            if reevaluation_obj.reason:
+                permit_tags["reevaluation_reason"] = reevaluation_obj.reason
+            if reevaluation_obj.retry_after is not None:
+                permit_tags.setdefault(
+                    "retry_after_sec",
+                    f"{float(reevaluation_obj.retry_after):.0f}",
+                )
+            directive = RetryDirective(
+                retry_after=reevaluation_obj.retry_after,
+                reason=reevaluation_obj.reason,
+                allowed=reevaluation_obj.allowed,
+            )
         denied_tags = {**tags, **permit_tags}
         reason = decision.reason or "unknown"
         if metrics_enabled:
@@ -101,11 +126,38 @@ async def process(
                     reason=reason,
                     permit_tags=permit_tags,
                 )
-        denied_metadata = {
+        denied_metadata: dict[str, object | None] = {
             "correlation_id": request.correlation_id,
             "reason": decision.reason,
             "retryable": decision.retryable,
         }
+        if directive is not None:
+            if directive.reason:
+                denied_metadata["reevaluation_reason"] = directive.reason
+            if directive.retry_after is not None:
+                denied_metadata["retry_after_scheduled_sec"] = float(directive.retry_after)
+            record_event(
+                "send.retry_scheduled",
+                {
+                    **tags,
+                    "retryable": retryable_flag,
+                    "status": "scheduled",
+                },
+                metadata={
+                    "correlation_id": request.correlation_id,
+                    "reason": directive.reason,
+                    "retry_after_sec": directive.retry_after,
+                    "level": level,
+                },
+            )
+            metrics.increment(
+                "send.retry_scheduled",
+                {
+                    **tags,
+                    "retryable": retryable_flag,
+                    "status": "scheduled",
+                },
+            )
         record_event("send.denied", denied_tags, metadata=denied_metadata)
         logger.info(
             "permit_denied",
@@ -119,7 +171,22 @@ async def process(
                 "retryable": decision.retryable,
             },
         )
-        return
+        if directive is not None:
+            logger.info(
+                "permit_retry_scheduled",
+                extra={
+                    "event": "send_permit_retry_scheduled",
+                    "correlation_id": request.correlation_id,
+                    "job": job_name,
+                    "platform": request.platform,
+                    "channel": request.channel,
+                    "reason": directive.reason,
+                    "retry_after": directive.retry_after,
+                    "retryable": decision.retryable,
+                    "level": level,
+                },
+            )
+        return directive
 
     if not dedupe.permit(request.text):
         duplicate_tags = {**tags, "status": "duplicate", "retryable": "false"}
@@ -142,7 +209,7 @@ async def process(
                 "retryable": False,
             },
         )
-        return
+        return None
 
     start = time.perf_counter()
     try:
@@ -194,7 +261,7 @@ async def process(
                 "duration_sec": duration,
             },
         )
-        return
+        return None
 
     duration = time.perf_counter() - start
     success_tags = dict(tags)
@@ -253,6 +320,7 @@ async def process(
         "send_success",
         extra=log_extra,
     )
+    return None
 
 
 def record_event(

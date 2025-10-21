@@ -225,6 +225,7 @@ def setup_runtime(
         tz=tz,
         sender=scheduler_sender,
         queue=scheduler_queue,
+        metrics=metrics_service,
         **scheduler_kwargs,
     )
 

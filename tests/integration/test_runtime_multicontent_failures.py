@@ -680,6 +680,10 @@ async def test_scheduler_config_toggles_maintain_delay_and_permit_metrics(
             ((6, 6), 3, (3, 6)),
             ((4, 8), 5, (4, 8)),
         ),
+        (
+            ((7, 9), 2, (2, 4)),
+            ((5, 4), 8, (5, 5)),
+        ),
     ],
 )
 async def test_scheduler_jitter_threshold_variations_preserve_delay_and_permit_success(

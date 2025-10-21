@@ -192,6 +192,10 @@ class Scheduler:
         last_batch_seen = self._dispatched_batches.get(batch.batch_id)
         if last_batch_seen is not None and batch.created_at <= last_batch_seen:
             return True
+        key = (batch.job, batch.channel)
+        last_slot_seen = self._reevaluation_waits.get(key)
+        if last_slot_seen is not None and batch.created_at < last_slot_seen:
+            return True
         return False
 
     def _record_dispatch(self, batch: QueueBatch) -> None:

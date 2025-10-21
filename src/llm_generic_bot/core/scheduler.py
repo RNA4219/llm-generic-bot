@@ -5,7 +5,7 @@ import datetime as dt
 from collections import OrderedDict
 from dataclasses import dataclass
 from importlib import import_module
-from typing import Awaitable, Callable, Final, List, Mapping, Optional, Protocol, cast
+from typing import Awaitable, Callable, Dict, Final, List, Mapping, Optional, Protocol, cast
 import zoneinfo
 import anyio
 
@@ -92,6 +92,7 @@ class Scheduler:
         self._metrics = _resolve_metrics(metrics)
         self._dispatched_batches: OrderedDict[str, float] = OrderedDict()
         self._dispatch_guard_limit = 1024
+        self._reevaluation_waits: Dict[tuple[str, Optional[str]], Dict[str, float]] = {}
 
     def every_day(
         self,
@@ -138,6 +139,32 @@ class Scheduler:
         current = now_ts
         for batch in self.queue.pop_ready(now_ts):
             current = await self._dispatch_batch(batch, current)
+
+    def mark_reevaluation_pending(
+        self,
+        *,
+        job: str,
+        channel: Optional[str],
+        level: str,
+        until: float,
+        now: Optional[float] = None,
+    ) -> None:
+        if not level:
+            raise ValueError("reevaluation level must be non-empty")
+        key = (job, channel)
+        waits = self._reevaluation_waits.setdefault(key, {})
+        reference = now
+        if reference is not None:
+            expired = [tier for tier, deadline in waits.items() if reference >= deadline]
+            for tier in expired:
+                waits.pop(tier, None)
+            if until <= reference:
+                if not waits:
+                    self._reevaluation_waits.pop(key, None)
+                return
+        previous = waits.get(level)
+        if previous is None or until > previous:
+            waits[level] = until
 
     async def _dispatch_batch(self, batch: QueueBatch, reference_ts: float) -> float:
         if self.sender is None:
@@ -193,9 +220,16 @@ class Scheduler:
         if last_batch_seen is not None and batch.created_at <= last_batch_seen:
             return True
         key = (batch.job, batch.channel)
-        last_slot_seen = self._reevaluation_waits.get(key)
-        if last_slot_seen is not None and batch.created_at < last_slot_seen:
-            return True
+        waits = self._reevaluation_waits.get(key)
+        if waits:
+            expired = [tier for tier, until in waits.items() if batch.created_at >= until]
+            for tier in expired:
+                waits.pop(tier, None)
+            if not waits:
+                self._reevaluation_waits.pop(key, None)
+            else:
+                if any(batch.created_at < until for until in waits.values()):
+                    return True
         return False
 
     def _record_dispatch(self, batch: QueueBatch) -> None:

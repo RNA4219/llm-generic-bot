@@ -147,6 +147,7 @@ class Scheduler:
         channel = batch.channel
         text = batch.text
         jitter_range = self._effective_jitter_range()
+        self._record_delay_metrics(job_name, channel, jitter_range)
 
         target_ts = reference_ts
         if self.jitter_enabled:
@@ -183,3 +184,35 @@ class Scheduler:
         if base_low > base_high:
             return base_low, base_low
         return base_low, base_high
+
+    def _record_delay_metrics(
+        self,
+        job_name: str,
+        channel: Optional[str],
+        jitter_range: tuple[int, int],
+    ) -> None:
+        if self._metrics is None:
+            return
+        tags = _metric_tags(job_name, channel)
+        min_tags = dict(tags)
+        min_tags["bound"] = "min"
+        max_tags = dict(tags)
+        max_tags["bound"] = "max"
+        low, high = jitter_range
+        self._metrics.observe(
+            "send.delay_threshold_seconds",
+            float(low),
+            tags=min_tags,
+        )
+        self._metrics.observe(
+            "send.delay_threshold_seconds",
+            float(high),
+            tags=max_tags,
+        )
+        threshold_value = getattr(self.queue, "_threshold", None)
+        if isinstance(threshold_value, int) and threshold_value > 0:
+            self._metrics.observe(
+                "send.batch_threshold_count",
+                float(threshold_value),
+                tags=tags,
+            )

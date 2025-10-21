@@ -23,6 +23,7 @@ from llm_generic_bot.core.arbiter.models import (
 )
 from llm_generic_bot.core.orchestrator import PermitDecision
 from llm_generic_bot.core.queue import CoalesceQueue
+from llm_generic_bot.core.scheduler import Scheduler
 from llm_generic_bot.features.dm_digest import DigestLogEntry
 from llm_generic_bot.features.news import NewsFeedItem, SummaryError
 from llm_generic_bot.infra import metrics as metrics_module
@@ -381,6 +382,88 @@ async def test_quota_multilayer_quota_retry(monkeypatch: pytest.MonkeyPatch) -> 
     snapshot = aggregator_state.weekly_snapshot()
     assert len(snapshot["permit_denials"]) == 2
     assert snapshot["success_rate"]["news"] == {"success": 1, "failure": 0, "ratio": 1.0}
+
+
+async def test_quota_multilayer_retry_blocks_duplicate_dispatch() -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+
+    send_calls: list[tuple[str, str | None, str | None]] = []
+
+    class _Sender:
+        platform = "discord"
+
+        async def send(self, text: str, channel: str | None, *, job: str | None = None) -> None:
+            send_calls.append((text, channel, job))
+
+    scheduler = Scheduler(sender=_Sender(), queue=queue, jitter_enabled=False)
+    scheduler.jitter_enabled = False
+
+    batch_id = "quota-multilayer-hold"
+    job = "news"
+    channel = "discord-news"
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job=job,
+        channel=channel,
+        level="per_channel",
+        until=60.0,
+    )
+
+    queue.push(
+        "first",
+        priority=5,
+        job=job,
+        created_at=10.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    await scheduler.dispatch_ready_batches(10.0)
+    assert send_calls == []
+
+    queue.push(
+        "second",
+        priority=5,
+        job=job,
+        created_at=61.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    await scheduler.dispatch_ready_batches(61.0)
+    assert send_calls == [("second", channel, job)]
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job=job,
+        channel=channel,
+        level="per_platform",
+        until=360.0,
+    )
+
+    queue.push(
+        "third",
+        priority=5,
+        job=job,
+        created_at=120.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    await scheduler.dispatch_ready_batches(120.0)
+    assert send_calls == [("second", channel, job)]
+
+    queue.push(
+        "final",
+        priority=5,
+        job=job,
+        created_at=361.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    await scheduler.dispatch_ready_batches(361.0)
+    assert send_calls == [
+        ("second", channel, job),
+        ("final", channel, job),
+    ]
 
 
 async def test_scheduler_jitter_thresholds_override_preserves_metrics(

@@ -85,4 +85,7 @@ pyproject.toml
 ```
 
 ## License
-MIT
+
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0)
+
+Apache-2.0. Unless noted otherwise, files copied from this repo into other projects remain Apache-2.0 and require retaining NOTICE text in redistributions.

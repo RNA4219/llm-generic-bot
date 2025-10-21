@@ -4,13 +4,16 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from .aggregator_records import (
+    _MetricCall,
     _PermitDenialRecord,
     _SendEventRecord,
-    _base_tags,
-    _merge_tags,
+    _build_permit_denied_calls,
+    _build_send_delay_calls,
+    _build_send_failure_calls,
+    _build_send_success_calls,
     _normalize_retention_days,
     _trim_and_build_snapshot,
 )
@@ -33,6 +36,11 @@ def _utcnow() -> datetime:
         if callable(candidate) and candidate is not _utcnow:
             return candidate()
     return _service_utcnow()
+
+
+def _emit_calls(backend: MetricsRecorder, calls: Sequence[_MetricCall]) -> None:
+    for call in calls:
+        call.apply(backend)
 
 
 @dataclass
@@ -69,19 +77,16 @@ class _GlobalMetricsAggregator:
         duration_seconds: float,
         permit_tags: Mapping[str, str] | None,
     ) -> None:
-        base_tags = _base_tags(job, platform, channel)
-        tags = _merge_tags(base_tags, permit_tags)
-        duration_tags = {**base_tags, "unit": "seconds"}
-        backend = self._backend_for_recording(
-            _SendEventRecord(
-                recorded_at=_utcnow(),
-                job=job,
-                outcome="success",
-                duration=float(duration_seconds),
-            )
+        record, calls = _build_send_success_calls(
+            job=job,
+            platform=platform,
+            channel=channel,
+            duration_seconds=duration_seconds,
+            permit_tags=permit_tags,
+            recorded_at=_utcnow(),
         )
-        backend.increment("send.success", tags=tags)
-        backend.observe("send.duration", duration_seconds, tags=duration_tags)
+        backend = self._backend_for_recording(record)
+        _emit_calls(backend, calls)
 
     def report_send_failure(
         self,
@@ -92,20 +97,16 @@ class _GlobalMetricsAggregator:
         duration_seconds: float,
         error_type: str,
     ) -> None:
-        base_tags = _base_tags(job, platform, channel)
-        increment_tags = dict(base_tags)
-        increment_tags["error"] = error_type
-        duration_tags = {**base_tags, "unit": "seconds"}
-        backend = self._backend_for_recording(
-            _SendEventRecord(
-                recorded_at=_utcnow(),
-                job=job,
-                outcome="failure",
-                duration=float(duration_seconds),
-            )
+        record, calls = _build_send_failure_calls(
+            job=job,
+            platform=platform,
+            channel=channel,
+            duration_seconds=duration_seconds,
+            error_type=error_type,
+            recorded_at=_utcnow(),
         )
-        backend.increment("send.failure", tags=increment_tags)
-        backend.observe("send.duration", duration_seconds, tags=duration_tags)
+        backend = self._backend_for_recording(record)
+        _emit_calls(backend, calls)
 
     def report_permit_denied(
         self,
@@ -116,13 +117,16 @@ class _GlobalMetricsAggregator:
         reason: str,
         permit_tags: Mapping[str, str] | None,
     ) -> None:
-        base_tags = _base_tags(job, platform, channel)
-        tags = _merge_tags(base_tags, permit_tags)
-        tags["reason"] = reason
-        backend = self._backend_for_recording(
-            _PermitDenialRecord(recorded_at=_utcnow(), payload=dict(tags))
+        record, calls = _build_permit_denied_calls(
+            job=job,
+            platform=platform,
+            channel=channel,
+            reason=reason,
+            permit_tags=permit_tags,
+            recorded_at=_utcnow(),
         )
-        backend.increment("send.denied", tags=tags)
+        backend = self._backend_for_recording(record)
+        _emit_calls(backend, calls)
 
     def report_send_delay(
         self,
@@ -132,10 +136,13 @@ class _GlobalMetricsAggregator:
         channel: str | None,
         delay_seconds: float,
     ) -> None:
-        tags = _base_tags(job, platform, channel)
-        observation_tags = {**tags, "unit": "seconds"}
         backend = self._backend_for_delay()
-        backend.observe("send.delay_seconds", float(delay_seconds), tags=observation_tags)
+        _emit_calls(backend, _build_send_delay_calls(
+            job=job,
+            platform=platform,
+            channel=channel,
+            delay_seconds=delay_seconds,
+        ))
 
     def weekly_snapshot(self) -> dict[str, object]:
         generated_at = _utcnow()

@@ -49,8 +49,9 @@ def _resolve_metrics(
     return None
 
 
-def _metric_tags(job: str, channel: Optional[str]) -> dict[str, str]:
-    return {"job": job, "channel": channel or "-"}
+def _metric_tags(job: str, channel: Optional[str], *, platform: Optional[str]) -> dict[str, str]:
+    resolved_platform = platform if platform else "-"
+    return {"job": job, "channel": channel or "-", "platform": resolved_platform}
 
 
 @dataclass(slots=True)
@@ -91,8 +92,6 @@ class Scheduler:
         self._metrics = _resolve_metrics(metrics)
         self._dispatched_batches: OrderedDict[str, float] = OrderedDict()
         self._dispatch_guard_limit = 1024
-        self._reevaluation_waits: OrderedDict[tuple[str, Optional[str]], float] = OrderedDict()
-        self._reevaluation_guard_limit = 512
 
     def every_day(
         self,
@@ -153,19 +152,16 @@ class Scheduler:
         job_name = batch.job
         channel = batch.channel
         text = batch.text
+        platform_value = getattr(self.sender, "platform", None)
+        platform = platform_value if isinstance(platform_value, str) and platform_value else "-"
         jitter_range = self._effective_jitter_range()
-        self._record_delay_metrics(job_name, channel, jitter_range)
+        self._record_delay_metrics(job_name, channel, jitter_range, platform)
 
         target_ts = reference_ts
         if self.jitter_enabled:
             target_ts = next_slot(reference_ts, clash, jitter_range=jitter_range)
         delay = max(0.0, target_ts - reference_ts)
-        job = batch.job
-        channel = batch.channel
-        text = batch.text
         if delay > 0.0:
-            platform_value = getattr(self.sender, "platform", None)
-            platform = platform_value if isinstance(platform_value, str) and platform_value else "-"
             await metrics_module.report_send_delay(
                 job=job_name,
                 platform=platform,
@@ -179,16 +175,15 @@ class Scheduler:
         return target_ts
 
     def _effective_jitter_range(self) -> tuple[int, int]:
-        if self._jitter_range_overridden:
-            return self.jitter_range
         base_low, base_high = self.jitter_range
         window = self.queue.window_seconds
         if window <= 0.0:
             threshold = getattr(self.queue, "_threshold", None)
             if isinstance(threshold, int) and threshold > 0:
-                base_low = min(base_low, threshold)
-                upper_candidate = max(base_low, threshold * 2)
-                base_high = min(base_high, upper_candidate)
+                adjusted_low = min(base_low, threshold)
+                upper_candidate = max(adjusted_low, threshold * 2)
+                adjusted_high = min(base_high, upper_candidate)
+                base_low, base_high = adjusted_low, adjusted_high
         if base_low > base_high:
             return base_low, base_low
         return base_low, base_high
@@ -208,21 +203,16 @@ class Scheduler:
         self._dispatched_batches.move_to_end(batch.batch_id)
         while len(self._dispatched_batches) > self._dispatch_guard_limit:
             self._dispatched_batches.popitem(last=False)
-
-        key = (batch.job, batch.channel)
-        self._reevaluation_waits[key] = batch.created_at
-        self._reevaluation_waits.move_to_end(key)
-        while len(self._reevaluation_waits) > self._reevaluation_guard_limit:
-            self._reevaluation_waits.popitem(last=False)
     def _record_delay_metrics(
         self,
         job_name: str,
         channel: Optional[str],
         jitter_range: tuple[int, int],
+        platform: str,
     ) -> None:
         if self._metrics is None:
             return
-        tags = _metric_tags(job_name, channel)
+        tags = _metric_tags(job_name, channel, platform=platform)
         min_tags = dict(tags)
         min_tags["bound"] = "min"
         max_tags = dict(tags)

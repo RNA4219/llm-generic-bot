@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable, Mapping, TypeVar
+from typing import TYPE_CHECKING, Iterable, Mapping, Sequence, TypeVar
 
 from .service import _DEFAULT_RETENTION_DAYS
+
+if TYPE_CHECKING:
+    from .service import MetricsRecorder
 
 
 @dataclass(frozen=True)
@@ -19,6 +22,22 @@ class _SendEventRecord:
 class _PermitDenialRecord:
     recorded_at: datetime
     payload: dict[str, str]
+
+
+@dataclass(frozen=True)
+class _MetricCall:
+    name: str
+    tags: Mapping[str, str]
+    value: float | None = None
+    kind: str = "increment"
+
+    def apply(self, backend: "MetricsRecorder") -> None:
+        if self.kind == "observe":
+            if self.value is None:
+                raise ValueError("observe metrics require a value")
+            backend.observe(self.name, float(self.value), tags=dict(self.tags))
+        else:
+            backend.increment(self.name, tags=dict(self.tags))
 
 
 _LATENCY_BUCKETS: tuple[tuple[float, str], ...] = (
@@ -53,7 +72,101 @@ def _merge_tags(
 
 
 def _retain_recent(records: Iterable[_RecordT], cutoff: datetime) -> list[_RecordT]:
-    return [record for record in records if record.recorded_at >= cutoff]
+    return [record for record in records if record.recorded_at > cutoff]
+
+
+def _build_send_success_calls(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    duration_seconds: float,
+    permit_tags: Mapping[str, str] | None,
+    recorded_at: datetime,
+) -> tuple[_SendEventRecord, Sequence[_MetricCall]]:
+    base_tags = _base_tags(job, platform, channel)
+    tags = _merge_tags(base_tags, permit_tags)
+    duration_tags = {**base_tags, "unit": "seconds"}
+    record = _SendEventRecord(
+        recorded_at=recorded_at,
+        job=job,
+        outcome="success",
+        duration=float(duration_seconds),
+    )
+    return record, (
+        _MetricCall(name="send.success", tags=tags),
+        _MetricCall(
+            name="send.duration",
+            tags=duration_tags,
+            value=float(duration_seconds),
+            kind="observe",
+        ),
+    )
+
+
+def _build_send_failure_calls(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    duration_seconds: float,
+    error_type: str,
+    recorded_at: datetime,
+) -> tuple[_SendEventRecord, Sequence[_MetricCall]]:
+    base_tags = _base_tags(job, platform, channel)
+    increment_tags = dict(base_tags)
+    increment_tags["error"] = error_type
+    duration_tags = {**base_tags, "unit": "seconds"}
+    record = _SendEventRecord(
+        recorded_at=recorded_at,
+        job=job,
+        outcome="failure",
+        duration=float(duration_seconds),
+    )
+    return record, (
+        _MetricCall(name="send.failure", tags=increment_tags),
+        _MetricCall(
+            name="send.duration",
+            tags=duration_tags,
+            value=float(duration_seconds),
+            kind="observe",
+        ),
+    )
+
+
+def _build_permit_denied_calls(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    reason: str,
+    permit_tags: Mapping[str, str] | None,
+    recorded_at: datetime,
+) -> tuple[_PermitDenialRecord, Sequence[_MetricCall]]:
+    base_tags = _base_tags(job, platform, channel)
+    tags = _merge_tags(base_tags, permit_tags)
+    tags["reason"] = reason
+    record = _PermitDenialRecord(recorded_at=recorded_at, payload=dict(tags))
+    return record, (_MetricCall(name="send.denied", tags=tags),)
+
+
+def _build_send_delay_calls(
+    *,
+    job: str,
+    platform: str,
+    channel: str | None,
+    delay_seconds: float,
+) -> Sequence[_MetricCall]:
+    tags = _base_tags(job, platform, channel)
+    observation_tags = {**tags, "unit": "seconds"}
+    return (
+        _MetricCall(
+            name="send.delay_seconds",
+            tags=observation_tags,
+            value=float(delay_seconds),
+            kind="observe",
+        ),
+    )
 
 
 def _summarize_send_events(
@@ -149,6 +262,7 @@ def _trim_and_build_snapshot(
 __all__ = [
     "_SendEventRecord",
     "_PermitDenialRecord",
+    "_MetricCall",
     "_LATENCY_BUCKETS",
     "_normalize_retention_days",
     "_base_tags",
@@ -160,4 +274,8 @@ __all__ = [
     "_format_permit_denials",
     "_select_bucket",
     "_trim_and_build_snapshot",
+    "_build_send_success_calls",
+    "_build_send_failure_calls",
+    "_build_permit_denied_calls",
+    "_build_send_delay_calls",
 ]

@@ -304,7 +304,7 @@ async def test_quota_multilayer_quota_retry(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(time, "time", lambda: current_time)
 
     per_channel_quota = PerChannelQuotaConfig(day=5, window_minutes=1, burst_limit=1)
-    per_platform_quota = PerChannelQuotaConfig(day=10, window_minutes=5, burst_limit=3)
+    per_platform_quota = PerChannelQuotaConfig(day=2, window_minutes=5, burst_limit=1)
 
     def time_fn() -> float:
         return current_time
@@ -358,22 +358,29 @@ async def test_quota_multilayer_quota_retry(monkeypatch: pytest.MonkeyPatch) -> 
     await scheduler.dispatch_ready_batches(current_time)
     await orchestrator.flush()
 
+    assert send_calls == []
+
+    second_snapshot = aggregator_state.weekly_snapshot()
+    assert len(second_snapshot["permit_denials"]) == 2
+    second_entry = second_snapshot["permit_denials"][1]
+    assert second_entry["job"] == "news"
+    assert second_entry["platform"] == "discord"
+    assert second_entry["channel"] == "discord-news"
+    assert second_entry["level"] == "per_platform"
+    assert second_entry["retry_after_sec"] == "239"
+    assert second_entry["retryable"] == "true"
+
+    current_time += 300.0
+
+    _run_dispatch(scheduler, text, created_at=current_time, batch_id=batch_id)
+    await scheduler.dispatch_ready_batches(current_time)
+    await orchestrator.flush()
+
     assert len(send_calls) == 1
 
     snapshot = aggregator_state.weekly_snapshot()
-    assert len(snapshot["permit_denials"]) == 1
+    assert len(snapshot["permit_denials"]) == 2
     assert snapshot["success_rate"]["news"] == {"success": 1, "failure": 0, "ratio": 1.0}
-    assert snapshot["permit_denials"] == [
-        {
-            "job": "news",
-            "platform": "discord",
-            "channel": "discord-news",
-            "reason": "burst limit reached",
-            "retryable": "true",
-            "retry_after_sec": "60",
-            "level": "per_channel",
-        }
-    ]
 
 
 async def test_scheduler_jitter_thresholds_override_preserves_metrics(

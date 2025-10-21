@@ -39,6 +39,7 @@ class PermitDecisionLike(Protocol):
     retry_after: Optional[float]
     level: Optional[str]
     reevaluation: object | None
+    retry_metadata: Mapping[str, str] | None
 
 
 class PermitDecision:
@@ -49,6 +50,7 @@ class PermitDecision:
         "_job",
         "_retry_after",
         "_level",
+        "_retry_metadata",
     )
 
     def __init__(
@@ -60,6 +62,7 @@ class PermitDecision:
         *,
         retry_after: Optional[float] = None,
         level: Optional[str] = None,
+        retry_metadata: Mapping[str, str] | None = None,
     ) -> None:
         self._allowed = allowed
         self._reason = reason
@@ -67,9 +70,18 @@ class PermitDecision:
         self._job = job
         self._retry_after = retry_after
         self._level = level
+        self._retry_metadata = retry_metadata
 
     def __getattribute__(self, name: str) -> object:
-        if name in {"allowed", "reason", "retryable", "job", "retry_after", "level"}:
+        if name in {
+            "allowed",
+            "reason",
+            "retryable",
+            "job",
+            "retry_after",
+            "level",
+            "retry_metadata",
+        }:
             return object.__getattribute__(self, f"_{name}")
         return object.__getattribute__(self, name)
 
@@ -110,6 +122,7 @@ class PermitDecision:
             and self.job == other.job
             and self.retry_after == other.retry_after
             and self.level == other.level
+            and self.retry_metadata == other.retry_metadata
         )
 
     def __hash__(self) -> int:
@@ -121,6 +134,9 @@ class PermitDecision:
                 self.job,
                 self.retry_after,
                 self.level,
+                tuple(sorted(self.retry_metadata.items()))
+                if isinstance(self.retry_metadata, Mapping)
+                else self.retry_metadata,
             )
         )
 
@@ -141,6 +157,9 @@ class _SendRequest:
     engagement_recent: Optional[float] = None
     engagement_long_term: Optional[float] = None
     engagement_permit_quota: Optional[float] = None
+    permit_tags: Optional[Mapping[str, str]] = None
+    retry_tags: Optional[Mapping[str, str]] = None
+    permit_override: bool = False
 
 
 class Orchestrator:
@@ -290,6 +309,19 @@ class Orchestrator:
             engagement_long_term=request.engagement_long_term,
             engagement_permit_quota=request.engagement_permit_quota,
         )
+        permit_tags: dict[str, str] = {}
+        if request.permit_tags:
+            permit_tags.update(request.permit_tags)
+        if directive.permit_tags:
+            permit_tags.update(directive.permit_tags)
+        clone.permit_tags = permit_tags or None
+        retry_tags: dict[str, str] = {}
+        if request.retry_tags:
+            retry_tags.update(request.retry_tags)
+        if directive.retry_tags:
+            retry_tags.update(directive.retry_tags)
+        clone.retry_tags = retry_tags or None
+        clone.permit_override = bool(directive.allowed) or request.permit_override
 
         async def _reenqueue() -> None:
             delay = retry_after or 0.0

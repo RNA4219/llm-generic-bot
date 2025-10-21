@@ -82,6 +82,7 @@ class _PermitDecisionAdapter:
     reevaluation: PermitReevaluationOutcome | str | None = None
     reevaluation_reason: Optional[str] = None
     reevaluation_allowed: Optional[bool] = None
+    retry_metadata: Optional[Mapping[str, str]] = None
 
 
 def build_permit(
@@ -125,6 +126,7 @@ def build_permit(
                 reevaluation=reevaluation_value,
                 reevaluation_reason=reevaluation_reason,
                 reevaluation_allowed=reevaluation_allowed,
+                retry_metadata=getattr(decision, "retry_metadata", None),
             ),
         )
 

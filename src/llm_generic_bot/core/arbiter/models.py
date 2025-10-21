@@ -3,7 +3,7 @@ from __future__ import annotations
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Tuple
+from typing import Callable, Mapping, Optional, Tuple
 
 from llm_generic_bot.config.quotas import PerChannelQuotaConfig
 
@@ -51,6 +51,9 @@ class PermitGateConfig:
     hooks: Optional[PermitGateHooks] = None
 
 
+PERMIT_REEVALUATION_RETRY_SOURCE = "permit_reevaluation"
+
+
 @dataclass(frozen=True)
 class PermitDecision:
     allowed: bool
@@ -60,10 +63,12 @@ class PermitDecision:
     reevaluation: PermitReevaluationOutcome | str | None = None
     retry_after: Optional[float] = None
     level: Optional[str] = None
+    retry_metadata: Mapping[str, str] | None = None
 
 
 __all__ = [
     "KeyFn",
+    "PERMIT_REEVALUATION_RETRY_SOURCE",
     "PermitDecision",
     "PermitGateConfig",
     "PermitGateHooks",

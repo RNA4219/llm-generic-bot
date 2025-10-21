@@ -11,6 +11,7 @@ from typing import Callable, Deque, Dict, Optional, Tuple
 from llm_generic_bot.config.quotas import PerChannelQuotaConfig
 
 from .models import (
+    PERMIT_REEVALUATION_RETRY_SOURCE,
     PermitDecision,
     PermitGateConfig,
     PermitGateHooks,
@@ -235,6 +236,19 @@ class PermitGate:
             ):
                 reason_hint = reevaluation_outcome.reason
             tags["reeval_reason"] = reason_hint
+        retry_metadata: dict[str, str] | None = None
+        reevaluation_hint: Optional[str] = None
+        if isinstance(reevaluation_outcome, PermitReevaluationOutcome):
+            reevaluation_hint = reevaluation_outcome.reason
+        elif isinstance(tier.reevaluation, str):
+            reevaluation_hint = tier.reevaluation
+        if tier.reevaluation is not None or reevaluation_outcome is not None:
+            retry_metadata = {
+                "retry_source": PERMIT_REEVALUATION_RETRY_SOURCE,
+                "permit_level": level,
+            }
+            if reevaluation_hint:
+                retry_metadata["retry_reason"] = reevaluation_hint
         if self._metrics is not None:
             self._metrics("quota_denied", tags)
         self._logger.warning(
@@ -252,6 +266,7 @@ class PermitGate:
             reevaluation=reevaluation_value,
             retry_after=retry_after,
             level=level,
+            retry_metadata=retry_metadata,
         )
 
 

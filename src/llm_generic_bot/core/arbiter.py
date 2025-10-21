@@ -20,6 +20,7 @@ PermitGate = _gate.PermitGate
 
 KeyFn = _models.KeyFn
 PermitDecision = _models.PermitDecision
+PERMIT_REEVALUATION_RETRY_SOURCE = _models.PERMIT_REEVALUATION_RETRY_SOURCE
 PermitGateConfig = _models.PermitGateConfig
 PermitGateHooks = _models.PermitGateHooks
 PermitQuotaLevel = _models.PermitQuotaLevel
@@ -39,6 +40,7 @@ __all__ = [
     "DAY_SECONDS",
     "KeyFn",
     "LEGACY_PERMIT_GATE_REFACTOR_CHECKLIST",
+    "PERMIT_REEVALUATION_RETRY_SOURCE",
     "PermitDecision",
     "PermitGate",
     "PermitGateConfig",

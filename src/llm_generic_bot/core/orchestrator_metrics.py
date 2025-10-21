@@ -118,6 +118,43 @@ def resolve_metrics_boundary(
     return MetricsBoundary(recorder or NullMetricsRecorder(), service)
 
 
+def build_retry_base_tags(
+    *, retryable: bool, metadata: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    tags: dict[str, str] = {"retryable": "true" if retryable else "false"}
+    if metadata:
+        for key, value in metadata.items():
+            if key == "permit_level":
+                tags.setdefault("level", value)
+            else:
+                tags[key] = value
+    return tags
+
+
+def build_retry_permit_tags(
+    *,
+    metadata: Mapping[str, str] | None,
+    reason: str | None,
+    level: str | None,
+) -> dict[str, str]:
+    tags: dict[str, str] = {}
+    if metadata:
+        source = metadata.get("retry_source")
+        if source:
+            tags["retry_source"] = source
+        permit_level = metadata.get("permit_level")
+        if permit_level:
+            tags.setdefault("level", permit_level)
+        retry_reason = metadata.get("retry_reason")
+        if retry_reason:
+            tags.setdefault("reevaluation_reason", retry_reason)
+    if reason:
+        tags.setdefault("reevaluation_reason", reason)
+    if level is not None:
+        tags.setdefault("level", str(level))
+    return tags
+
+
 def format_metric_value(value: float) -> str:
     formatted = f"{value:.3f}"
     trimmed = formatted.rstrip("0").rstrip(".")

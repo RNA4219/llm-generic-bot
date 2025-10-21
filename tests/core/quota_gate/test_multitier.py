@@ -9,6 +9,7 @@ from llm_generic_bot.core.arbiter import (
     PermitGateConfig,
     PermitQuotaLevel,
 )
+from llm_generic_bot.core.queue import CoalesceQueue
 
 from ._fixtures import DummyMetrics, _FakeQuotaConfig, _FakeQuotaTier
 
@@ -227,3 +228,70 @@ def test_quota_multilayer_tier_progression_requires_sequential_waits() -> None:
 
     assert metrics.calls[-1][1]["code"] == "platform_daily"
     assert metrics.calls[-1][1]["level"] == "per_platform"
+
+
+def test_queue_multilayer_reevaluation_blocks_duplicate_batches() -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    batch_id = "quota-multitier"
+    job = "news"
+    channel = "discord-news"
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job=job,
+        channel=channel,
+        level="per_channel",
+        until=60.0,
+    )
+
+    queue.push(
+        "initial",
+        priority=5,
+        job=job,
+        created_at=10.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    assert queue.pop_ready(10.0) == []
+
+    queue.push(
+        "retry-channel",
+        priority=5,
+        job=job,
+        created_at=61.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    ready = queue.pop_ready(61.0)
+    assert len(ready) == 1
+    assert ready[0].text == "retry-channel"
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job=job,
+        channel=channel,
+        level="per_platform",
+        until=360.0,
+    )
+
+    queue.push(
+        "retry-platform",
+        priority=5,
+        job=job,
+        created_at=120.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    assert queue.pop_ready(120.0) == []
+
+    queue.push(
+        "final",
+        priority=5,
+        job=job,
+        created_at=361.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    final_ready = queue.pop_ready(361.0)
+    assert len(final_ready) == 1
+    assert final_ready[0].text == "final"

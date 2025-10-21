@@ -91,8 +91,6 @@ class Scheduler:
         self._metrics = _resolve_metrics(metrics)
         self._dispatched_batches: OrderedDict[str, float] = OrderedDict()
         self._dispatch_guard_limit = 1024
-        self._reevaluation_waits: OrderedDict[tuple[str, Optional[str]], float] = OrderedDict()
-        self._reevaluation_guard_limit = 512
 
     def every_day(
         self,
@@ -197,10 +195,6 @@ class Scheduler:
         last_batch_seen = self._dispatched_batches.get(batch.batch_id)
         if last_batch_seen is not None and batch.created_at <= last_batch_seen:
             return True
-        key = (batch.job, batch.channel)
-        last_slot_seen = self._reevaluation_waits.get(key)
-        if last_slot_seen is not None and batch.created_at <= last_slot_seen:
-            return True
         return False
 
     def _record_dispatch(self, batch: QueueBatch) -> None:
@@ -208,12 +202,6 @@ class Scheduler:
         self._dispatched_batches.move_to_end(batch.batch_id)
         while len(self._dispatched_batches) > self._dispatch_guard_limit:
             self._dispatched_batches.popitem(last=False)
-
-        key = (batch.job, batch.channel)
-        self._reevaluation_waits[key] = batch.created_at
-        self._reevaluation_waits.move_to_end(key)
-        while len(self._reevaluation_waits) > self._reevaluation_guard_limit:
-            self._reevaluation_waits.popitem(last=False)
     def _record_delay_metrics(
         self,
         job_name: str,

@@ -461,6 +461,22 @@ async def test_quota_multilayer_quota_retry(monkeypatch: pytest.MonkeyPatch) -> 
     await scheduler.dispatch_ready_batches(current_time)
     await orchestrator.flush()
 
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job="news",
+        channel="discord-news",
+        level="per_channel",
+        until=current_time + 60.0,
+        now=current_time,
+    )
+    scheduler.mark_reevaluation_pending(
+        job="news",
+        channel="discord-news",
+        level="per_channel",
+        until=current_time + 60.0,
+        now=current_time,
+    )
+
     assert send_calls == []
 
     denial_snapshot = aggregator_state.weekly_snapshot()
@@ -476,6 +492,22 @@ async def test_quota_multilayer_quota_retry(monkeypatch: pytest.MonkeyPatch) -> 
     _run_dispatch(scheduler, text, created_at=current_time, batch_id=batch_id)
     await scheduler.dispatch_ready_batches(current_time)
     await orchestrator.flush()
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job="news",
+        channel="discord-news",
+        level="per_platform",
+        until=current_time + 239.0,
+        now=current_time,
+    )
+    scheduler.mark_reevaluation_pending(
+        job="news",
+        channel="discord-news",
+        level="per_platform",
+        until=current_time + 239.0,
+        now=current_time,
+    )
 
     assert send_calls == []
 
@@ -582,6 +614,99 @@ async def test_quota_multilayer_retry_blocks_duplicate_dispatch() -> None:
         ("second", channel, job),
         ("final", channel, job),
     ]
+
+
+async def test_quota_multilayer_multitier_hold_prevents_double_dispatch() -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+
+    send_calls: list[tuple[str, str | None, str | None]] = []
+
+    class _Sender:
+        platform = "discord"
+
+        async def send(self, text: str, channel: str | None, *, job: str | None = None) -> None:
+            send_calls.append((text, channel, job))
+
+    scheduler = Scheduler(sender=_Sender(), queue=queue, jitter_enabled=False)
+    scheduler.jitter_enabled = False
+
+    batch_id = "quota-multitier-hold-guard"
+    job = "news"
+    channel = "discord-news"
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job=job,
+        channel=channel,
+        level="per_channel",
+        until=120.0,
+        now=0.0,
+    )
+    scheduler.mark_reevaluation_pending(
+        job=job,
+        channel=channel,
+        level="per_channel",
+        until=120.0,
+    )
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job=job,
+        channel=channel,
+        level="per_platform",
+        until=360.0,
+        now=0.0,
+    )
+    scheduler.mark_reevaluation_pending(
+        job=job,
+        channel=channel,
+        level="per_platform",
+        until=360.0,
+    )
+
+    queue.push(
+        "early",
+        priority=5,
+        job=job,
+        created_at=30.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    await scheduler.dispatch_ready_batches(30.0)
+    assert send_calls == []
+
+    queue.push(
+        "mid",
+        priority=5,
+        job=job,
+        created_at=180.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    await scheduler.dispatch_ready_batches(180.0)
+    assert send_calls == []
+
+    queue.push(
+        "final",
+        priority=5,
+        job=job,
+        created_at=400.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    await scheduler.dispatch_ready_batches(400.0)
+    assert send_calls == [("final", channel, job)]
+
+    queue.push(
+        "reuse",
+        priority=5,
+        job=job,
+        created_at=450.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    await scheduler.dispatch_ready_batches(450.0)
+    assert send_calls == [("final", channel, job)]
 
 
 async def test_scheduler_jitter_thresholds_override_preserves_metrics(

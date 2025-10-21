@@ -295,3 +295,75 @@ def test_queue_multilayer_reevaluation_blocks_duplicate_batches() -> None:
     final_ready = queue.pop_ready(361.0)
     assert len(final_ready) == 1
     assert final_ready[0].text == "final"
+
+
+def test_queue_multilayer_reevaluation_state_and_reuse_guard() -> None:
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    batch_id = "quota-multitier-guard"
+    job = "news"
+    channel = "discord-news"
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job=job,
+        channel=channel,
+        level="per_channel",
+        until=120.0,
+        now=0.0,
+    )
+    pending = queue.pending_reevaluation_levels(batch_id)
+    assert pending == {"per_channel": pytest.approx(120.0)}
+
+    queue.mark_reevaluation_pending(
+        batch_id,
+        job=job,
+        channel=channel,
+        level="per_platform",
+        until=360.0,
+        now=0.0,
+    )
+    pending = queue.pending_reevaluation_levels(batch_id)
+    assert pending == {
+        "per_channel": pytest.approx(120.0),
+        "per_platform": pytest.approx(360.0),
+    }
+
+    queue.push(
+        "early",
+        priority=5,
+        job=job,
+        created_at=30.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    assert queue.pop_ready(30.0) == []
+    pending = queue.pending_reevaluation_levels(batch_id, reference_time=30.0)
+    assert pending == {
+        "per_channel": pytest.approx(120.0),
+        "per_platform": pytest.approx(360.0),
+    }
+
+    queue.push(
+        "mid",
+        priority=5,
+        job=job,
+        created_at=180.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    assert queue.pop_ready(180.0) == []
+
+    queue.push(
+        "final",
+        priority=5,
+        job=job,
+        created_at=400.0,
+        channel=channel,
+        batch_id=batch_id,
+    )
+    final_ready = queue.pop_ready(400.0)
+    assert len(final_ready) == 1
+    assert final_ready[0].text == "final"
+
+    pending = queue.pending_reevaluation_levels(batch_id, reference_time=400.0)
+    assert pending == {}

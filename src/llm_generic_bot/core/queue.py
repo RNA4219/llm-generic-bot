@@ -35,6 +35,7 @@ class _BatchRecord:
     channel: Optional[str]
     last_seen: float
     holds: Dict[str, float] = field(default_factory=dict)
+    sealed: bool = False
 
     def expire(self, now: float) -> None:
         expired = [level for level, until in self.holds.items() if now >= until]
@@ -126,6 +127,10 @@ class CoalesceQueue:
                         batch_id=batch.batch_id,
                     )
                 )
+                record = self._ledger.get(batch.batch_id)
+                if record is not None:
+                    record.sealed = True
+                    record.note_seen(batch.start)
                 self._index.pop(batch.batch_id, None)
             else:
                 remaining.append(batch)
@@ -166,6 +171,8 @@ class CoalesceQueue:
         if record is None:
             return False
         record.expire(ts)
+        if record.sealed:
+            return True
         if record.job != job:
             return True
         if channel is not None and record.channel not in (None, channel):
@@ -201,6 +208,23 @@ class CoalesceQueue:
         while len(self._ledger) > self._recent_limit:
             self._ledger.popitem(last=False)
 
+    def pending_reevaluation_levels(
+        self,
+        batch_id: str,
+        *,
+        reference_time: Optional[float] = None,
+    ) -> Dict[str, float]:
+        record = self._ledger.get(batch_id)
+        if record is None:
+            return {}
+        if reference_time is None:
+            return dict(record.holds)
+        return {
+            level: until
+            for level, until in record.holds.items()
+            if reference_time < until
+        }
+
     def mark_reevaluation_pending(
         self,
         batch_id: str,
@@ -209,12 +233,14 @@ class CoalesceQueue:
         channel: Optional[str],
         level: str,
         until: float,
+        now: Optional[float] = None,
     ) -> None:
         if not level:
             raise ValueError("reevaluation level must be non-empty")
         record = self._ledger.get(batch_id)
+        current = now if now is not None else until
         if record is None:
-            record = _BatchRecord(job=job, channel=channel, last_seen=until)
+            record = _BatchRecord(job=job, channel=channel, last_seen=current)
             self._ledger[batch_id] = record
         else:
             if record.job != job:
@@ -223,9 +249,12 @@ class CoalesceQueue:
                 return
             if record.channel is None and channel is not None:
                 record.channel = channel
-            record.expire(until)
-            record.note_seen(until)
+            record.expire(current)
+            record.note_seen(current)
+            record.sealed = False
+        record.sealed = False
         record.holds[level] = until
+        record.note_seen(until)
         self._ledger.move_to_end(batch_id)
         while len(self._ledger) > self._recent_limit:
             self._ledger.popitem(last=False)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable, Mapping, TypeVar
 
 from .service import _DEFAULT_RETENTION_DAYS
@@ -119,6 +119,33 @@ def _select_bucket(value: float) -> str:
     return _LATENCY_BUCKETS[-1][1]
 
 
+def _trim_and_build_snapshot(
+    *,
+    send_events: Iterable[_SendEventRecord],
+    permit_denials: Iterable[_PermitDenialRecord],
+    generated_at: datetime,
+    retention_days: int,
+) -> tuple[
+    dict[str, object],
+    list[_SendEventRecord],
+    list[_PermitDenialRecord],
+]:
+    cutoff = generated_at - timedelta(days=retention_days)
+    trimmed_send_events = _retain_recent(send_events, cutoff)
+    trimmed_permit_denials = _retain_recent(permit_denials, cutoff)
+    success_counts, failure_counts, histogram = _summarize_send_events(
+        trimmed_send_events
+    )
+    success_rate = _calculate_success_rate(success_counts, failure_counts)
+    snapshot = _build_snapshot(
+        generated_at=generated_at,
+        success_rate=success_rate,
+        histogram=histogram,
+        permit_denials=trimmed_permit_denials,
+    )
+    return snapshot, trimmed_send_events, trimmed_permit_denials
+
+
 __all__ = [
     "_SendEventRecord",
     "_PermitDenialRecord",
@@ -132,4 +159,5 @@ __all__ = [
     "_build_snapshot",
     "_format_permit_denials",
     "_select_bucket",
+    "_trim_and_build_snapshot",
 ]

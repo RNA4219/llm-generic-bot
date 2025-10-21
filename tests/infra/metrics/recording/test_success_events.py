@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, ContextManager
 
 import pytest
 
@@ -47,6 +47,42 @@ async def test_report_send_success_records_expected_labels(
             },
         )
     ]
+
+
+@pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_trims_outdated_send_events(
+    make_recording_metrics: Callable[[], RecordingMetricsLike],
+    freeze_time_ctx: Callable[[str], ContextManager[None]],
+) -> None:
+    recorder = make_recording_metrics()
+    reporting.configure_backend(recorder)
+    reporting.set_retention_days(2)
+
+    with freeze_time_ctx("2024-01-01T00:00:00Z"):
+        await reporting.report_send_success(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=0.8,
+            permit_tags=None,
+        )
+
+    with freeze_time_ctx("2024-01-04T00:00:00Z"):
+        await reporting.report_send_failure(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=2.5,
+            error_type="timeout",
+        )
+        snapshot = reporting.weekly_snapshot()
+
+    assert snapshot["success_rate"] == {
+        "weather": {"success": 0, "failure": 1, "ratio": 0.0}
+    }
+    assert snapshot["latency_histogram_seconds"] == {
+        "weather": {"3s": 1}
+    }
 
 
 @pytest.mark.anyio("asyncio")

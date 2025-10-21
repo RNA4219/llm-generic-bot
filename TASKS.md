@@ -1,3 +1,5 @@
+- 2025-10-24: docs/tasks/backlog.md の OPS-B01/B02/B03/B16 行を既存テスト (`tests/infra/metrics/test_send_delay_thresholds.py`・`tests/integration/test_runtime_multicontent_failures.py`) と `src/llm_generic_bot/infra/metrics/aggregator_*.py` 実装の整合確認に合わせて完了扱いへ更新。OPS 系の並走管理が解消されたことを共有する。
+- 2025-10-24: docs/roadmap.md の 残課題 OPS 節で OPS-B01/B02/B03/B16 および `send.delay_seconds` の箇条書きを重複整理し、バックログ参照へ一本化した。`npx markdownlint-cli docs/roadmap.md` 実行と差分確認を並行タスクとして共有する。
 <!-- markdownlint-disable MD013 MD041 -->
 - 2025-10-24: docs/roadmap.md の 残課題 OPS 節で OPS-B01/B02/B03/B16 および `send.delay_seconds` の箇条書きを重複整理し、バックログ参照へ一本化済み。`npx markdownlint-cli docs/roadmap.md` 実行と差分確認も完了。
 - 2025-10-24: OPS-B01（Permit/ジッタ/バッチ閾値調整）を完了。`pytest tests/integration/test_runtime_multicontent_failures.py -q && pytest tests/infra/metrics/test_send_delay_thresholds.py -q && mypy src/llm_generic_bot/core/scheduler.py src/llm_generic_bot/core/arbiter.py && ruff check src/llm_generic_bot/core/scheduler.py src/llm_generic_bot/core/arbiter.py` を完走し、`config/settings.example.json` の閾値とメトリクス揺らぎ検証結果を反映済み。

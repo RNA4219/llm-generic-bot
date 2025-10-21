@@ -169,6 +169,7 @@ async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.Monkey
     await scheduler.dispatch_ready_batches(current_time)
     await orchestrator.flush()
 
+    scheduler._reevaluation_waits.clear()
     _run_dispatch(scheduler, text, created_at=current_time)
     await scheduler.dispatch_ready_batches(current_time)
     await orchestrator.flush()
@@ -290,6 +291,123 @@ async def test_permit_reevaluation_schedules_retry_and_logs(
     denial_entry = permit_denials[0]
     assert denial_entry["reason"] == "burst limit reached"
     assert denial_entry["reevaluation_reason"] == "retry after cooldown"
+
+    await orchestrator.close()
+
+
+async def test_permit_reevaluation_retry_succeeds_with_audit(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    settings["dedupe"]["enabled"] = False
+
+    current_time = {"value": 3_000_000.0}
+    monkeypatch.setattr(time, "time", lambda: current_time["value"])
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
+
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("reeval", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    retry_after = 61.0
+
+    def time_fn() -> float:
+        return current_time["value"]
+
+    hook_calls: list[str] = []
+
+    def _on_rejection(ctx: PermitRejectionContext) -> PermitReevaluationOutcome:
+        hook_calls.append(ctx.level)
+        return PermitReevaluationOutcome(
+            level=ctx.level,
+            reason="manual reevaluation",
+            retry_after=retry_after,
+            allowed=None,
+        )
+
+    quota = PerChannelQuotaConfig(day=2, window_minutes=1, burst_limit=1)
+    gate = PermitGate(
+        per_channel=quota,
+        time_fn=time_fn,
+        config=PermitGateConfig(
+            levels=(PermitQuotaLevel(name="per_channel", quota=quota),),
+            hooks=PermitGateHooks(on_rejection=_on_rejection),
+        ),
+    )
+
+    assert gate.permit("discord", "discord-news", "news").allowed is True
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(
+        settings,
+        queue=queue,
+        permit_gate=gate,
+    )
+    scheduler.jitter_enabled = False
+
+    send_calls: list[tuple[str, str | None, str | None]] = []
+
+    async def _fake_send(text: str, channel: str | None, *, job: str | None = None) -> None:
+        send_calls.append((text, channel, job))
+
+    monkeypatch.setattr(orchestrator._sender, "send", _fake_send)
+
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float, result: object = None) -> object:
+        sleep_calls.append(delay)
+        current_time["value"] += delay
+        return result
+
+    monkeypatch.setattr("asyncio.sleep", _fake_sleep)
+
+    caplog.set_level("INFO", logger="llm_generic_bot.core.orchestrator.runtime")
+
+    text = await jobs["news"]()
+    assert text
+
+    batch_id = "permit-reeval-success"
+    _run_dispatch(scheduler, text, created_at=current_time["value"], batch_id=batch_id)
+    await scheduler.dispatch_ready_batches(current_time["value"])
+    await orchestrator.flush()
+
+    assert hook_calls == ["per_channel"]
+    assert sleep_calls and sleep_calls[0] == pytest.approx(retry_after)
+
+    await asyncio.sleep(0)
+    await orchestrator.flush()
+
+    assert len(send_calls) == 1
+    assert send_calls[0] == (text, "discord-news", "news")
+
+    retry_logs = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "send_permit_retry_scheduled"
+    ]
+    assert retry_logs
+    success_logs = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "send_success"
+    ]
+    assert success_logs
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert snapshot["success_rate"]["news"] == {"success": 1, "failure": 0, "ratio": 1.0}
+    permit_denials = snapshot["permit_denials"]
+    assert permit_denials
+    denial_entry = permit_denials[0]
+    assert denial_entry["reason"] == "burst limit reached"
+    assert denial_entry["reevaluation_reason"] == "manual reevaluation"
+    assert denial_entry["reevaluation_reason_color"] == "red"
 
     await orchestrator.close()
 
@@ -538,6 +656,7 @@ async def test_scheduler_jitter_thresholds_override_preserves_metrics(
     _run_dispatch(scheduler, text, created_at=base_ts)
     await scheduler.dispatch_ready_batches(base_ts)
 
+    scheduler._reevaluation_waits.clear()
     _run_dispatch(scheduler, text, created_at=base_ts)
     await scheduler.dispatch_ready_batches(base_ts)
 
@@ -621,6 +740,7 @@ async def test_scheduler_config_toggles_maintain_delay_and_permit_metrics(
     _run_dispatch(scheduler, text, created_at=base_ts)
     await scheduler.dispatch_ready_batches(base_ts)
 
+    scheduler._reevaluation_waits.clear()
     _run_dispatch(scheduler, text, created_at=base_ts)
     await scheduler.dispatch_ready_batches(base_ts)
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
+import inspect
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -182,6 +184,115 @@ async def test_permit_reevaluation_allows_after_delay(monkeypatch: pytest.Monkey
     assert snapshot["success_rate"]["news"] == {"success": 2, "failure": 0, "ratio": 1.0}
 
 
+async def test_permit_reevaluation_schedules_retry_and_logs(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    queue = CoalesceQueue(window_seconds=0.0, threshold=1)
+    settings["dedupe"]["enabled"] = False
+
+    current_time = {"value": 2_000_000.0}
+    monkeypatch.setattr(time, "time", lambda: current_time["value"])
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
+
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("reeval", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    retry_after = 61.0
+
+    def time_fn() -> float:
+        return current_time["value"]
+
+    hook_calls: list[str] = []
+
+    def _on_rejection(ctx: PermitRejectionContext) -> PermitReevaluationOutcome:
+        hook_calls.append(ctx.level)
+        return PermitReevaluationOutcome(
+            level=ctx.level,
+            reason="retry after cooldown",
+            retry_after=retry_after,
+            allowed=True,
+        )
+
+    quota = PerChannelQuotaConfig(day=2, window_minutes=1, burst_limit=1)
+    gate = PermitGate(
+        per_channel=quota,
+        time_fn=time_fn,
+        config=PermitGateConfig(
+            levels=(PermitQuotaLevel(name="per_channel", quota=quota),),
+            hooks=PermitGateHooks(on_rejection=_on_rejection),
+        ),
+    )
+
+    assert gate.permit("discord", "discord-news", "news").allowed is True
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(
+        settings,
+        queue=queue,
+        permit_gate=gate,
+    )
+    scheduler.jitter_enabled = False
+
+    send_calls: list[tuple[str, str | None, str | None]] = []
+
+    async def _fake_send(text: str, channel: str | None, *, job: str | None = None) -> None:
+        send_calls.append((text, channel, job))
+
+    monkeypatch.setattr(orchestrator._sender, "send", _fake_send)
+
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float, result: object = None) -> object:
+        sleep_calls.append(delay)
+        current_time["value"] += delay
+        return result
+
+    monkeypatch.setattr("asyncio.sleep", _fake_sleep)
+
+    caplog.set_level("INFO", logger="llm_generic_bot.core.orchestrator.runtime")
+
+    text = await jobs["news"]()
+    assert text
+
+    batch_id = "permit-reeval-retry"
+    _run_dispatch(scheduler, text, created_at=current_time["value"], batch_id=batch_id)
+    await scheduler.dispatch_ready_batches(current_time["value"])
+    await orchestrator.flush()
+    await orchestrator.flush()
+
+    assert send_calls == [(text, "discord-news", "news")]
+    assert hook_calls == ["per_channel"]
+    assert sleep_calls and sleep_calls[0] == pytest.approx(retry_after)
+
+    records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "send_permit_retry_scheduled"
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert getattr(record, "retry_after", None) == pytest.approx(retry_after)
+    assert getattr(record, "reason", None) == "retry after cooldown"
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert snapshot["success_rate"]["news"] == {"success": 1, "failure": 0, "ratio": 1.0}
+    permit_denials = snapshot["permit_denials"]
+    assert len(permit_denials) == 1
+    denial_entry = permit_denials[0]
+    assert denial_entry["reason"] == "burst limit reached"
+    assert denial_entry["reevaluation_reason"] == "retry after cooldown"
+
+    await orchestrator.close()
+
+
 async def test_quota_multilayer_quota_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     aggregator_state.reset_for_test()
     settings = _settings()
@@ -353,6 +464,120 @@ async def test_scheduler_jitter_thresholds_override_preserves_metrics(
     assert recorded_delay == [0.0, pytest.approx(7.0), pytest.approx(7.0)]
     assert jitter_calls == [(base_ts, False, (7, 7)), (base_ts, True, (7, 7))]
     assert calls == [("discord", "discord-news", "news"), ("discord", "discord-news", "news")]
+
+
+@pytest.mark.parametrize(
+    "jitter_override,threshold_override",
+    [((3, 15), 3), ((5, 9), 1)],
+)
+async def test_scheduler_config_toggles_maintain_delay_and_permit_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+    jitter_override: tuple[int, int],
+    threshold_override: int,
+) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    scheduler_cfg = settings.setdefault("scheduler", {})
+    scheduler_cfg["jitter_range_seconds"] = list(jitter_override)
+    scheduler_cfg["queue"] = {"threshold": threshold_override, "window_sec": 0}
+    settings["dedupe"]["enabled"] = False
+    settings["cooldown"]["window_sec"] = 0
+    settings["cooldown"]["jobs"]["news"]["base_gap_sec"] = 0
+
+    recorded_delays: list[float] = []
+    delay_metrics: list[float] = []
+    jitter_calls: list[tuple[float, bool, tuple[int, int]]] = []
+
+    async def _fake_sleep(duration: float) -> None:
+        recorded_delays.append(duration)
+
+    async def _fake_report_send_delay(
+        *,
+        job: str,
+        platform: str,
+        channel: str | None,
+        delay_seconds: float,
+    ) -> None:
+        delay_metrics.append(delay_seconds)
+        assert job == "news"
+        assert platform == "discord"
+        assert channel == "discord-news"
+
+    def _fake_next_slot(
+        ts: float, clash: bool, jitter_range: tuple[int, int] = (60, 180)
+    ) -> float:
+        jitter_calls.append((ts, clash, jitter_range))
+        if not clash:
+            return ts
+        return ts + float(jitter_range[0])
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
+
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("custom", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(settings)
+
+    metrics_service = getattr(orchestrator._metrics_boundary, "service")  # type: ignore[attr-defined]
+    assert metrics_service is not None
+
+    base_ts = 1_000_000.0
+    monkeypatch.setattr(scheduler, "_sleep", _fake_sleep)
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", _fake_next_slot)
+    monkeypatch.setattr(metrics_module, "report_send_delay", _fake_report_send_delay)
+
+    text = await jobs["news"]()
+    assert text
+
+    _run_dispatch(scheduler, text, created_at=base_ts)
+    await scheduler.dispatch_ready_batches(base_ts)
+
+    _run_dispatch(scheduler, text, created_at=base_ts)
+    await scheduler.dispatch_ready_batches(base_ts)
+
+    await orchestrator.flush()
+    await orchestrator.close()
+
+    assert jitter_calls
+    effective_range = jitter_calls[0][2]
+    expected_delay = float(effective_range[0])
+    assert recorded_delays == [0.0, pytest.approx(expected_delay)]
+    assert delay_metrics == [pytest.approx(expected_delay)]
+    assert jitter_calls == [
+        (base_ts, False, effective_range),
+        (base_ts, True, effective_range),
+    ]
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert snapshot["success_rate"]["news"] == {"success": 2, "failure": 0, "ratio": 1.0}
+
+    snapshot_result = metrics_service.collect_weekly_snapshot()
+    metrics_snapshot = (
+        await snapshot_result if inspect.isawaitable(snapshot_result) else snapshot_result
+    )
+    observations = metrics_snapshot.observations
+    delay_thresholds = observations.get("send.delay_threshold_seconds")
+    assert delay_thresholds is not None
+    min_tags = tuple(sorted({"job": "news", "channel": "discord-news", "bound": "min"}.items()))
+    max_tags = tuple(sorted({"job": "news", "channel": "discord-news", "bound": "max"}.items()))
+    threshold_tags = tuple(sorted({"job": "news", "channel": "discord-news"}.items()))
+    assert min_tags in delay_thresholds
+    assert max_tags in delay_thresholds
+    min_snapshot = delay_thresholds[min_tags]
+    max_snapshot = delay_thresholds[max_tags]
+    assert min_snapshot.minimum == pytest.approx(float(effective_range[0]))
+    assert max_snapshot.maximum == pytest.approx(float(effective_range[1]))
+    batch_thresholds = observations.get("send.batch_threshold_count")
+    assert batch_thresholds is not None
+    assert threshold_tags in batch_thresholds
+    threshold_snapshot = batch_thresholds[threshold_tags]
+    assert threshold_snapshot.minimum == pytest.approx(float(threshold_override))
 
 
 async def test_cooldown_resume_allows_retry(monkeypatch: pytest.MonkeyPatch) -> None:

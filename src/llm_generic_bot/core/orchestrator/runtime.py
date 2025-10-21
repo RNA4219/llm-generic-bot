@@ -38,6 +38,7 @@ class PermitDecisionLike(Protocol):
     job: Optional[str]
     retry_after: Optional[float]
     level: Optional[str]
+    reevaluation: object | None
 
 
 class PermitDecision:
@@ -168,6 +169,7 @@ class Orchestrator:
         self._worker: asyncio.Task[None] | None = None
         self._closed = False
         self._default_platform = platform
+        self._retry_tasks: set[asyncio.Task[None]] = set()
         self._start_worker()
 
     async def enqueue(
@@ -219,6 +221,11 @@ class Orchestrator:
         await self._queue.put(None)
         if self._worker:
             await self._worker
+        if self._retry_tasks:
+            for task in list(self._retry_tasks):
+                task.cancel()
+            await asyncio.gather(*self._retry_tasks, return_exceptions=True)
+            self._retry_tasks.clear()
 
     async def weekly_snapshot(self) -> WeeklyMetricsSnapshot:
         return await collect_weekly_snapshot(self._metrics_service)
@@ -254,7 +261,7 @@ class Orchestrator:
                 self._queue.task_done()
 
     async def _process(self, request: _SendRequest) -> None:
-        await processor.process(
+        directive = await processor.process(
             request=request,
             sender=self._sender,
             cooldown=self._cooldown,
@@ -265,6 +272,56 @@ class Orchestrator:
             logger=self._logger,
             record_event=self._record_event,
         )
+        if directive is not None and not self._closed:
+            self._schedule_retry(request, directive)
+
+    def _schedule_retry(
+        self, request: _SendRequest, directive: "processor.RetryDirective"
+    ) -> None:
+        retry_after = directive.retry_after
+        clone = _SendRequest(
+            text=request.text,
+            job=request.job,
+            platform=request.platform,
+            channel=request.channel,
+            correlation_id=request.correlation_id,
+            engagement_score=request.engagement_score,
+            engagement_recent=request.engagement_recent,
+            engagement_long_term=request.engagement_long_term,
+            engagement_permit_quota=request.engagement_permit_quota,
+        )
+
+        async def _reenqueue() -> None:
+            delay = retry_after or 0.0
+            if delay > 0:
+                try:
+                    await asyncio.sleep(delay)
+                except asyncio.CancelledError:
+                    return
+            if self._closed:
+                return
+            await self._queue.put(clone)
+
+        task = asyncio.create_task(_reenqueue())
+
+        def _cleanup(done: asyncio.Task[None]) -> None:
+            self._retry_tasks.discard(done)
+            try:
+                done.result()
+            except Exception:  # noqa: BLE001 - ログ済み例外は上位へ伝播させない
+                self._logger.exception(
+                    "retry_enqueue_failed",
+                    extra={
+                        "event": "send_permit_retry_failed",
+                        "job": request.job,
+                        "platform": request.platform,
+                        "channel": request.channel,
+                        "correlation_id": request.correlation_id,
+                    },
+                )
+
+        task.add_done_callback(_cleanup)
+        self._retry_tasks.add(task)
 
     def _record_event(
         self,

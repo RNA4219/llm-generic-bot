@@ -199,7 +199,7 @@ class Scheduler:
             return True
         key = (batch.job, batch.channel)
         last_slot_seen = self._reevaluation_waits.get(key)
-        if last_slot_seen is not None and batch.created_at <= last_slot_seen:
+        if last_slot_seen is not None and batch.created_at < last_slot_seen:
             return True
         return False
 

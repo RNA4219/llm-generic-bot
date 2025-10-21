@@ -29,6 +29,23 @@ class _PendingBatch:
     batch_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
+@dataclass(slots=True)
+class _BatchRecord:
+    job: str
+    channel: Optional[str]
+    last_seen: float
+    holds: Dict[str, float] = field(default_factory=dict)
+
+    def expire(self, now: float) -> None:
+        expired = [level for level, until in self.holds.items() if now >= until]
+        for level in expired:
+            self.holds.pop(level, None)
+
+    def note_seen(self, ts: float) -> None:
+        if ts > self.last_seen:
+            self.last_seen = ts
+
+
 class CoalesceQueue:
     """Merge nearby messages into priority-aware batches.
 
@@ -40,7 +57,7 @@ class CoalesceQueue:
         self._threshold = threshold
         self._pending: List[_PendingBatch] = []
         self._index: Dict[str, _PendingBatch] = {}
-        self._recent: OrderedDict[str, float] = OrderedDict()
+        self._ledger: OrderedDict[str, _BatchRecord] = OrderedDict()
         self._recent_limit = 1024
 
     @property
@@ -58,7 +75,7 @@ class CoalesceQueue:
         batch_id: Optional[str] = None,
     ) -> None:
         ts = created_at if created_at is not None else time.time()
-        if batch_id is not None and self._should_skip(batch_id, ts):
+        if batch_id is not None and self._should_skip(batch_id, ts, job, channel):
             return
         batch = self._find_batch(ts, channel, job, priority, batch_id)
         if batch is None:
@@ -88,7 +105,7 @@ class CoalesceQueue:
             if len(batch.messages) >= self._threshold:
                 batch.force_ready = True
                 batch.ready_at = min(batch.ready_at, ts)
-        self._remember(batch.batch_id, ts)
+        self._remember(batch.batch_id, ts, job=batch.job, channel=batch.channel)
 
     def pop_ready(self, now: float) -> List[QueueBatch]:
         ready: List[QueueBatch] = []
@@ -138,14 +155,77 @@ class CoalesceQueue:
                 return batch
         return None
 
-    def _should_skip(self, batch_id: str, ts: float) -> bool:
-        last_seen = self._recent.get(batch_id)
-        if last_seen is None:
+    def _should_skip(
+        self,
+        batch_id: str,
+        ts: float,
+        job: str,
+        channel: Optional[str],
+    ) -> bool:
+        record = self._ledger.get(batch_id)
+        if record is None:
             return False
-        return ts <= last_seen
+        record.expire(ts)
+        if record.job != job:
+            return True
+        if channel is not None and record.channel not in (None, channel):
+            return True
+        if record.channel is None and channel is not None:
+            record.channel = channel
+        if record.holds:
+            hold_until = max(record.holds.values())
+            if ts < hold_until:
+                return True
+        return ts <= record.last_seen
 
-    def _remember(self, batch_id: str, ts: float) -> None:
-        self._recent[batch_id] = ts
-        self._recent.move_to_end(batch_id)
-        while len(self._recent) > self._recent_limit:
-            self._recent.popitem(last=False)
+    def _remember(
+        self,
+        batch_id: str,
+        ts: float,
+        *,
+        job: str,
+        channel: Optional[str],
+    ) -> None:
+        record = self._ledger.get(batch_id)
+        if record is None:
+            record = _BatchRecord(job=job, channel=channel, last_seen=ts)
+            self._ledger[batch_id] = record
+        else:
+            if record.job != job:
+                record.job = job
+            if record.channel is None and channel is not None:
+                record.channel = channel
+            record.expire(ts)
+            record.note_seen(ts)
+        self._ledger.move_to_end(batch_id)
+        while len(self._ledger) > self._recent_limit:
+            self._ledger.popitem(last=False)
+
+    def mark_reevaluation_pending(
+        self,
+        batch_id: str,
+        *,
+        job: str,
+        channel: Optional[str],
+        level: str,
+        until: float,
+    ) -> None:
+        if not level:
+            raise ValueError("reevaluation level must be non-empty")
+        record = self._ledger.get(batch_id)
+        if record is None:
+            record = _BatchRecord(job=job, channel=channel, last_seen=until)
+            self._ledger[batch_id] = record
+        else:
+            if record.job != job:
+                return
+            if channel is not None and record.channel not in (None, channel):
+                return
+            if record.channel is None and channel is not None:
+                record.channel = channel
+            record.expire(until)
+            record.note_seen(until)
+        record.holds[level] = until
+        self._ledger.move_to_end(batch_id)
+        while len(self._ledger) > self._recent_limit:
+            self._ledger.popitem(last=False)

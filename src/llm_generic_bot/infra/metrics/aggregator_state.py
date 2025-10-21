@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from threading import Lock
 from typing import Mapping
 
@@ -10,12 +10,9 @@ from .aggregator_records import (
     _PermitDenialRecord,
     _SendEventRecord,
     _base_tags,
-    _build_snapshot,
-    _calculate_success_rate,
     _merge_tags,
     _normalize_retention_days,
-    _retain_recent,
-    _summarize_send_events,
+    _trim_and_build_snapshot,
 )
 from .service import (
     MetricsRecorder,
@@ -142,17 +139,16 @@ class _GlobalMetricsAggregator:
 
     def weekly_snapshot(self) -> dict[str, object]:
         generated_at = _utcnow()
-        cutoff = generated_at - timedelta(days=self._retention_days())
         with self.lock:
-            send_events, permit_denials = self._trim_history(cutoff)
-        success_counts, failure_counts, histogram = _summarize_send_events(send_events)
-        success_rate = _calculate_success_rate(success_counts, failure_counts)
-        return _build_snapshot(
-            generated_at=generated_at,
-            success_rate=success_rate,
-            histogram=histogram,
-            permit_denials=permit_denials,
-        )
+            snapshot, send_events, permit_denials = _trim_and_build_snapshot(
+                send_events=self._send_events,
+                permit_denials=self._permit_denials,
+                generated_at=generated_at,
+                retention_days=self.retention_days,
+            )
+            self._send_events = send_events
+            self._permit_denials = permit_denials
+        return snapshot
 
     def reset(self) -> None:
         with self.lock:
@@ -177,20 +173,6 @@ class _GlobalMetricsAggregator:
     def _backend_for_delay(self) -> MetricsRecorder:
         with self.lock:
             return self.backend
-
-    def _trim_history(
-        self, cutoff: datetime
-    ) -> tuple[list[_SendEventRecord], list[_PermitDenialRecord]]:
-        send_events = _retain_recent(self._send_events, cutoff)
-        permit_denials = _retain_recent(self._permit_denials, cutoff)
-        self._send_events = send_events
-        self._permit_denials = permit_denials
-        return send_events, permit_denials
-
-    def _retention_days(self) -> int:
-        with self.lock:
-            return self.retention_days
-
 
 def _resolve_backend(
     recorder: MetricsRecorder | None,

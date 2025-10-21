@@ -29,6 +29,29 @@ PermitRejectionContext = _models.PermitRejectionContext
 jitter_seconds = _jitter.jitter_seconds
 next_slot: Callable[[float, bool, tuple[int, int]], float] = _jitter.next_slot
 
+
+def permit_decision(
+    *,
+    allowed: bool,
+    reason: str | None,
+    retryable: bool,
+    job: str | None = None,
+    reevaluation: PermitReevaluationOutcome | str | None = None,
+    retry_after: float | None = None,
+    level: str | None = None,
+) -> PermitDecision:
+    """Create a :class:`PermitDecision` with explicit retry context."""
+
+    return PermitDecision(
+        allowed=allowed,
+        reason=reason,
+        retryable=retryable,
+        job=job,
+        reevaluation=reevaluation,
+        retry_after=retry_after,
+        level=level,
+    )
+
 LEGACY_PERMIT_GATE_REFACTOR_CHECKLIST = (
     "- [ ] すべての呼び出しサイトを llm_generic_bot.core.arbiter.gate へ更新",
     "- [ ] PermitGate 関連ドキュメントを新ディレクトリ構成へ更新",
@@ -47,6 +70,7 @@ __all__ = [
     "PermitReevaluationOutcome",
     "PermitRejectionContext",
     "gate",
+    "permit_decision",
     "jitter",
     "jitter_seconds",
     "models",

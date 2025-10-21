@@ -92,6 +92,7 @@ class Scheduler:
         self._metrics = _resolve_metrics(metrics)
         self._dispatched_batches: OrderedDict[str, float] = OrderedDict()
         self._dispatch_guard_limit = 1024
+        self._reevaluation_waits: dict[tuple[str, Optional[str]], float] = {}
 
     def every_day(
         self,

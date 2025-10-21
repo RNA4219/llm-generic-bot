@@ -647,9 +647,15 @@ async def test_scheduler_config_toggles_maintain_delay_and_permit_metrics(
     observations = metrics_snapshot.observations
     delay_thresholds = observations.get("send.delay_threshold_seconds")
     assert delay_thresholds is not None
-    min_tags = tuple(sorted({"job": "news", "channel": "discord-news", "bound": "min"}.items()))
-    max_tags = tuple(sorted({"job": "news", "channel": "discord-news", "bound": "max"}.items()))
-    threshold_tags = tuple(sorted({"job": "news", "channel": "discord-news"}.items()))
+    min_tags = tuple(
+        sorted({"job": "news", "channel": "discord-news", "platform": "discord", "bound": "min"}.items())
+    )
+    max_tags = tuple(
+        sorted({"job": "news", "channel": "discord-news", "platform": "discord", "bound": "max"}.items())
+    )
+    threshold_tags = tuple(
+        sorted({"job": "news", "channel": "discord-news", "platform": "discord"}.items())
+    )
     assert min_tags in delay_thresholds
     assert max_tags in delay_thresholds
     min_snapshot = delay_thresholds[min_tags]
@@ -662,6 +668,133 @@ async def test_scheduler_config_toggles_maintain_delay_and_permit_metrics(
     threshold_snapshot = batch_thresholds[threshold_tags]
     assert threshold_snapshot.minimum == pytest.approx(float(threshold_override))
 
+
+@pytest.mark.parametrize(
+    "variations",
+    [
+        (
+            ((5, 11), 2, (2, 4)),
+            ((9, 12), 4, (4, 8)),
+        ),
+        (
+            ((6, 6), 3, (3, 6)),
+            ((4, 8), 5, (4, 8)),
+        ),
+    ],
+)
+async def test_scheduler_jitter_threshold_variations_preserve_delay_and_permit_success(
+    monkeypatch: pytest.MonkeyPatch,
+    variations: tuple[tuple[tuple[int, int], int, tuple[int, int]], ...],
+) -> None:
+    aggregator_state.reset_for_test()
+    settings = _settings()
+    scheduler_cfg = settings.setdefault("scheduler", {})
+    first_range, first_threshold, _ = variations[0]
+    scheduler_cfg["jitter_range_seconds"] = list(first_range)
+    scheduler_cfg["queue"] = {"threshold": first_threshold, "window_sec": 0}
+    settings["dedupe"]["enabled"] = False
+
+    permit_calls: list[tuple[str, str | None, str]] = []
+
+    class _PermitRecorder:
+        def permit(self, platform: str, channel: str | None, job: str) -> PermitDecision:
+            permit_calls.append((platform, channel, job))
+            return PermitDecision(allowed=True, reason=None, retryable=True, job=job)
+
+    recorded_delays: list[float] = []
+    delay_metrics: list[float] = []
+    jitter_calls: list[tuple[float, bool, tuple[int, int]]] = []
+
+    async def _fake_sleep(duration: float) -> None:
+        recorded_delays.append(duration)
+
+    async def _fake_report_send_delay(
+        *,
+        job: str,
+        platform: str,
+        channel: str | None,
+        delay_seconds: float,
+    ) -> None:
+        delay_metrics.append(delay_seconds)
+        assert job == "news"
+        assert platform == "discord"
+        assert channel == "discord-news"
+
+    def _fake_next_slot(
+        ts: float, clash: bool, jitter_range: tuple[int, int] = (60, 180)
+    ) -> float:
+        jitter_calls.append((ts, clash, jitter_range))
+        if not clash:
+            return ts
+        return ts + float(jitter_range[0])
+
+    async def _summarize(_item: NewsFeedItem, *, language: str = "ja") -> str:
+        del _item, language
+        return "summary"
+
+    fetcher, summarizer = _providers(
+        [NewsFeedItem("variation", "https://example.com", None)],
+        _summarize,
+    )
+    settings["news"]["feed_provider"] = fetcher
+    settings["news"]["summary_provider"] = summarizer
+
+    scheduler, orchestrator, jobs = main_module.setup_runtime(
+        settings,
+        permit_gate=_PermitRecorder(),
+    )
+
+    base_ts = 2_000_000.0
+    monkeypatch.setattr(scheduler, "_sleep", _fake_sleep)
+    monkeypatch.setattr("llm_generic_bot.core.scheduler.next_slot", _fake_next_slot)
+    monkeypatch.setattr(metrics_module, "report_send_delay", _fake_report_send_delay)
+
+    await orchestrator.flush()
+
+    news_text = await jobs["news"]()
+    assert news_text
+
+    for index, (jitter_override, threshold_override, expected_range) in enumerate(variations):
+        scheduler.jitter_range = jitter_override
+        scheduler.queue._threshold = threshold_override  # type: ignore[attr-defined]
+        scheduler.queue._window = 0.0  # type: ignore[attr-defined]
+
+        current_ts = base_ts + index * 100.0
+        _run_dispatch(scheduler, news_text, created_at=current_ts)
+        await scheduler.dispatch_ready_batches(current_ts)
+
+        _run_dispatch(scheduler, news_text, created_at=current_ts)
+        await scheduler.dispatch_ready_batches(current_ts)
+
+        # Each variation should result in two jitter checks: a clash-free and a clashing dispatch.
+        variation_calls = jitter_calls[index * 2 : index * 2 + 2]
+        assert variation_calls == [
+            (current_ts, False, expected_range),
+            (current_ts, True, expected_range),
+        ]
+
+        expected_delay = float(expected_range[0])
+        assert delay_metrics[index] == pytest.approx(expected_delay)
+        assert recorded_delays[index * 2 : index * 2 + 2] == [
+            pytest.approx(0.0),
+            pytest.approx(expected_delay),
+        ]
+
+        await orchestrator.flush()
+
+    await orchestrator.flush()
+    await orchestrator.close()
+
+    expected_total = len(variations) * 2
+    assert len(permit_calls) == expected_total
+    assert all(call == ("discord", "discord-news", "news") for call in permit_calls)
+
+    snapshot = aggregator_state.weekly_snapshot()
+    assert snapshot["success_rate"]["news"] == {
+        "success": expected_total,
+        "failure": 0,
+        "ratio": 1.0,
+    }
 
 async def test_cooldown_resume_allows_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     aggregator_state.reset_for_test()

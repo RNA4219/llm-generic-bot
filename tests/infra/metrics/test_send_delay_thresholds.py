@@ -138,7 +138,18 @@ async def test_scheduler_records_delay_threshold_metrics(
 
     assert any(call == expected_min for call in delay_threshold_calls)
     assert any(call == expected_max for call in delay_threshold_calls)
+    assert len(delay_threshold_calls) == 4
+    assert {
+        tuple(sorted(call[2].items()))
+        for call in delay_threshold_calls
+    } == {
+        tuple(sorted(expected_min[2].items())),
+        tuple(sorted(expected_max[2].items())),
+    }
+
     assert any(call == expected_threshold for call in batch_threshold_calls)
+    assert len(batch_threshold_calls) == 2
+    assert all(call[2] == expected_threshold[2] for call in batch_threshold_calls)
 
 
 @pytest.mark.anyio("asyncio")
@@ -235,7 +246,7 @@ async def test_scheduler_delay_threshold_metrics_include_platform_tag(
         (call[2].get("bound"), tuple(sorted(call[2].items())))
         for call in delay_threshold_calls
     }
-    assert expected_bounds <= actual_bounds
+    assert actual_bounds == expected_bounds
 
     for _, _, tags in batch_threshold_calls:
         assert tags == {

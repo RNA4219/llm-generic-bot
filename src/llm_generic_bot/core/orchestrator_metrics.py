@@ -118,6 +118,25 @@ def resolve_metrics_boundary(
     return MetricsBoundary(recorder or NullMetricsRecorder(), service)
 
 
+async def record_retry_delay(
+    *,
+    boundary: MetricsBoundary,
+    job: str,
+    platform: str,
+    channel: str | None,
+    delay_seconds: float,
+) -> None:
+    if delay_seconds <= 0:
+        return
+    with boundary.suppress_backend(False):
+        await metrics_module.report_send_delay(
+            job=job,
+            platform=platform,
+            channel=channel,
+            delay_seconds=delay_seconds,
+        )
+
+
 def format_metric_value(value: float) -> str:
     formatted = f"{value:.3f}"
     trimmed = formatted.rstrip("0").rstrip(".")

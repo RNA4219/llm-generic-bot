@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Mapping, Optional, Protocol
 from ..arbiter.models import PermitReevaluationOutcome
 from ..cooldown import CooldownGate
 from ..dedupe import NearDuplicateFilter
-from ..orchestrator_metrics import MetricsBoundary, MetricsRecorder, format_metric_value
+from ..orchestrator_metrics import (
+    MetricsBoundary,
+    MetricsRecorder,
+    format_metric_value,
+    record_retry_delay,
+)
 from ...infra import metrics as metrics_module
 
 if TYPE_CHECKING:
@@ -105,6 +110,7 @@ async def process(
         if isinstance(reevaluation_obj, PermitReevaluationOutcome):
             if reevaluation_obj.reason:
                 permit_tags["reevaluation_reason"] = reevaluation_obj.reason
+                permit_tags.setdefault("reevaluation_reason_color", "red")
             if reevaluation_obj.retry_after is not None:
                 permit_tags.setdefault(
                     "retry_after_sec",
@@ -134,6 +140,7 @@ async def process(
         if directive is not None:
             if directive.reason:
                 denied_metadata["reevaluation_reason"] = directive.reason
+                denied_metadata.setdefault("reevaluation_reason_color", "red")
             if directive.retry_after is not None:
                 denied_metadata["retry_after_scheduled_sec"] = float(directive.retry_after)
             record_event(
@@ -158,6 +165,14 @@ async def process(
                     "status": "scheduled",
                 },
             )
+            if directive.retry_after is not None and metrics_enabled:
+                await record_retry_delay(
+                    boundary=metrics_boundary,
+                    job=job_name,
+                    platform=request.platform,
+                    channel=request.channel,
+                    delay_seconds=float(directive.retry_after),
+                )
         record_event("send.denied", denied_tags, metadata=denied_metadata)
         logger.info(
             "permit_denied",

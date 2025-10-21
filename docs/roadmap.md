@@ -70,10 +70,7 @@
 - [OPS-B16] メトリクス集計レコード分離と状態層整理: `_SendEventRecord` を `infra/metrics/aggregator_records.py` へ移し、`infra/metrics/aggregator_state.py` はロック付き状態管理に専念。`pytest tests/infra/metrics/recording/test_success_events.py -q`・`pytest tests/infra/metrics/recording/test_delay_events.py -q`・`mypy src/llm_generic_bot/infra/metrics`・`ruff check src/llm_generic_bot/infra/metrics` で回帰を確認し、`send.delay_seconds` の `unit="seconds"` タグを再検証（2025-10-24 完了）。
 
 ### 残課題
-- 最新の未完了項目は `docs/tasks/backlog.md` を参照。OPS 系は 2025-10-24 時点で完了済みであり、以降はバックログ側で差分管理している。
-- [OPS-B01/B02/B03] Permit 系 3 タスクは 2025-10-24 に完了し、バックログ（`docs/tasks/backlog.md`）へ完了記録を集約済み。回帰確認が必要な場合は `tests/integration/test_runtime_multicontent_failures.py`・`tests/core/test_quota_gate.py` のコマンド列を参照する。
-- [OPS-B16] メトリクス履歴集計の状態管理と記録経路を `infra/metrics/aggregator_state.py`・`infra/metrics/aggregator_records.py` へ整理し、`tests/infra/metrics/recording/test_success_events.py`・`tests/infra/metrics/recording/test_delay_events.py` で回帰を固定するタスクは 2025-10-24 に完了。詳細はバックログ完了記録を参照。
-- `send.delay_seconds` は `infra.metrics.reporting.report_send_delay` が遅延秒数を観測バックエンドへ送信する際に `unit="seconds"` タグを付与し、`tests/infra/metrics/recording/test_delay_events.py::test_report_send_delay_records_unit_seconds` で `pytest tests/infra/metrics/recording/test_delay_events.py -k report_send_delay_records_unit_seconds -q` を通じて固定化している。
+- 最新の未完了項目は `docs/tasks/backlog.md` を参照。OPS-B01/B02/B03/B16 と `send.delay_seconds` の秒単位タグ検証は 2025-10-24 に完了し、同ファイルへ完了記録を集約済み。
 #### OPS（運用・基盤）
 - 現在、OPS 系の残課題はなし。2025-10-24 に OPS-B01/OPS-B02/OPS-B03/OPS-B16 を完了し、前述のテスト・静的解析コマンドで回帰確認済み。
 - [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。→ 2025-10-19: `core/orchestrator/runtime.py` を公開実装として昇格し、`tests/core/orchestrator/test_processor.py`・`tests/integration/test_orchestrator_imports.py` を追加して `llm_generic_bot.core.orchestrator.processor` / `.runtime` 直 import を固定化。`_legacy.py` は薄いフォワーダへ整理済み。

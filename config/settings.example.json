@@ -1,10 +1,10 @@
 {
   "timezone": "Asia/Tokyo",
   "scheduler": {
-    "_usage": "スケジューラ共通設定サンプル。`jitter_range_seconds` で送信ジッタを `[min, max]` 秒に固定し、`queue.threshold` でコアレスキューのフラッシュ閾値を上書きする",
+    "_usage": "スケジューラ共通設定サンプル。`jitter_range_seconds` で送信ジッタを `[min, max]` 秒に固定し、`queue.threshold` でコアレスキューのフラッシュ閾値を上書きする。`queue.window_sec` を 0 にするとジッタ下限が閾値に揃う",
     "jitter_range_seconds": [3, 15],
     "queue": {
-      "_usage": "バッチ併合キューの設定。`threshold` は同一ジョブのメッセージ数が達した時点で即時フラッシュし、`window_sec` はバッチング許容時間を秒単位で制御する",
+      "_usage": "バッチ併合キューの設定。`threshold` は同一ジョブのメッセージ数が達した時点で即時フラッシュし、`window_sec` はバッチング許容時間を秒単位で制御する（0 にするとジッタ閾値が `threshold` に追従する）",
       "threshold": 3,
       "window_sec": 180
     }

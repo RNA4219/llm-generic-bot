@@ -80,6 +80,8 @@ class _PermitDecisionAdapter:
     retry_after: Optional[float] = None
     level: Optional[str] = None
     reevaluation: PermitReevaluationOutcome | str | None = None
+    reevaluation_reason: Optional[str] = None
+    reevaluation_allowed: Optional[bool] = None
 
 
 def build_permit(
@@ -105,6 +107,12 @@ def build_permit(
                 PermitDecisionLike,
                 PermitDecision.allow(decision.job or job),
             )
+        reevaluation_value = getattr(decision, "reevaluation", None)
+        reevaluation_reason: Optional[str] = None
+        reevaluation_allowed: Optional[bool] = None
+        if isinstance(reevaluation_value, PermitReevaluationOutcome):
+            reevaluation_reason = reevaluation_value.reason
+            reevaluation_allowed = reevaluation_value.allowed
         return cast(
             PermitDecisionLike,
             _PermitDecisionAdapter(
@@ -114,7 +122,9 @@ def build_permit(
                 job=decision.job or job,
                 retry_after=getattr(decision, "retry_after", None),
                 level=getattr(decision, "level", None),
-                reevaluation=getattr(decision, "reevaluation", None),
+                reevaluation=reevaluation_value,
+                reevaluation_reason=reevaluation_reason,
+                reevaluation_allowed=reevaluation_allowed,
             ),
         )
 

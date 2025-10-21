@@ -72,6 +72,8 @@
 - [OPS-B03] Permit クォータ多段構成とバッチ再送ガードを設計し、`tests/core/test_quota_gate.py` の拡張と併せて多段クォータ導入を検証する。
 - [OPS-B16] メトリクス履歴集計の状態管理と記録経路を `infra/metrics/aggregator_state.py`・`infra/metrics/aggregator_records.py` へ整理し、成功/遅延イベントの回帰は `tests/infra/metrics/recording/test_success_events.py`・`tests/infra/metrics/recording/test_delay_events.py` で固定する。
 - `send.delay_seconds` は `infra.metrics.reporting.report_send_delay` が遅延秒数を観測バックエンドへ送信する際に `unit="seconds"` タグを付与し、`tests/infra/metrics/recording/test_delay_events.py::test_report_send_delay_records_unit_seconds` で `pytest tests/infra/metrics/recording/test_delay_events.py -k report_send_delay_records_unit_seconds -q` を通じて固定化している。
+- [OPS-B16] メトリクス履歴集計の状態管理を再編し、`infra/metrics/aggregator_state.py` でロック付きスロット管理を担保しつつ記録整形を `infra/metrics/aggregator_records.py` へ分離する。成功/遅延イベントの回帰は `tests/infra/metrics/recording/test_success_events.py`・`tests/infra/metrics/recording/test_delay_events.py` が保証し、集計結果のタグ揺れと単位整合を現行ケースで緑化維持する。
+- `send.delay_seconds` は `tests/infra/metrics/recording/test_delay_events.py::test_report_send_delay_records_unit_seconds` で `unit="seconds"` タグ付き計測を固定化し、`pytest tests/infra/metrics/recording/test_delay_events.py -k report_send_delay_records_unit_seconds -q` で検証する。
 - [OPS-B06] `core/orchestrator/__init__.py` のレガシーシム撤去を進め、新パスへの参照統一とテスト拡充後に CI グリーン化を達成する。→ 2025-10-19: `core/orchestrator/runtime.py` を公開実装として昇格し、`tests/core/orchestrator/test_processor.py`・`tests/integration/test_orchestrator_imports.py` を追加して `llm_generic_bot.core.orchestrator.processor` / `.runtime` 直 import を固定化。`_legacy.py` は薄いフォワーダへ整理済み。
 - ※ OPS-B04/B05/B07 は 2025-10-18 に完了済みのため残課題一覧から除外している（`tests/infra/metrics/test_reporting_*` 系 CI 緑化・ドキュメント同期済み）。
 

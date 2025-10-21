@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 # NOTE: tests monkeypatch the module-level `dt` alias to control time.
+from collections import OrderedDict
 from dataclasses import dataclass
 from importlib import import_module
 from typing import Awaitable, Callable, Final, List, Mapping, Optional, Protocol, cast
@@ -88,6 +89,10 @@ class Scheduler:
         self._last_dispatch_ts: Optional[float] = None
         self._active_job: Optional[_ScheduledJob] = None
         self._metrics = _resolve_metrics(metrics)
+        self._dispatched_batches: OrderedDict[str, float] = OrderedDict()
+        self._dispatch_guard_limit = 1024
+        self._reevaluation_waits: OrderedDict[tuple[str, Optional[str]], float] = OrderedDict()
+        self._reevaluation_guard_limit = 512
 
     def every_day(
         self,
@@ -138,6 +143,8 @@ class Scheduler:
     async def _dispatch_batch(self, batch: QueueBatch, reference_ts: float) -> float:
         if self.sender is None:
             raise RuntimeError("Sender is not configured for Scheduler")
+        if self._should_skip_dispatch(batch):
+            return reference_ts
         clash = False
         if self._last_dispatch_ts is not None:
             clash = reference_ts <= self._last_dispatch_ts
@@ -167,6 +174,7 @@ class Scheduler:
         await self._sleep(delay)
         await self.sender.send(text, channel, job=job_name)
         self._last_dispatch_ts = target_ts if delay > 0 else reference_ts
+        self._record_dispatch(batch)
         return target_ts
 
     def _effective_jitter_range(self) -> tuple[int, int]:
@@ -183,3 +191,25 @@ class Scheduler:
         if base_low > base_high:
             return base_low, base_low
         return base_low, base_high
+
+    def _should_skip_dispatch(self, batch: QueueBatch) -> bool:
+        last_batch_seen = self._dispatched_batches.get(batch.batch_id)
+        if last_batch_seen is not None and batch.created_at <= last_batch_seen:
+            return True
+        key = (batch.job, batch.channel)
+        last_slot_seen = self._reevaluation_waits.get(key)
+        if last_slot_seen is not None and batch.created_at <= last_slot_seen:
+            return True
+        return False
+
+    def _record_dispatch(self, batch: QueueBatch) -> None:
+        self._dispatched_batches[batch.batch_id] = batch.created_at
+        self._dispatched_batches.move_to_end(batch.batch_id)
+        while len(self._dispatched_batches) > self._dispatch_guard_limit:
+            self._dispatched_batches.popitem(last=False)
+
+        key = (batch.job, batch.channel)
+        self._reevaluation_waits[key] = batch.created_at
+        self._reevaluation_waits.move_to_end(key)
+        while len(self._reevaluation_waits) > self._reevaluation_guard_limit:
+            self._reevaluation_waits.popitem(last=False)

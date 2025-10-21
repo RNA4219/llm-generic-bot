@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -39,6 +40,8 @@ class CoalesceQueue:
         self._threshold = threshold
         self._pending: List[_PendingBatch] = []
         self._index: Dict[str, _PendingBatch] = {}
+        self._recent: OrderedDict[str, float] = OrderedDict()
+        self._recent_limit = 1024
 
     @property
     def window_seconds(self) -> float:
@@ -55,6 +58,8 @@ class CoalesceQueue:
         batch_id: Optional[str] = None,
     ) -> None:
         ts = created_at if created_at is not None else time.time()
+        if batch_id is not None and self._should_skip(batch_id, ts):
+            return
         batch = self._find_batch(ts, channel, job, priority, batch_id)
         if batch is None:
             resolved_id = batch_id or uuid.uuid4().hex
@@ -83,6 +88,7 @@ class CoalesceQueue:
             if len(batch.messages) >= self._threshold:
                 batch.force_ready = True
                 batch.ready_at = min(batch.ready_at, ts)
+        self._remember(batch.batch_id, ts)
 
     def pop_ready(self, now: float) -> List[QueueBatch]:
         ready: List[QueueBatch] = []
@@ -131,3 +137,15 @@ class CoalesceQueue:
                 self._index[batch.batch_id] = batch
                 return batch
         return None
+
+    def _should_skip(self, batch_id: str, ts: float) -> bool:
+        last_seen = self._recent.get(batch_id)
+        if last_seen is None:
+            return False
+        return ts <= last_seen
+
+    def _remember(self, batch_id: str, ts: float) -> None:
+        self._recent[batch_id] = ts
+        self._recent.move_to_end(batch_id)
+        while len(self._recent) > self._recent_limit:
+            self._recent.popitem(last=False)

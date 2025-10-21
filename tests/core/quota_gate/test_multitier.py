@@ -159,5 +159,71 @@ def test_quota_multilayer_tiers_respect_windows_and_retryable() -> None:
     assert third_denial.retryable is False
     assert third_denial.retry_after == pytest.approx(54.0)
 
+
+def test_quota_multilayer_tier_progression_requires_sequential_waits() -> None:
+    metrics = DummyMetrics()
+    current = [0.0]
+
+    def time_fn() -> float:
+        return current[0]
+
+    channel_tiers = (
+        _FakeQuotaTier(
+            code="channel_burst",
+            limit=1,
+            window_minutes=1,
+            message="channel burst reached",
+            retryable=True,
+            reevaluation="channel",
+        ),
+    )
+    platform_tiers = (
+        _FakeQuotaTier(
+            code="platform_daily",
+            limit=1,
+            window_minutes=5,
+            message="platform limit reached",
+            retryable=False,
+            reevaluation="platform",
+        ),
+    )
+
+    gate = PermitGate(
+        per_channel=_FakeQuotaConfig(tiers=channel_tiers),
+        metrics=metrics.increment,
+        logger=logging.getLogger("quota"),
+        time_fn=time_fn,
+        config=PermitGateConfig(
+            levels=(
+                PermitQuotaLevel(name="per_channel", quota=_FakeQuotaConfig(tiers=channel_tiers)),
+                PermitQuotaLevel(name="per_platform", quota=_FakeQuotaConfig(tiers=platform_tiers)),
+            )
+        ),
+    )
+
+    assert gate.permit("discord", "multitier").allowed is True
+
+    current[0] += 10.0
+    channel_denial = gate.permit("discord", "multitier")
+    assert channel_denial.allowed is False
+    assert channel_denial.level == "per_channel"
+    assert channel_denial.retryable is True
+    assert channel_denial.retry_after == pytest.approx(50.0)
+    assert channel_denial.reason == "channel burst reached"
+    assert metrics.calls[-1][1]["level"] == "per_channel"
+
+    current[0] += 61.0
+    platform_denial = gate.permit("discord", "multitier")
+    assert platform_denial.allowed is False
+    assert platform_denial.level == "per_platform"
+    assert platform_denial.retryable is False
+    assert platform_denial.retry_after == pytest.approx(229.0)
+    assert platform_denial.reason == "platform limit reached"
+    assert metrics.calls[-1][1]["level"] == "per_platform"
+
+    current[0] += 240.0
+    final_permit = gate.permit("discord", "multitier")
+    assert final_permit.allowed is True
+
     assert metrics.calls[-1][1]["code"] == "platform_daily"
     assert metrics.calls[-1][1]["level"] == "per_platform"

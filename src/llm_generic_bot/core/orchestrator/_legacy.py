@@ -51,6 +51,7 @@ class PermitDecisionLike(Protocol):
     job: Optional[str]
     retry_after: Optional[float]
     level: Optional[str]
+    reevaluation: object | None
 
 
 @dataclass(frozen=True)

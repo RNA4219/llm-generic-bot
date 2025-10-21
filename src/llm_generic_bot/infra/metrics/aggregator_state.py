@@ -7,12 +7,16 @@ from threading import Lock
 from typing import Mapping
 
 from .aggregator_records import (
+    _MetricIncrementCall,
+    _MetricObservationCall,
+    _MetricsHistory,
     _PermitDenialRecord,
     _SendEventRecord,
-    _base_tags,
-    _merge_tags,
     _normalize_retention_days,
-    _trim_and_build_snapshot,
+    _prepare_permit_denial,
+    _prepare_send_delay,
+    _prepare_send_failure,
+    _prepare_send_success,
 )
 from .service import (
     MetricsRecorder,
@@ -40,9 +44,24 @@ class _GlobalMetricsAggregator:
     lock: Lock = field(default_factory=Lock)
     backend: MetricsRecorder = field(default_factory=lambda: _NOOP_BACKEND)
     backend_configured: bool = False
-    _send_events: list[_SendEventRecord] = field(default_factory=list)
-    _permit_denials: list[_PermitDenialRecord] = field(default_factory=list)
     retention_days: int = _DEFAULT_RETENTION_DAYS
+    _history: _MetricsHistory = field(default_factory=_MetricsHistory)
+
+    @property
+    def _send_events(self) -> list[_SendEventRecord]:
+        return self._history.send_events
+
+    @_send_events.setter
+    def _send_events(self, value: list[_SendEventRecord]) -> None:
+        self._history.send_events = value
+
+    @property
+    def _permit_denials(self) -> list[_PermitDenialRecord]:
+        return self._history.permit_denials
+
+    @_permit_denials.setter
+    def _permit_denials(self, value: list[_PermitDenialRecord]) -> None:
+        self._history.permit_denials = value
 
     def configure_backend(self, recorder: MetricsRecorder | None) -> None:
         backend, configured = _resolve_backend(recorder)
@@ -52,8 +71,7 @@ class _GlobalMetricsAggregator:
 
     def clear_history(self) -> None:
         with self.lock:
-            self._send_events.clear()
-            self._permit_denials.clear()
+            self._history.clear()
 
     def set_retention_days(self, retention_days: int | None) -> None:
         value = _normalize_retention_days(retention_days)
@@ -69,19 +87,17 @@ class _GlobalMetricsAggregator:
         duration_seconds: float,
         permit_tags: Mapping[str, str] | None,
     ) -> None:
-        base_tags = _base_tags(job, platform, channel)
-        tags = _merge_tags(base_tags, permit_tags)
-        duration_tags = {**base_tags, "unit": "seconds"}
-        backend = self._backend_for_recording(
-            _SendEventRecord(
-                recorded_at=_utcnow(),
-                job=job,
-                outcome="success",
-                duration=float(duration_seconds),
-            )
+        record, increment_call, observation_call = _prepare_send_success(
+            recorded_at=_utcnow(),
+            job=job,
+            platform=platform,
+            channel=channel,
+            duration_seconds=duration_seconds,
+            permit_tags=permit_tags,
         )
-        backend.increment("send.success", tags=tags)
-        backend.observe("send.duration", duration_seconds, tags=duration_tags)
+        backend = self._record_history(record)
+        self._apply_increment(backend, increment_call)
+        self._apply_observation(backend, observation_call)
 
     def report_send_failure(
         self,
@@ -92,20 +108,17 @@ class _GlobalMetricsAggregator:
         duration_seconds: float,
         error_type: str,
     ) -> None:
-        base_tags = _base_tags(job, platform, channel)
-        increment_tags = dict(base_tags)
-        increment_tags["error"] = error_type
-        duration_tags = {**base_tags, "unit": "seconds"}
-        backend = self._backend_for_recording(
-            _SendEventRecord(
-                recorded_at=_utcnow(),
-                job=job,
-                outcome="failure",
-                duration=float(duration_seconds),
-            )
+        record, increment_call, observation_call = _prepare_send_failure(
+            recorded_at=_utcnow(),
+            job=job,
+            platform=platform,
+            channel=channel,
+            duration_seconds=duration_seconds,
+            error_type=error_type,
         )
-        backend.increment("send.failure", tags=increment_tags)
-        backend.observe("send.duration", duration_seconds, tags=duration_tags)
+        backend = self._record_history(record)
+        self._apply_increment(backend, increment_call)
+        self._apply_observation(backend, observation_call)
 
     def report_permit_denied(
         self,
@@ -116,13 +129,16 @@ class _GlobalMetricsAggregator:
         reason: str,
         permit_tags: Mapping[str, str] | None,
     ) -> None:
-        base_tags = _base_tags(job, platform, channel)
-        tags = _merge_tags(base_tags, permit_tags)
-        tags["reason"] = reason
-        backend = self._backend_for_recording(
-            _PermitDenialRecord(recorded_at=_utcnow(), payload=dict(tags))
+        record, increment_call = _prepare_permit_denial(
+            recorded_at=_utcnow(),
+            job=job,
+            platform=platform,
+            channel=channel,
+            reason=reason,
+            permit_tags=permit_tags,
         )
-        backend.increment("send.denied", tags=tags)
+        backend = self._record_history(record)
+        self._apply_increment(backend, increment_call)
 
     def report_send_delay(
         self,
@@ -132,47 +148,55 @@ class _GlobalMetricsAggregator:
         channel: str | None,
         delay_seconds: float,
     ) -> None:
-        tags = _base_tags(job, platform, channel)
-        observation_tags = {**tags, "unit": "seconds"}
+        observation_call = _prepare_send_delay(
+            job=job,
+            platform=platform,
+            channel=channel,
+            delay_seconds=delay_seconds,
+        )
         backend = self._backend_for_delay()
-        backend.observe("send.delay_seconds", float(delay_seconds), tags=observation_tags)
+        self._apply_observation(backend, observation_call)
 
     def weekly_snapshot(self) -> dict[str, object]:
         generated_at = _utcnow()
         with self.lock:
-            snapshot, send_events, permit_denials = _trim_and_build_snapshot(
-                send_events=self._send_events,
-                permit_denials=self._permit_denials,
+            snapshot = self._history.trim_and_build_snapshot(
                 generated_at=generated_at,
                 retention_days=self.retention_days,
             )
-            self._send_events = send_events
-            self._permit_denials = permit_denials
         return snapshot
 
     def reset(self) -> None:
         with self.lock:
             self.backend = _NOOP_BACKEND
             self.backend_configured = False
-            self._send_events.clear()
-            self._permit_denials.clear()
+            self._history = _MetricsHistory()
             self.retention_days = _DEFAULT_RETENTION_DAYS
 
-    def _backend_for_recording(
+    def _record_history(
         self, record: _SendEventRecord | _PermitDenialRecord
     ) -> MetricsRecorder:
         with self.lock:
             backend = self.backend
             if self.backend_configured:
-                if isinstance(record, _SendEventRecord):
-                    self._send_events.append(record)
-                else:
-                    self._permit_denials.append(record)
+                self._history.store(record)
         return backend
 
     def _backend_for_delay(self) -> MetricsRecorder:
         with self.lock:
             return self.backend
+
+    @staticmethod
+    def _apply_increment(
+        backend: MetricsRecorder, call: _MetricIncrementCall
+    ) -> None:
+        backend.increment(call.name, tags=call.tags)
+
+    @staticmethod
+    def _apply_observation(
+        backend: MetricsRecorder, call: _MetricObservationCall
+    ) -> None:
+        backend.observe(call.name, call.value, tags=call.tags)
 
 def _resolve_backend(
     recorder: MetricsRecorder | None,

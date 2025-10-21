@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections import deque
+from datetime import datetime, timedelta, timezone
 from typing import Callable, ContextManager
 
 import pytest
 
+import llm_generic_bot.infra.metrics.aggregator_state as aggregator_state
 from llm_generic_bot.infra.metrics import reporting
 
 from tests.infra.metrics import RecordingMetricsLike
@@ -83,6 +86,52 @@ async def test_weekly_snapshot_trims_outdated_send_events(
     assert snapshot["latency_histogram_seconds"] == {
         "weather": {"3s": 1}
     }
+
+
+@pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_ignores_send_events_newer_than_generated_at(
+    make_recording_metrics: Callable[[], RecordingMetricsLike],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = make_recording_metrics()
+    reporting.configure_backend(recorder)
+    reporting.set_retention_days(2)
+
+    base = datetime(2024, 1, 4, tzinfo=timezone.utc)
+    timestamps = deque(
+        [
+            base - timedelta(days=3),
+            base + timedelta(days=1),
+            base,
+        ]
+    )
+
+    def fake_utcnow() -> datetime:
+        return timestamps.popleft()
+
+    monkeypatch.setattr(aggregator_state, "_utcnow", fake_utcnow)
+
+    await reporting.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.5,
+        permit_tags=None,
+    )
+
+    await reporting.report_send_success(
+        job="weather",
+        platform="discord",
+        channel="alerts",
+        duration_seconds=0.7,
+        permit_tags=None,
+    )
+
+    snapshot = reporting.weekly_snapshot()
+
+    assert snapshot["success_rate"] == {}
+    assert snapshot["latency_histogram_seconds"] == {}
+    assert aggregator_state._AGGREGATOR._send_events == []
 
 
 @pytest.mark.anyio("asyncio")

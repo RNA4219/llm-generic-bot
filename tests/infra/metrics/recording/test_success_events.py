@@ -86,6 +86,31 @@ async def test_weekly_snapshot_trims_outdated_send_events(
 
 
 @pytest.mark.anyio("asyncio")
+async def test_weekly_snapshot_discards_send_events_at_retention_boundary(
+    make_recording_metrics: Callable[[], RecordingMetricsLike],
+    freeze_time_ctx: Callable[[str], ContextManager[None]],
+) -> None:
+    recorder = make_recording_metrics()
+    reporting.configure_backend(recorder)
+    reporting.set_retention_days(2)
+
+    with freeze_time_ctx("2024-01-02T00:00:00Z"):
+        await reporting.report_send_success(
+            job="weather",
+            platform="discord",
+            channel="alerts",
+            duration_seconds=1.5,
+            permit_tags=None,
+        )
+
+    with freeze_time_ctx("2024-01-04T00:00:00Z"):
+        snapshot = reporting.weekly_snapshot()
+
+    assert snapshot["success_rate"] == {}
+    assert snapshot["latency_histogram_seconds"] == {}
+
+
+@pytest.mark.anyio("asyncio")
 async def test_report_send_success_records_engagement_tags(
     make_recording_metrics: Callable[[], RecordingMetricsLike],
 ) -> None:

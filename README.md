@@ -9,6 +9,45 @@
 - **自動配信**: 天気（30℃/35℃アイコン・前日比 ΔT アラート）、ニュース、おみくじ、DM ダイジェストを定期生成。
 - **レポート**: 週次サマリとメトリクス連携（登録は `src/llm_generic_bot/runtime/setup/__init__.py`、検証は `tests/integration/runtime_weekly_report/`）。
 
+## 実装概要
+
+### 実行フロー
+- `src/llm_generic_bot/main.py` で依存性を解決し、`runtime.providers.bootstrap_runtime` からアプリケーションを起動。
+- `core.scheduler.Scheduler` がジョブをポーリングし、`core.orchestrator.ExecutionOrchestrator` へハンドオフ。
+- オーケストレータは `core.cooldown.AdaptiveCooldown`、`core.arbiter.PriorityArbiter`、`core.dedupe.NearDuplicateDetector` を組み合わせて送信可否を判定。
+- 許可されたペイロードは `runtime.setup.sender.SenderRunner` を経由し、各アダプタ (`adapters.discord`, `adapters.misskey` など) が最終的な API 呼び出しを実行。
+
+### 機能モジュール
+- 天気・ニュース等の定期ジョブは `runtime.jobs.*` でスケジュールされ、共通ロジックは `runtime.jobs.common.JobContext` を介して再利用。
+- 個々のフィーチャは `features/` 以下に実装され、`core.formatting` で共通のメッセージ整形を行う。
+- メトリクス集計は `infra.metrics.Aggregator`、レポート生成は `infra.metrics.reporting` が担当し、結果は `runtime.setup.reports.register_weekly_reports` から配信キューに登録される。
+
+### 設定とシークレット
+- `config/settings.json` が主要設定。値の検証は `config.loader.SettingsLoader` が担う。
+- API キーやトークンは `.env` 経由で読み込み、`runtime.setup.gates.FeatureGateResolver` によるフィーチャフラグで有効・無効を制御。
+- 呼び出し回数制限は `config.quotas.CallQuotaStore` が管理し、上限超過時は `core.orchestrator` がリトライをスケジュール。
+
+### エラーハンドリング
+- 再試行可能な失敗は `adapters._retry.RetryPolicy` が担当し、不可逆エラーは `core.types.ExecutionFailure` として呼び出し元に伝播。
+- 外部サービス障害時はメトリクスに失敗イベントが記録され、週次レポートへ反映される。
+
+### テスト戦略
+- ユニットテスト: `tests/unit/` で各コンポーネントをモックしながら検証。
+- 統合テスト: `tests/integration/` が DI・スケジューラ・レポート生成を E2E で確認。
+- 型/リンタ: `pyproject.toml` で `mypy --strict` と `ruff` を CI 実行し、実装と同じ設定をローカルでも利用。
+
+## 利用可能な LLM プロバイダ
+
+### バンドル済みスタブ
+- ニュース要約向け `SAMPLE_NEWS_SUMMARY`、ニュースフィード取得用 `SAMPLE_NEWS_FEED`、DM 集計用 `SAMPLE_DM_LOG`・`SAMPLE_DM_SUMMARY`・`SAMPLE_DM_SENDER` を同梱し、セットアップ直後でもスタブで動作確認できる。これらは `llm_generic_bot.runtime.providers` モジュールで定義されている。 【F:src/llm_generic_bot/runtime/providers.py†L9-L75】
+
+### 外部モデルの差し替え
+1. ニュース要約なら `features.news.SummaryProvider`、DM ダイジェストなら `features.dm_digest.SummaryProvider` など、各フィーチャーが要求する Protocol を満たすクラス／ラッパーを作成する。 【F:src/llm_generic_bot/features/news.py†L17-L20】【F:src/llm_generic_bot/features/dm_digest.py†L20-L32】
+2. 実装したクラスを Python モジュールとして配置し、`module.attr` もしくは `module:attr` 形式で `config/settings.json` に記述する。サンプル設定では、要約プロバイダを `llm_generic_bot.runtime.providers.SAMPLE_NEWS_SUMMARY` で参照している。 【F:config/settings.example.json†L140-L189】
+3. ランタイムは `resolve_configured_object` で文字列をインポートして差し替えるため、設定変更だけで任意モデルを切り替えられる。統合テストでは、外部モジュール風スタブを設定に差し込み同機構を検証している。 【F:src/llm_generic_bot/runtime/jobs/common.py†L37-L67】【F:tests/integration/runtime_multicontent/test_providers.py†L16-L118】
+
+この仕組みにより、OpenAI / Azure OpenAI / Anthropic など任意の LLM SDK を薄いアダプタで包むだけで即時導入できる。呼び出しリトライや Permit 連携は既存のジョブビルダー側で処理されるため、モデル固有のハンドリングに集中できる。 【F:src/llm_generic_bot/runtime/jobs/common.py†L37-L67】
+
 ## Quick start
 
 1. 依存関係をインストールします。

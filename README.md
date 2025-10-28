@@ -36,6 +36,18 @@
 - 統合テスト: `tests/integration/` が DI・スケジューラ・レポート生成を E2E で確認。
 - 型/リンタ: `pyproject.toml` で `mypy --strict` と `ruff` を CI 実行し、実装と同じ設定をローカルでも利用。
 
+## 利用可能な LLM プロバイダ
+
+### バンドル済みスタブ
+- ニュース要約向け `SAMPLE_NEWS_SUMMARY`、ニュースフィード取得用 `SAMPLE_NEWS_FEED`、DM 集計用 `SAMPLE_DM_LOG`・`SAMPLE_DM_SUMMARY`・`SAMPLE_DM_SENDER` を同梱し、セットアップ直後でもスタブで動作確認できる。これらは `llm_generic_bot.runtime.providers` モジュールで定義されている。 【F:src/llm_generic_bot/runtime/providers.py†L9-L75】
+
+### 外部モデルの差し替え
+1. ニュース要約なら `features.news.SummaryProvider`、DM ダイジェストなら `features.dm_digest.SummaryProvider` など、各フィーチャーが要求する Protocol を満たすクラス／ラッパーを作成する。 【F:src/llm_generic_bot/features/news.py†L17-L20】【F:src/llm_generic_bot/features/dm_digest.py†L20-L32】
+2. 実装したクラスを Python モジュールとして配置し、`module.attr` もしくは `module:attr` 形式で `config/settings.json` に記述する。サンプル設定では、要約プロバイダを `llm_generic_bot.runtime.providers.SAMPLE_NEWS_SUMMARY` で参照している。 【F:config/settings.example.json†L140-L189】
+3. ランタイムは `resolve_configured_object` で文字列をインポートして差し替えるため、設定変更だけで任意モデルを切り替えられる。統合テストでは、外部モジュール風スタブを設定に差し込み同機構を検証している。 【F:src/llm_generic_bot/runtime/jobs/common.py†L37-L67】【F:tests/integration/runtime_multicontent/test_providers.py†L16-L118】
+
+この仕組みにより、OpenAI / Azure OpenAI / Anthropic など任意の LLM SDK を薄いアダプタで包むだけで即時導入できる。呼び出しリトライや Permit 連携は既存のジョブビルダー側で処理されるため、モデル固有のハンドリングに集中できる。 【F:src/llm_generic_bot/runtime/jobs/common.py†L37-L67】
+
 ## Quick start
 
 1. 依存関係をインストールします。

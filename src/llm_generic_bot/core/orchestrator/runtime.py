@@ -308,6 +308,8 @@ class Orchestrator:
             self._retry_tasks.discard(done)
             try:
                 done.result()
+            except asyncio.CancelledError:
+                raise
             except Exception:  # noqa: BLE001 - ログ済み例外は上位へ伝播させない
                 self._logger.exception(
                     "retry_enqueue_failed",

@@ -297,7 +297,7 @@ class Orchestrator:
                 try:
                     await asyncio.sleep(delay)
                 except asyncio.CancelledError:
-                    return
+                    raise
             if self._closed:
                 return
             await self._queue.put(clone)

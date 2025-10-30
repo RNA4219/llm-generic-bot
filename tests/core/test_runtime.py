@@ -102,3 +102,40 @@ async def test_retry_cleanup_reraises_cancelled_error(monkeypatch: pytest.Monkey
     assert not logger.exception.called
 
     await orchestrator.close()
+
+
+@pytest.mark.anyio
+async def test_retry_task_cancellation_propagates() -> None:
+    logger = MagicMock()
+    orchestrator = runtime.Orchestrator(
+        sender=_NoopSender(),
+        cooldown=CooldownGate(60, 1.0, 1.0, 0.0, 0.0, 0.0),
+        dedupe=NearDuplicateFilter(),
+        permit=_permit,
+        metrics=None,
+        logger=logger,
+    )
+
+    request = runtime._SendRequest(
+        text="hello",
+        job="job",
+        platform="test",
+        channel=None,
+        correlation_id="cid",
+    )
+    directive = processor.RetryDirective(retry_after=10.0, reason=None, allowed=None)
+
+    orchestrator._schedule_retry(request, directive)
+
+    try:
+        task = next(iter(orchestrator._retry_tasks))
+    except StopIteration:  # pragma: no cover - defensive fallback
+        pytest.fail("retry task was not scheduled")
+
+    task.cancel()
+    await asyncio.sleep(0)
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    await orchestrator.close()

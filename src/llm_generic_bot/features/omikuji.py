@@ -8,12 +8,13 @@ from pathlib import Path
 from random import Random
 from typing import Any, Mapping, Sequence, cast
 
+yaml: Any = None
 try:  # pragma: no cover - optional dependency
-    import yaml  # type: ignore[import-untyped]
-except ModuleNotFoundError:  # pragma: no cover - optional dependency
-    yaml = None
+    import yaml as _yaml  # type: ignore[import-untyped]
 
-yaml = cast("Any | None", yaml)
+    yaml = _yaml
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    pass
 
 Template = tuple[str, str]
 

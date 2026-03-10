@@ -8,11 +8,13 @@ authors = [{name="Your Name"}]
 dependencies = [
   "httpx>=0.27",
   "anyio>=4.4",
+  "aiohttp>=3.9",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "pytest-asyncio>=0.23",
   "pytest-anyio",
   "ruff",
   "mypy",
@@ -25,6 +27,10 @@ dev = [
 requires = ["setuptools>=78.1.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
 [tool.mypy]
 python_version = "3.11"
 mypy_path = ["src"]
@@ -32,14 +38,6 @@ explicit_package_bases = true
 namespace_packages = true
 warn_unused_configs = true
 show_error_codes = true
-
-[[tool.mypy.overrides]]
-module = [
-    "llm_generic_bot.core.orchestrator",
-    "llm_generic_bot.features.weather",
-    "llm_generic_bot.main",
-]
-ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = ["llm_generic_bot.core.orchestrator._legacy"]

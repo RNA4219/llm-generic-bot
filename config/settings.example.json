@@ -79,7 +79,8 @@
   "arbiter": { "jitter_sec": [60, 180] },
   "dedupe": { "enabled": true, "recent_k": 20, "sim_threshold": 0.93 },
   "limits": {
-    "_usage": "制限設定サンプル。⚠️ 現行実装では未対応のため、実装が揃うまでは有効化しないこと",
+    "_usage": "制限設定サンプル。⚠️ TODO: 夜間の行数・絵文字制限機能は未実装。実装予定: v0.2.0",
+    "_todo": "https://github.com/RNA4219/llm-generic-bot/issues - 夜間投稿の行数・絵文字数制限を実装する",
     "max_lines_night": 4,
     "max_emojis_night": 1
   },
@@ -108,7 +109,7 @@
     "backend": "memory",
     "retention_days": 14,
     "export": {
-      "_usage": "メトリクスのエクスポート設定サンプル。⚠️ 現行実装は未対応のため、設定を変更しても送信は行われない",
+      "_usage": "メトリクスのエクスポート設定サンプル。TODO: 外部エクスポート機能は未実装。実装予定: v0.2.0",
       "enabled": false,
       "destination": "stdout"
     }

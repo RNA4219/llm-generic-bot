@@ -7,18 +7,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files
+# Copy application code first for editable install
 COPY pyproject.toml ./
+COPY src/ ./src/
+COPY config/ ./config/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -e .[dev]
 
-# Copy application code
-COPY src/ ./src/
-COPY config/ ./config/
-
 # Create non-root user
-RUN useradd --create-home --shell /bin/bash appuser
+RUN useradd --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app
 USER appuser
 
 # Set environment variables

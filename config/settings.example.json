@@ -162,7 +162,7 @@
     "priority": 6,
     "user_id": "user-1234567890",
     "templates": [
-      { "id": "basic", "text": "{user} さんの運勢は {fortune} です" }
+      { "id": "basic", "text": "{user_id} さんの運勢は {fortune} です" }
     ],
     "fortunes": ["大吉", "中吉", "小吉", "凶"],
     "history_window_days": 30
